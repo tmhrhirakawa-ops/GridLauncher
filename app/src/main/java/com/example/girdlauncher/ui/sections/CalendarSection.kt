@@ -16,6 +16,53 @@ import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import java.util.Locale
+import android.content.Intent
+import android.provider.CalendarContract
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ContentUris
+import java.time.ZoneId
+import java.time.Instant
+import androidx.compose.foundation.shape.CircleShape
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+
+suspend fun fetchEventDays(context: android.content.Context, yearMonth: java.time.YearMonth): Set<Int> = withContext(Dispatchers.IO) {
+    val daysWithEvents = mutableSetOf<Int>()
+    val startMillis = yearMonth.atDay(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val endMillis = yearMonth.atEndOfMonth().atTime(23, 59, 59).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    val projection = arrayOf(CalendarContract.Instances.BEGIN)
+    val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
+    ContentUris.appendId(builder, startMillis)
+    ContentUris.appendId(builder, endMillis)
+
+    try {
+        context.contentResolver.query(
+            builder.build(), projection, null, null, null
+        )?.use { cursor ->
+            val beginCol = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
+            while (cursor.moveToNext()) {
+                val begin = cursor.getLong(beginCol)
+                val date = Instant.ofEpochMilli(begin).atZone(ZoneId.systemDefault()).toLocalDate()
+                if (date.year == yearMonth.year && date.month == yearMonth.month) {
+                    daysWithEvents.add(date.dayOfMonth)
+                }
+            }
+        }
+    } catch(e: Exception) { e.printStackTrace() }
+    daysWithEvents
+}
 
 /**
  * 月間カレンダーを表示するセクション。
@@ -24,9 +71,34 @@ import java.util.Locale
  */
 @Composable
 fun CalendarSection(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    
+    var hasPermission by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED)
+    }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        hasPermission = isGranted
+    }
+    
+    var permissionRequested by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!hasPermission && !permissionRequested) {
+            permissionRequested = true
+            permissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+        }
+    }
+    
     val currentDate = java.time.LocalDate.now()
     val currentMonth = java.time.YearMonth.now()
     val monthString = currentMonth.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH).uppercase() + " " + currentMonth.year
+    
+    var eventDays by remember { mutableStateOf(emptySet<Int>()) }
+    LaunchedEffect(hasPermission, currentMonth) {
+        if (hasPermission) {
+            eventDays = fetchEventDays(context, currentMonth)
+        }
+    }
     
     // カレンダーの計算
     val firstDayOfMonth = currentMonth.atDay(1)
@@ -90,7 +162,22 @@ fun CalendarSection(modifier: Modifier = Modifier) {
                                             .background(
                                                 color = if (isToday) LocalCyberColors.current.accent else Color.Transparent,
                                                 shape = RoundedCornerShape(4.dp)
-                                            ),
+                                            )
+                                            .clickable {
+                                                // タップした日付からミリ秒のUnixタイムスタンプを作成
+                                                val targetDate = currentMonth.atDay(dayNumber)
+                                                val timeInMillis = targetDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                                
+                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                    data = android.net.Uri.parse("content://com.android.calendar/time/$timeInMillis")
+                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                                }
+                                                try {
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                }
+                                            },
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -100,6 +187,15 @@ fun CalendarSection(modifier: Modifier = Modifier) {
                                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                                             color = if (isToday) Color.White else LocalCyberColors.current.text
                                         )
+                                        if (eventDays.contains(dayNumber)) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(top = 2.dp, end = 2.dp)
+                                                    .size(4.dp)
+                                                    .background(if (isToday) Color.White else LocalCyberColors.current.accent, CircleShape)
+                                            )
+                                        }
                                     }
                                 }
                             }
