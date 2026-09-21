@@ -47,7 +47,7 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
 @Composable
 fun AppCard(
     name: String,
-    icon: Drawable?,
+    icon: Drawable,
     modifier: Modifier = Modifier,
     packageName: String = "",
     isEditMode: Boolean = false,
@@ -73,33 +73,14 @@ fun AppCard(
                     .align(Alignment.CenterStart),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (icon != null) {
-                    // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
-                    val accent = LocalCyberColors.current.accent
-                    val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = name,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
-                    // 実アイコンが取得できない場合は、アプリ名の頭文字を表示する
-                    val firstChar = name.first().uppercaseChar()
-                    Box(
-                        modifier = Modifier.size(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = firstChar.toString(),
-                            fontFamily = CyberFont,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = LocalCyberColors.current.accent
-                        )
-                    }
-                } else {
-                    Text("★", fontSize = 20.sp, color = LocalCyberColors.current.text)
-                }
+                // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
+                val accent = LocalCyberColors.current.accent
+                val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = name,
+                    modifier = Modifier.size(28.dp)
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = name, 

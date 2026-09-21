@@ -47,7 +47,7 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
 @Composable
 fun DockAppCard(
     name: String,
-    icon: Drawable?,
+    icon: Drawable,
     modifier: Modifier = Modifier,
     packageName: String = "",
     isEditMode: Boolean = false,
@@ -74,32 +74,14 @@ fun DockAppCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (icon != null) {
-                    // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
-                    val accent = LocalCyberColors.current.accent
-                    val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = name,
-                        modifier = Modifier.size(20.dp)
-                    )
-                } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
-                    val firstChar = name.first().uppercaseChar()
-                    Box(
-                        modifier = Modifier.size(20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = firstChar.toString(),
-                            fontFamily = CyberFont,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = LocalCyberColors.current.accent
-                        )
-                    }
-                } else {
-                    Text("★", fontSize = 18.sp, color = LocalCyberColors.current.text)
-                }
+                // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
+                val accent = LocalCyberColors.current.accent
+                val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = name,
+                    modifier = Modifier.size(24.dp)
+                )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = name, 
