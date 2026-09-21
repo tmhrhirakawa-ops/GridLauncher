@@ -52,12 +52,39 @@ fun toDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
 }
 
 /**
+ * アイコン加工処理で扱う一辺の最大ピクセル数。
+ *
+ * グリッド/ドックでの実際の表示サイズは24〜28dp程度だが、[Drawable.getIntrinsicWidth]は
+ * 高密度端末では100〜400px超になることがある。表示に対して不必要に高い解像度のまま
+ * ピクセル単位の加工（[toFlatTintedImageBitmap] / [toLightnessDuotoneImageBitmap]）を行うと、
+ * CPU時間とBitmapのメモリ使用量の両方を無駄に消費してしまうため、事前にこのサイズへ
+ * ダウンサンプリングしてから加工する。
+ */
+private const val MAX_ICON_PROCESSING_SIZE = 128
+
+/**
+ * [drawable] の本来の縦横比を保ったまま、[MAX_ICON_PROCESSING_SIZE] を超えないサイズを求めます。
+ */
+private fun resolveProcessingSize(drawable: Drawable): Pair<Int, Int> {
+    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
+    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
+
+    if (intrinsicWidth <= MAX_ICON_PROCESSING_SIZE && intrinsicHeight <= MAX_ICON_PROCESSING_SIZE) {
+        return intrinsicWidth to intrinsicHeight
+    }
+
+    val scale = MAX_ICON_PROCESSING_SIZE.toFloat() / maxOf(intrinsicWidth, intrinsicHeight)
+    val width = (intrinsicWidth * scale).roundToInt().coerceAtLeast(1)
+    val height = (intrinsicHeight * scale).roundToInt().coerceAtLeast(1)
+    return width to height
+}
+
+/**
  * [drawable] の形状（アルファチャンネル）をそのまま残し、色だけを[accent]一色に塗りつぶします。
  * モノクロレイヤーのような「背景を含まない単色シルエット」向け。
  */
 private fun toFlatTintedImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+    val (width, height) = resolveProcessingSize(drawable)
     val source = drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888)
 
     val pixels = IntArray(width * height)
@@ -88,8 +115,7 @@ private fun toFlatTintedImageBitmap(drawable: Drawable, accent: Color): ImageBit
  * 挙動になるため、両方のケースでロゴの視認性を保ちやすくなります。
  */
 private fun toLightnessDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+    val (width, height) = resolveProcessingSize(drawable)
     val source = drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888)
 
     val pixels = IntArray(width * height)
