@@ -66,7 +66,7 @@ fun AccessGridSection(
         // アプリを指定された行数・列数で分割
         val pageSize = columns * rows
         // 少なくとも1ページ分は空きスロットを表示する
-        val pageCount = maxOf(1, (apps.size + 1) / pageSize + if ((apps.size + 1) % pageSize == 0) 0 else 1)
+        val pageCount = maxOf(1, ((apps.size + 1) / pageSize) + if (((apps.size + 1) % pageSize) == 0) 0 else 1)
         val pagerState = rememberPagerState(pageCount = { pageCount })
         
         HorizontalPager(
@@ -74,7 +74,7 @@ fun AccessGridSection(
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val startIndex = page * pageSize
-            val pageApps = apps.drop(startIndex).take(pageSize)
+            val pageApps = apps.asSequence().drop(startIndex).take(pageSize).toList()
             
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -105,8 +105,8 @@ fun AccessGridSection(
                                     hasNotification = hasNotif,
                                     onClick = {
                                         val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                                        if (launchIntent != null) {
-                                            context.startActivity(launchIntent)
+                                        launchIntent?.let {
+                                            context.startActivity(it)
                                         }
                                     },
                                     onLongClick = onLongClick,

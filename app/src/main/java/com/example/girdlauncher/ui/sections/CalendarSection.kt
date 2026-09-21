@@ -55,7 +55,7 @@ suspend fun fetchEventDays(context: android.content.Context, yearMonth: java.tim
             while (cursor.moveToNext()) {
                 val begin = cursor.getLong(beginCol)
                 val date = Instant.ofEpochMilli(begin).atZone(ZoneId.systemDefault()).toLocalDate()
-                if (date.year == yearMonth.year && date.month == yearMonth.month) {
+                if ((date.year == yearMonth.year) && (date.month == yearMonth.month)) {
                     daysWithEvents.add(date.dayOfMonth)
                 }
             }
@@ -190,10 +190,10 @@ fun CalendarSection(modifier: Modifier = Modifier) {
                                         if (eventDays.contains(dayNumber)) {
                                             Box(
                                                 modifier = Modifier
-                                                    .align(Alignment.TopEnd)
                                                     .padding(top = 2.dp, end = 2.dp)
                                                     .size(4.dp)
                                                     .background(if (isToday) Color.White else LocalCyberColors.current.accent, CircleShape)
+                                                    .align(Alignment.TopEnd)
                                             )
                                         }
                                     }

@@ -42,7 +42,7 @@ val customIconMap: Map<String, ImageVector> = mapOf(
     "com.fitbit.FitbitMobile" to Icons.Outlined.FavoriteBorder, // Health (Google Fit等)
     "com.google.android.apps.healthdata" to Icons.Outlined.FavoriteBorder, // Health Connect
     "com.getkeepsafe.app" to Icons.Outlined.Key, // Keepsafe
-    "com.google.android.apps.messaging" to Icons.Outlined.Message, // メッセージ (AutoMirroredは一部環境でエラーになるため戻す)
+    "com.google.android.apps.messaging" to @Suppress("DEPRECATION") Icons.Outlined.Message,
     "com.google.android.apps.wear.companion" to Icons.Outlined.Watch, //スマートウォッチ
     "com.google.ar.lens" to Icons.Outlined.CenterFocusStrong //レンズ
 )

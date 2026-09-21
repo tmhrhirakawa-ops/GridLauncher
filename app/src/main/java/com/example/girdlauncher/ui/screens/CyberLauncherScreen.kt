@@ -73,7 +73,7 @@ fun CyberLauncherScreen() {
         }
     }
 
-    if (appSelectorTarget != null && targetIndex != null) {
+    if ((appSelectorTarget != null) && (targetIndex != null)) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppSelectorDialog(
                 allApps = allApps,

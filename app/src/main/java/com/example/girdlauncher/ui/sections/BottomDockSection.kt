@@ -53,7 +53,7 @@ fun BottomDockSection(
             modifier = Modifier.fillMaxWidth().height(60.dp)
         ) {
             items(maxDockApps) { index ->
-                if (index < apps.size && apps[index] != null) {
+                if ((index < apps.size) && (apps[index] != null)) {
                     val appInfo = apps[index]!!
                     val hasNotif = activeNotifications.contains(appInfo.packageName)
                     DockAppCard(
@@ -65,8 +65,8 @@ fun BottomDockSection(
                         hasNotification = hasNotif,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                            if (launchIntent != null) {
-                                context.startActivity(launchIntent)
+                            launchIntent?.let {
+                                context.startActivity(it)
                             }
                         },
                         onLongClick = onLongClick,
@@ -106,8 +106,8 @@ fun BottomDockSection(
                         hasNotification = hasNotif,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                            if (launchIntent != null) {
-                                context.startActivity(launchIntent)
+                            launchIntent?.let {
+                                context.startActivity(it)
                             }
                         },
                         onLongClick = onLongClick,
