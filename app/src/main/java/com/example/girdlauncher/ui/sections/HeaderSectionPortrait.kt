@@ -14,8 +14,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.girdlauncher.ui.components.NowPlayingWidget
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import com.example.girdlauncher.util.CyberNotificationListener
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,9 +25,11 @@ import java.util.Locale
 
 /**
  * 縦画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
+ *
+ * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
  */
 @Composable
-fun HeaderSectionPortrait() {
+fun HeaderSectionPortrait(nowPlaying: CyberNotificationListener.NowPlayingInfo? = null) {
     val context = LocalContext.current
     
     // リアルタイム時計とバッテリーの状態管理
@@ -82,5 +86,12 @@ fun HeaderSectionPortrait() {
             }
             Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.core, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
+    }
+
+    // 再生中のメディアがあれば、バッテリー表示の下に幅いっぱいで表示する
+    // （縦画面は横幅が狭く、同じ行に収めるとバッテリー表示と衝突するため）
+    if (nowPlaying != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        NowPlayingWidget(info = nowPlaying, modifier = Modifier.fillMaxWidth(), compact = true)
     }
 }

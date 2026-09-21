@@ -65,6 +65,8 @@ fun CyberLauncherScreen() {
 
     // 通知の監視
     val activeNotifications by CyberNotificationListener.activeNotifications.collectAsState()
+    // 再生中メディアの監視
+    val nowPlaying by CyberNotificationListener.nowPlaying.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -149,7 +151,7 @@ fun CyberLauncherScreen() {
             ) {
                 if (isPortrait) {
                     // 縦画面（ポートレート/カバー画面）のレイアウト
-                    HeaderSectionPortrait()
+                    HeaderSectionPortrait(nowPlaying = nowPlaying)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Box(modifier = Modifier.weight(1.5f)) {
@@ -205,7 +207,7 @@ fun CyberLauncherScreen() {
                     }
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape()
+                    HeaderSectionLandscape(nowPlaying = nowPlaying)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(modifier = Modifier.weight(1f)) {
