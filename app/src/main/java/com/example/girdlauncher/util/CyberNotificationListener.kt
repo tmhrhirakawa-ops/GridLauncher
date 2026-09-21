@@ -33,8 +33,17 @@ class CyberNotificationListener : NotificationListenerService() {
 
     private fun updateNotifications() {
         try {
-            val notifications = activeNotifications
-            val packages = notifications.map { it.packageName }.toSet()
+            val notifications = getActiveNotifications() ?: return
+            
+            val packages = notifications.filter { sbn ->
+                // 通知バッジ（未読マーク）としてふさわしいものだけをフィルタリング
+                // 常駐通知（音楽プレイヤー、歩数計、システムバックグラウンドなど）は除外する
+                val isOngoing = sbn.isOngoing
+                val isForeground = (sbn.notification.flags and android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0
+                
+                !isOngoing && !isForeground
+            }.map { it.packageName }.toSet()
+            
             _activeNotifications.value = packages
         } catch (e: Exception) {
             // セキュリティ例外などで取得できない場合は無視する

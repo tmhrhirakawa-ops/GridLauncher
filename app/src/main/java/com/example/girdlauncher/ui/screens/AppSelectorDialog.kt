@@ -67,6 +67,7 @@ fun AppSelectorDialog(allApps: List<AppInfo>, onDismiss: () -> Unit, onAppSelect
                 items(filteredApps) { appInfo ->
                     AppCard(
                         name = appInfo.label,
+                        packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.aspectRatio(2.5f), // ACCESS GRIDの比率に近い形
                         onClick = {
