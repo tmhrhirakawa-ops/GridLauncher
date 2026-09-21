@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -42,6 +43,19 @@ private data class PendingRemoval(
     val packageName: String,
     val label: String
 )
+
+/**
+ * ヘッダー下部に引く区切り線。全モード（横画面・縦画面（小）・縦画面（大））共通で使う。
+ */
+@Composable
+private fun HeaderDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(LocalCyberColors.current.border)
+    )
+}
 
 /**
  * ランチャーのメイン画面。デバイスの向きや画面サイズに基づいて、
@@ -266,11 +280,13 @@ fun CyberLauncherScreen() {
                         bottom = if (isPortrait) 16.dp else 24.dp
                     )
             ) {
-                if (isPortrait) {
-                    // 縦画面（ポートレート/カバー画面）のレイアウト
+                if (isPortrait && screenWidthDp < 600) {
+                    // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                     HeaderSectionPortrait(nowPlaying = nowPlaying)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     Box(modifier = Modifier.weight(1.5f)) {
                         AccessGridSection(
                             apps = gridApps,
@@ -297,12 +313,7 @@ fun CyberLauncherScreen() {
 
                     // ウィジェットエリア
                     Row(modifier = Modifier.weight(1f)) {
-                        // 画面幅が狭い（おおよそ600dp未満のスマホサイズのポートレートなど）場合はDeviceStatusを表示、広い場合はカレンダーを表示
-                        if (screenWidthDp < 600) {
-                            DeviceStatusSection(modifier = Modifier.weight(1.5f))
-                        } else {
-                            CalendarSection(modifier = Modifier.weight(2f)) // カレンダーウィジェットを広く
-                        }
+                        DeviceStatusSection(modifier = Modifier.weight(1.5f))
                         Spacer(modifier = Modifier.width(12.dp))
                         // 横画面と同じ2列×3行のQUICK ACCESSを使用する
                         QuickAccessSection(
@@ -319,11 +330,68 @@ fun CyberLauncherScreen() {
                             }
                         )
                     }
+                } else if (isPortrait) {
+                    // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
+                    HeaderSectionPortrait(nowPlaying = nowPlaying, isLarge = true)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // アクセスグリッドの表示領域は（小）よりも縮小し、下のウィジェットエリアを広く取る
+                    Box(modifier = Modifier.weight(1f)) {
+                        AccessGridSection(
+                            apps = gridApps,
+                            columns = 4,
+                            rows = 3,
+                            // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
+                            isPortrait = false,
+                            isEditMode = isEditMode,
+                            isWallpaperMode = isWallpaperMode,
+                            activeNotifications = activeNotifications, // 追加
+                            onAddClick = { index ->
+                                appSelectorTarget = "grid"
+                                targetIndex = index
+                            },
+                            onLongClick = { isEditMode = true },
+                            onRemoveClick = { index ->
+                                gridApps.getOrNull(index)?.let { appInfo ->
+                                    pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
+                                }
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // ウィジェットエリア: 左側にカレンダー、右側にSYSTEM MONITORとQUICK ACCESSを縦に並べる
+                    Row(modifier = Modifier.weight(1.5f)) {
+                        CalendarSection(modifier = Modifier.weight(1.4f))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            DeviceStatusSection(modifier = Modifier.weight(1f))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            QuickAccessSection(
+                                modifier = Modifier.weight(1f),
+                                isWallpaperMode = isWallpaperMode,
+                                onWallpaperToggle = {
+                                    isWallpaperMode = !isWallpaperMode
+                                    prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
+                                },
+                                onThemeToggle = {
+                                    val newTheme = !isDarkTheme
+                                    isDarkTheme = newTheme
+                                    prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                                }
+                            )
+                        }
+                    }
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
                     HeaderSectionLandscape(nowPlaying = nowPlaying)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     Row(modifier = Modifier.weight(1f)) {
                         // 左側: アプリグリッド (weight 1f)
                         Box(modifier = Modifier.weight(1f)) {
