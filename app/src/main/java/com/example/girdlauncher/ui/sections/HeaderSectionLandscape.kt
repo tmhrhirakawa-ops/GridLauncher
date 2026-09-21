@@ -20,12 +20,20 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 
 /**
  * 横画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
  */
 @Composable
-fun HeaderSectionLandscape() {
+fun HeaderSectionLandscape(
+    isWallpaperMode: Boolean = false,
+    onWallpaperToggle: () -> Unit = {}
+) {
     val context = LocalContext.current
     
     // リアルタイム時計とバッテリーの状態管理
@@ -67,6 +75,16 @@ fun HeaderSectionLandscape() {
         
         // バッテリー残量とシステムステータスのUI
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 壁紙切り替えボタン
+            IconButton(onClick = onWallpaperToggle) {
+                Icon(
+                    imageVector = if (isWallpaperMode) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                    contentDescription = "Toggle Wallpaper",
+                    tint = LocalCyberColors.current.accent
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            
             Column(horizontalAlignment = Alignment.End) {
                 Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
                 Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text)

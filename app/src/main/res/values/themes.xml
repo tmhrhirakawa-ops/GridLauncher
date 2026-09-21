@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.GirdLauncher" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.GirdLauncher" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- 壁紙を透過表示するための設定 -->
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+    </style>
 </resources>

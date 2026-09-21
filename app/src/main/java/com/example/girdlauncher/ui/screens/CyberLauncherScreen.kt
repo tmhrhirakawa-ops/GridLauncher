@@ -17,6 +17,7 @@ import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.getInstalledApps
 import com.example.girdlauncher.util.CyberNotificationListener
+import androidx.compose.ui.graphics.Color
 
 /**
  * ランチャーのメイン画面。デバイスの向きや画面サイズに基づいて、
@@ -55,6 +56,9 @@ fun CyberLauncherScreen() {
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     
     var isEditMode by remember { mutableStateOf(false) } // 編集モード
+    
+    // 壁紙透過モード
+    var isWallpaperMode by remember { mutableStateOf(prefs.getBoolean("is_wallpaper_mode", false)) }
 
     // 通知の監視
     val activeNotifications by CyberNotificationListener.activeNotifications.collectAsState()
@@ -126,7 +130,7 @@ fun CyberLauncherScreen() {
                     }
                 }
                 .clickable { isEditMode = false }, // 空白タップで編集モード解除
-            color = LocalCyberColors.current.bg
+            color = if (isWallpaperMode) Color.Transparent else LocalCyberColors.current.bg
         ) {
             Column(
                 modifier = Modifier
@@ -140,7 +144,13 @@ fun CyberLauncherScreen() {
             ) {
                 if (isPortrait) {
                     // 縦画面（ポートレート/カバー画面）のレイアウト
-                    HeaderSectionPortrait()
+                    HeaderSectionPortrait(
+                        isWallpaperMode = isWallpaperMode,
+                        onWallpaperToggle = {
+                            isWallpaperMode = !isWallpaperMode
+                            prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                        }
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Box(modifier = Modifier.weight(1.5f)) {
@@ -190,7 +200,13 @@ fun CyberLauncherScreen() {
                     }
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape()
+                    HeaderSectionLandscape(
+                        isWallpaperMode = isWallpaperMode,
+                        onWallpaperToggle = {
+                            isWallpaperMode = !isWallpaperMode
+                            prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                        }
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(modifier = Modifier.weight(1f)) {
