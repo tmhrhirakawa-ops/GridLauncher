@@ -4,6 +4,16 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Environment
 import android.os.StatFs
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,9 +23,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.ui.theme.CyberFont
@@ -33,7 +46,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     
     // 定期的に状態を更新するための状態変数
-    var trigger by remember { mutableStateOf(0) }
+    var trigger by remember { mutableIntStateOf(0) }
     
     LaunchedEffect(Unit) {
         while (true) {
@@ -65,14 +78,45 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
 
     // キャッシュクリア風のエフェクト用
     var isOptimizing by remember { mutableStateOf(false) }
-    
+    // 最適化で解放できたメモリ量（バイト）。nullの間は結果表示を隠す
+    var optimizeFreedBytes by remember { mutableStateOf<Long?>(null) }
+
     LaunchedEffect(isOptimizing) {
         if (isOptimizing) {
+            val before = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
+            System.gc()
             delay(1500) // 最適化中...の演出時間
-            trigger++ // 再取得
+            System.gc()
+            val after = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
+
+            trigger++ // ゲージを再取得
+            optimizeFreedBytes = after - before
             isOptimizing = false
         }
     }
+
+    // 結果表示を数秒後に自動で消す
+    LaunchedEffect(optimizeFreedBytes) {
+        if (optimizeFreedBytes != null) {
+            delay(3000)
+            optimizeFreedBytes = null
+        }
+    }
+
+    // 最適化中の演出用アニメーション
+    val infiniteTransition = rememberInfiniteTransition(label = "optimizeAnim")
+    val iconRotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing)),
+        label = "iconRotation"
+    )
+    val scanProgress by infiniteTransition.animateFloat(
+        initialValue = -0.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(animation = tween(1100, easing = LinearEasing)),
+        label = "scanProgress"
+    )
 
     Surface(
         shape = RoundedCornerShape(6.dp),
@@ -145,22 +189,72 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                 Surface(
                     onClick = {
                         if (!isOptimizing) {
+                            optimizeFreedBytes = null
                             isOptimizing = true
-                            System.gc() 
                         }
                     },
                     shape = RoundedCornerShape(4.dp),
                     color = if (isOptimizing) LocalCyberColors.current.border else LocalCyberColors.current.accent,
                     modifier = Modifier.fillMaxWidth().height(28.dp) // 高さを細くして被りを防ぐ
                 ) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        if (isOptimizing) {
+                            // スキャンしているような光の帯が横切るエフェクト
+                            Box(
+                                modifier = Modifier
+                                    .width(maxWidth * 0.4f)
+                                    .fillMaxHeight()
+                                    .offset { IntOffset((maxWidth * scanProgress).roundToPx(), 0) }
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color.Transparent,
+                                                Color.White.copy(alpha = 0.45f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Text(
+                                text = if (isOptimizing) "⚙" else "⚡",
+                                fontSize = 14.sp,
+                                color = Color.White,
+                                modifier = if (isOptimizing) {
+                                    Modifier.graphicsLayer { rotationZ = iconRotation }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // 最適化結果の表示（数秒でフェードアウト）
+                AnimatedVisibility(
+                    visible = optimizeFreedBytes != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    val freedMB = (optimizeFreedBytes ?: 0L) / (1024 * 1024)
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Text(if (isOptimizing) "⌛" else "⚡", fontSize = 14.sp, color = Color.White)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (freedMB > 0) "✔ ${freedMB}MB FREED" else "✔ SYSTEM OPTIMAL",
+                            fontFamily = CyberFont,
+                            fontSize = 9.sp,
+                            color = LocalCyberColors.current.accent,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

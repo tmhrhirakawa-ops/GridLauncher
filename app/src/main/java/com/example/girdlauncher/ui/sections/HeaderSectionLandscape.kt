@@ -14,8 +14,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.girdlauncher.ui.components.NowPlayingWidget
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import com.example.girdlauncher.util.CyberNotificationListener
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,14 +25,16 @@ import java.util.Locale
 
 /**
  * 横画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
+ *
+ * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
  */
 @Composable
-fun HeaderSectionLandscape() {
+fun HeaderSectionLandscape(nowPlaying: CyberNotificationListener.NowPlayingInfo? = null) {
     val context = LocalContext.current
     
     // リアルタイム時計とバッテリーの状態管理
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    var batteryLevel by remember { mutableStateOf(100) }
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var batteryLevel by remember { mutableIntStateOf(100) }
     
     // 1秒ごとに時刻とバッテリー状態を更新するコルーチン
     LaunchedEffect(Unit) {
@@ -67,6 +71,10 @@ fun HeaderSectionLandscape() {
         
         // バッテリー残量とシステムステータスのUI
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (nowPlaying != null) {
+                NowPlayingWidget(info = nowPlaying)
+                Spacer(modifier = Modifier.width(16.dp))
+            }
             Column(horizontalAlignment = Alignment.End) {
                 Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
                 Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text)

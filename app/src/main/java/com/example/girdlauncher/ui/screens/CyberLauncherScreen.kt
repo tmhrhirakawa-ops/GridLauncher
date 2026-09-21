@@ -12,7 +12,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.getInstalledApps
@@ -39,13 +45,13 @@ fun CyberLauncherScreen() {
     }
 
     // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var gridPackages by remember { 
-        mutableStateOf(prefs.getString("grid_apps", "")?.split(",")?.toMutableList() ?: mutableListOf<String>()) 
+    var gridPackages by remember {
+        mutableStateOf(prefs.getString("grid_apps", "")?.split(",") ?: emptyList())
     }
-    
+
     // DockApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var dockPackages by remember { 
-        mutableStateOf(prefs.getString("dock_apps", "")?.split(",")?.toMutableList() ?: mutableListOf<String>()) 
+    var dockPackages by remember {
+        mutableStateOf(prefs.getString("dock_apps", "")?.split(",") ?: emptyList())
     }
 
     val gridApps = gridPackages.map { pkg -> if (pkg.isEmpty()) null else allApps.find { it.packageName == pkg } }
@@ -56,17 +62,36 @@ fun CyberLauncherScreen() {
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     
     var isEditMode by remember { mutableStateOf(false) } // 編集モード
-    
+
+    // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
+    // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                isEditMode = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // 壁紙透過モード
     var isWallpaperMode by remember { mutableStateOf(prefs.getBoolean("is_wallpaper_mode", false)) }
 
     // 通知の監視
     val activeNotifications by CyberNotificationListener.activeNotifications.collectAsState()
+    // 再生中メディアの監視
+    val nowPlaying by CyberNotificationListener.nowPlaying.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     // 画面の幅（dp）を取得
-    val screenWidthDp = configuration.screenWidthDp
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val screenWidthDp = with(density) { windowInfo.containerSize.width.toDp().value.toInt() }
 
     if (showAllAppsDrawer) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -93,7 +118,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         gridPackages = newPackages
-                        prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                     } else if (appSelectorTarget == "dock") {
                         val newPackages = dockPackages.toMutableList()
                         while (newPackages.size <= targetIndex!!) {
@@ -101,7 +126,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         dockPackages = newPackages
-                        prefs.edit().putString("dock_apps", newPackages.joinToString(",")).apply()
+                        prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
                     }
                     appSelectorTarget = null
                     targetIndex = null
@@ -144,7 +169,7 @@ fun CyberLauncherScreen() {
             ) {
                 if (isPortrait) {
                     // 縦画面（ポートレート/カバー画面）のレイアウト
-                    HeaderSectionPortrait()
+                    HeaderSectionPortrait(nowPlaying = nowPlaying)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Box(modifier = Modifier.weight(1.5f)) {
@@ -166,7 +191,7 @@ fun CyberLauncherScreen() {
                                 if (index < newPackages.size) {
                                     newPackages[index] = ""
                                     gridPackages = newPackages
-                                    prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                                 }
                             }
                         )
@@ -189,18 +214,18 @@ fun CyberLauncherScreen() {
                             isWallpaperMode = isWallpaperMode,
                             onWallpaperToggle = {
                                 isWallpaperMode = !isWallpaperMode
-                                prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                                prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
                             },
                             onThemeToggle = {
                                 val newTheme = !isDarkTheme
                                 isDarkTheme = newTheme
-                                prefs.edit().putBoolean("is_dark_theme", newTheme).apply()
+                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
                             }
                         )
                     }
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape()
+                    HeaderSectionLandscape(nowPlaying = nowPlaying)
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(modifier = Modifier.weight(1f)) {
@@ -224,7 +249,7 @@ fun CyberLauncherScreen() {
                                     if (index < newPackages.size) {
                                         newPackages[index] = ""
                                         gridPackages = newPackages
-                                        prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                                     }
                                 }
                             )
@@ -246,12 +271,12 @@ fun CyberLauncherScreen() {
                                     isWallpaperMode = isWallpaperMode,
                                     onWallpaperToggle = {
                                         isWallpaperMode = !isWallpaperMode
-                                        prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                                        prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
                                     },
                                     onThemeToggle = {
                                         val newTheme = !isDarkTheme
                                         isDarkTheme = newTheme
-                                        prefs.edit().putBoolean("is_dark_theme", newTheme).apply()
+                                        prefs.edit { putBoolean("is_dark_theme", newTheme) }
                                     }
                                 )
                             }
@@ -276,7 +301,7 @@ fun CyberLauncherScreen() {
                         if (index < newPackages.size) {
                             newPackages[index] = ""
                             dockPackages = newPackages
-                            prefs.edit().putString("dock_apps", newPackages.joinToString(",")).apply()
+                            prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
                         }
                     }
                 )

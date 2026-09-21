@@ -25,7 +25,8 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  *
  * @param apps 表示するアプリのリスト。
  * @param isEditMode UIが編集モードかどうか。
- * @param activeNotifications 通知が来ているアプリのパッケージ名のセット。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick アプリが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
@@ -35,7 +36,7 @@ fun BottomDockSection(
     apps: List<AppInfo?>,
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
-    activeNotifications: Set<String> = emptySet(),
+    activeNotifications: Map<String, Int> = emptyMap(),
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: (Int) -> Unit = {}
@@ -56,14 +57,14 @@ fun BottomDockSection(
             items(maxDockApps) { index ->
                 if ((index < apps.size) && (apps[index] != null)) {
                     val appInfo = apps[index]!!
-                    val hasNotif = activeNotifications.contains(appInfo.packageName)
+                    val notifCount = activeNotifications[appInfo.packageName] ?: 0
                     DockAppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.fillMaxHeight().aspectRatio(1.8f),
                         isEditMode = isEditMode,
-                        hasNotification = hasNotif,
+                        notificationCount = notifCount,
                         isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
@@ -98,14 +99,14 @@ fun BottomDockSection(
             for (index in 0 until maxDockApps) {
                 if (index < apps.size && apps[index] != null) {
                     val appInfo = apps[index]!!
-                    val hasNotif = activeNotifications.contains(appInfo.packageName)
+                    val notifCount = activeNotifications[appInfo.packageName] ?: 0
                     DockAppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         isEditMode = isEditMode,
-                        hasNotification = hasNotif,
+                        notificationCount = notifCount,
                         isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
