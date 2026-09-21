@@ -1,6 +1,11 @@
 package com.example.girdlauncher.ui.components
 
 import android.graphics.drawable.Drawable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -165,18 +170,13 @@ fun DockAppCard(
                 }
             }
             
-            if (isEditMode) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(2.dp)
-                        .size(16.dp)
-                        .background(Color.Red, RoundedCornerShape(8.dp))
-                        .clickable { onRemoveClick() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("×", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
+            AnimatedVisibility(
+                visible = isEditMode,
+                enter = scaleIn(initialScale = 0.4f) + fadeIn(),
+                exit = scaleOut(targetScale = 0.4f) + fadeOut(),
+                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+            ) {
+                RemoveBadge(onClick = onRemoveClick, size = 16.dp)
             }
         }
     }

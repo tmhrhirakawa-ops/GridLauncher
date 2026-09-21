@@ -16,6 +16,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.getInstalledApps
@@ -59,7 +62,22 @@ fun CyberLauncherScreen() {
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     
     var isEditMode by remember { mutableStateOf(false) } // 編集モード
-    
+
+    // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
+    // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                isEditMode = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // 壁紙透過モード
     var isWallpaperMode by remember { mutableStateOf(prefs.getBoolean("is_wallpaper_mode", false)) }
 
