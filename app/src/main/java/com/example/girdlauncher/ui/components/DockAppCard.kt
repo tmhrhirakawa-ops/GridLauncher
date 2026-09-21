@@ -40,7 +40,7 @@ import com.example.girdlauncher.util.customIconMap
  * @param packageName アプリのパッケージ名。カスタムアイコンの判定に使用。
  * @param appCategory アプリのカテゴリ。フォールバックアイコンの判定に使用。
  * @param isEditMode UIが編集モードかどうか。
- * @param hasNotification 通知（またはアプリバッジ）があるかどうか。
+ * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
@@ -55,7 +55,7 @@ fun DockAppCard(
     packageName: String = "",
     appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED,
     isEditMode: Boolean = false,
-    hasNotification: Boolean = false,
+    notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
@@ -143,14 +143,26 @@ fun DockAppCard(
                 )
             }
             
-            if (hasNotification && !isEditMode) {
+            if (notificationCount > 0 && !isEditMode) {
+                val label = if (notificationCount > 99) "99+" else notificationCount.toString()
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(8.dp)
-                        .background(LocalCyberColors.current.accent, RoundedCornerShape(4.dp))
-                )
+                        .padding(2.dp)
+                        .defaultMinSize(minWidth = 14.dp, minHeight = 14.dp)
+                        .background(LocalCyberColors.current.accent, RoundedCornerShape(7.dp))
+                        .padding(horizontal = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        fontFamily = CyberFont,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                }
             }
             
             if (isEditMode) {

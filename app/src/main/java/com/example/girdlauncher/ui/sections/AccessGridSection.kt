@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
  * @param isPortrait デバイスの向きが縦（ポートレート）かどうか。
  * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
- * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名のセット。
+ * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick アプリが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
@@ -43,7 +43,7 @@ fun AccessGridSection(
     isPortrait: Boolean = false,
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
-    activeNotifications: Set<String> = emptySet(),
+    activeNotifications: Map<String, Int> = emptyMap(),
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: (Int) -> Unit = {}
@@ -97,14 +97,14 @@ fun AccessGridSection(
                             
                             if (appIndex < pageApps.size && pageApps[appIndex] != null) {
                                 val appInfo = pageApps[appIndex]!!
-                                val hasNotif = activeNotifications.contains(appInfo.packageName)
+                                val notifCount = activeNotifications[appInfo.packageName] ?: 0
                                 AppCard(
                                     name = appInfo.label,
                                     packageName = appInfo.packageName,
                                     icon = appInfo.icon,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     isEditMode = isEditMode,
-                                    hasNotification = hasNotif,
+                                    notificationCount = notifCount,
                                     isWallpaperMode = isWallpaperMode,
                                     onClick = {
                                         val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)

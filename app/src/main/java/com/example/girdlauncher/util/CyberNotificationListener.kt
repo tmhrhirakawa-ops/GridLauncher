@@ -35,8 +35,9 @@ class CyberNotificationListener : NotificationListenerService() {
     )
 
     companion object {
-        private val _activeNotifications = MutableStateFlow<Set<String>>(emptySet())
-        val activeNotifications: StateFlow<Set<String>> = _activeNotifications
+        // パッケージ名 -> 通知件数（バッジ用件数）
+        private val _activeNotifications = MutableStateFlow<Map<String, Int>>(emptyMap())
+        val activeNotifications: StateFlow<Map<String, Int>> = _activeNotifications
 
         private val _nowPlaying = MutableStateFlow<NowPlayingInfo?>(null)
         val nowPlaying: StateFlow<NowPlayingInfo?> = _nowPlaying
@@ -145,17 +146,19 @@ class CyberNotificationListener : NotificationListenerService() {
         try {
             val notifications = getActiveNotifications() ?: return
 
-            val packages = notifications.filter { sbn ->
+            val counts = notifications.filter { sbn ->
                 // 通知マークとしてふさわしいものだけをフィルタリング
                 // フォアグラウンドサービス通知（音楽プレイヤー、歩数計など）は除外する
                 // ただし、アプリのバッジ（未読件数）は常駐通知（isOngoing）として
                 // 実装されることが多いため、isOngoingでは除外しない
                 val isForeground = (sbn.notification.flags and android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0
+                // グループ通知の「まとめ」通知は個別の通知ではないため件数に含めない
+                val isGroupSummary = (sbn.notification.flags and android.app.Notification.FLAG_GROUP_SUMMARY) != 0
 
-                !isForeground
-            }.map { it.packageName }.toSet()
+                !isForeground && !isGroupSummary
+            }.groupingBy { it.packageName }.eachCount()
 
-            _activeNotifications.value = packages
+            _activeNotifications.value = counts
         } catch (e: Exception) {
             // セキュリティ例外などで取得できない場合は無視する
             e.printStackTrace()
