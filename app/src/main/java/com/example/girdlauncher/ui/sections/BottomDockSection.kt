@@ -30,6 +30,7 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick アプリが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
+ * @param onExitEditMode 編集モード中に削除アイコン以外の部分がタップされたときのコールバック。
  */
 @Composable
 fun BottomDockSection(
@@ -39,7 +40,8 @@ fun BottomDockSection(
     activeNotifications: Map<String, Int> = emptyMap(),
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
-    onRemoveClick: (Int) -> Unit = {}
+    onRemoveClick: (Int) -> Unit = {},
+    onExitEditMode: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -67,9 +69,13 @@ fun BottomDockSection(
                         notificationCount = notifCount,
                         isWallpaperMode = isWallpaperMode,
                         onClick = {
-                            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                            launchIntent?.let {
-                                context.startActivity(it)
+                            if (isEditMode) {
+                                onExitEditMode()
+                            } else {
+                                val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
+                                launchIntent?.let {
+                                    context.startActivity(it)
+                                }
                             }
                         },
                         onLongClick = onLongClick,
@@ -78,7 +84,7 @@ fun BottomDockSection(
                 } else {
                     // 空きスロット（タップでアプリ追加）
                     Surface(
-                        onClick = { onAddClick(index) },
+                        onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
                         shape = RoundedCornerShape(4.dp),
                         color = Color.Transparent,
                         border = BorderStroke(1.dp, LocalCyberColors.current.border),
@@ -109,9 +115,13 @@ fun BottomDockSection(
                         notificationCount = notifCount,
                         isWallpaperMode = isWallpaperMode,
                         onClick = {
-                            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                            launchIntent?.let {
-                                context.startActivity(it)
+                            if (isEditMode) {
+                                onExitEditMode()
+                            } else {
+                                val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
+                                launchIntent?.let {
+                                    context.startActivity(it)
+                                }
                             }
                         },
                         onLongClick = onLongClick,
@@ -120,7 +130,7 @@ fun BottomDockSection(
                 } else {
                     // 空きスロット（タップでアプリ追加）
                     Surface(
-                        onClick = { onAddClick(index) },
+                        onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
                         shape = RoundedCornerShape(4.dp),
                         color = Color.Transparent,
                         border = BorderStroke(1.dp, LocalCyberColors.current.border),

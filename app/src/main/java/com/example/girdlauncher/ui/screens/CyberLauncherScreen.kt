@@ -305,7 +305,8 @@ fun CyberLauncherScreen() {
                                 gridApps.getOrNull(index)?.let { appInfo ->
                                     pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
                                 }
-                            }
+                            },
+                            onExitEditMode = { isEditMode = false }
                         )
                     }
 
@@ -357,7 +358,8 @@ fun CyberLauncherScreen() {
                                 gridApps.getOrNull(index)?.let { appInfo ->
                                     pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
                                 }
-                            }
+                            },
+                            onExitEditMode = { isEditMode = false }
                         )
                     }
 
@@ -412,7 +414,8 @@ fun CyberLauncherScreen() {
                                     gridApps.getOrNull(index)?.let { appInfo ->
                                         pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
                                     }
-                                }
+                                },
+                                onExitEditMode = { isEditMode = false }
                             )
                         }
                         
@@ -461,7 +464,8 @@ fun CyberLauncherScreen() {
                         dockApps.getOrNull(index)?.let { appInfo ->
                             pendingRemoval = PendingRemoval("dock", index, appInfo.packageName, appInfo.label)
                         }
-                    }
+                    },
+                    onExitEditMode = { isEditMode = false }
                 )
                 
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
