@@ -5,6 +5,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Wallpaper as WallpaperFilled
+import androidx.compose.material.icons.outlined.Wallpaper as WallpaperOutlined
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,10 +26,17 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
  *
  * @param modifier レイアウトに適用するModifier。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param onWallpaperToggle 壁紙透過切り替えボタンがクリックされたときのコールバック。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  */
 @Composable
-fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit = {}) {
+fun QuickAccessSection(
+    modifier: Modifier = Modifier,
+    isWallpaperMode: Boolean = false,
+    onWallpaperToggle: () -> Unit = {},
+    onThemeToggle: () -> Unit = {}
+) {
     val context = LocalContext.current
     Surface(
         shape = RoundedCornerShape(6.dp),
@@ -34,21 +45,45 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
         modifier = modifier.fillMaxWidth()
     ) {
          Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier
-                    .size(6.dp)
-                    .background(LocalCyberColors.current.accent))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier
+                        .size(6.dp)
+                        .background(LocalCyberColors.current.accent))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
+                    Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+                }
+                // 壁紙切り替えボタン
+                Surface(
+                    onClick = onWallpaperToggle,
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isWallpaperMode) LocalCyberColors.current.accent.copy(alpha = 0.15f) else androidx.compose.ui.graphics.Color.Transparent,
+                    border = BorderStroke(1.dp, if (isWallpaperMode) LocalCyberColors.current.accent else LocalCyberColors.current.border),
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isWallpaperMode) Icons.Filled.WallpaperFilled else Icons.Outlined.WallpaperOutlined,
+                            contentDescription = "Toggle Wallpaper",
+                            tint = if (isWallpaperMode) LocalCyberColors.current.accent else LocalCyberColors.current.text.copy(alpha = 0.5f),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 1段目
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     QuickButton(
-                        text = "SETTINGS", 
-                        modifier = Modifier.weight(1f), 
+                        text = "SETTINGS",
+                        modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -57,8 +92,9 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
                         }
                     )
                     QuickButton(
-                        text = "WI-FI", 
+                        text = "WI-FI",
                         modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val intent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -70,8 +106,9 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
                 // 2段目
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     QuickButton(
-                        text = "DISPLAY", 
+                        text = "DISPLAY",
                         modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val intent = Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -80,8 +117,9 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
                         }
                     )
                     QuickButton(
-                        text = "BLUETOOTH", 
+                        text = "BLUETOOTH",
                         modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -93,8 +131,9 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
                 // 3段目
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     QuickButton(
-                        text = "DEVELOP", 
+                        text = "DEVELOP",
                         modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -110,8 +149,9 @@ fun QuickAccessSection(modifier: Modifier = Modifier, onThemeToggle: () -> Unit 
                         }
                     )
                     QuickButton(
-                        text = "THEME", 
+                        text = "THEME",
                         modifier = Modifier.weight(1f),
+                        isWallpaperMode = isWallpaperMode,
                         onClick = onThemeToggle
                     )
                 }

@@ -34,6 +34,7 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
 fun BottomDockSection(
     apps: List<AppInfo?>,
     isEditMode: Boolean = false,
+    isWallpaperMode: Boolean = false,
     activeNotifications: Set<String> = emptySet(),
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
@@ -63,6 +64,7 @@ fun BottomDockSection(
                         modifier = Modifier.fillMaxHeight().aspectRatio(1.8f),
                         isEditMode = isEditMode,
                         hasNotification = hasNotif,
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
                             launchIntent?.let {
@@ -104,6 +106,7 @@ fun BottomDockSection(
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         isEditMode = isEditMode,
                         hasNotification = hasNotif,
+                        isWallpaperMode = isWallpaperMode,
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
                             launchIntent?.let {

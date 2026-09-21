@@ -41,6 +41,7 @@ fun AccessGridSection(
     rows: Int,
     isPortrait: Boolean = false,
     isEditMode: Boolean = false,
+    isWallpaperMode: Boolean = false,
     activeNotifications: Set<String> = emptySet(),
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
@@ -103,6 +104,7 @@ fun AccessGridSection(
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     isEditMode = isEditMode,
                                     hasNotification = hasNotif,
+                                    isWallpaperMode = isWallpaperMode,
                                     onClick = {
                                         val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
                                         launchIntent?.let {

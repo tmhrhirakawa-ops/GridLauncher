@@ -23,11 +23,11 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  * @param onClick ボタンがクリックされたときに呼び出されるコールバック。
  */
 @Composable
-fun QuickButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+fun QuickButton(text: String, modifier: Modifier = Modifier, isWallpaperMode: Boolean = false, onClick: () -> Unit = {}) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(4.dp),
-        color = LocalCyberColors.current.panel,
+        color = if (isWallpaperMode) LocalCyberColors.current.panel.copy(alpha = 0.55f) else LocalCyberColors.current.panel,
         border = BorderStroke(1.dp, LocalCyberColors.current.border),
         modifier = modifier.height(32.dp)
     ) {

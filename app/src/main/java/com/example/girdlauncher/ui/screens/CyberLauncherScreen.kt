@@ -144,13 +144,7 @@ fun CyberLauncherScreen() {
             ) {
                 if (isPortrait) {
                     // 縦画面（ポートレート/カバー画面）のレイアウト
-                    HeaderSectionPortrait(
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
-                        }
-                    )
+                    HeaderSectionPortrait()
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Box(modifier = Modifier.weight(1.5f)) {
@@ -160,9 +154,10 @@ fun CyberLauncherScreen() {
                             rows = 3,
                             isPortrait = isPortrait, // isPortrait を渡す
                             isEditMode = isEditMode,
+                            isWallpaperMode = isWallpaperMode,
                             activeNotifications = activeNotifications, // 追加
-                            onAddClick = { index -> 
-                                appSelectorTarget = "grid" 
+                            onAddClick = { index ->
+                                appSelectorTarget = "grid"
                                 targetIndex = index
                             },
                             onLongClick = { isEditMode = true },
@@ -176,9 +171,9 @@ fun CyberLauncherScreen() {
                             }
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(16.dp))
-                    
+
                     // ウィジェットエリア
                     Row(modifier = Modifier.weight(1f)) {
                         // 画面幅が狭い（おおよそ600dp未満のスマホサイズのポートレートなど）場合はDeviceStatusを表示、広い場合はカレンダーを表示
@@ -191,6 +186,11 @@ fun CyberLauncherScreen() {
                         // 横画面と同じ2列×3行のQUICK ACCESSを使用する
                         QuickAccessSection(
                             modifier = Modifier.weight(1f),
+                            isWallpaperMode = isWallpaperMode,
+                            onWallpaperToggle = {
+                                isWallpaperMode = !isWallpaperMode
+                                prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                            },
                             onThemeToggle = {
                                 val newTheme = !isDarkTheme
                                 isDarkTheme = newTheme
@@ -200,13 +200,7 @@ fun CyberLauncherScreen() {
                     }
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape(
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
-                        }
-                    )
+                    HeaderSectionLandscape()
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Row(modifier = Modifier.weight(1f)) {
@@ -218,6 +212,7 @@ fun CyberLauncherScreen() {
                                 rows = 5,
                                 isPortrait = isPortrait, // isPortrait を渡す
                                 isEditMode = isEditMode,
+                                isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications, // 追加
                                 onAddClick = { index -> 
                                     appSelectorTarget = "grid" 
@@ -248,6 +243,11 @@ fun CyberLauncherScreen() {
                                 // QUICK ACCESS は横幅を戻す
                                 QuickAccessSection(
                                     modifier = Modifier.weight(1f),
+                                    isWallpaperMode = isWallpaperMode,
+                                    onWallpaperToggle = {
+                                        isWallpaperMode = !isWallpaperMode
+                                        prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                                    },
                                     onThemeToggle = {
                                         val newTheme = !isDarkTheme
                                         isDarkTheme = newTheme
@@ -264,6 +264,7 @@ fun CyberLauncherScreen() {
                 BottomDockSection(
                     apps = dockApps,
                     isEditMode = isEditMode,
+                    isWallpaperMode = isWallpaperMode,
                     activeNotifications = activeNotifications, // 追加
                     onAddClick = { index -> 
                         appSelectorTarget = "dock" 

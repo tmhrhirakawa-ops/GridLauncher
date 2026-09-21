@@ -52,13 +52,14 @@ fun AppCard(
     modifier: Modifier = Modifier,
     isEditMode: Boolean = false,
     hasNotification: Boolean = false,
+    isWallpaperMode: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: () -> Unit = {}
 ) {
     Surface(
         shape = RoundedCornerShape(4.dp),
-        color = LocalCyberColors.current.panel,
+        color = if (isWallpaperMode) LocalCyberColors.current.panel.copy(alpha = 0.55f) else LocalCyberColors.current.panel,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
         modifier = modifier.combinedClickable(
             onClick = onClick,
