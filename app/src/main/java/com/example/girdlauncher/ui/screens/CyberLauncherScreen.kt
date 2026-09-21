@@ -1,6 +1,7 @@
 package com.example.girdlauncher.ui.screens
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -19,11 +20,24 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.getInstalledApps
+import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.CyberNotificationListener
 import androidx.compose.ui.graphics.Color
+
+/**
+ * 編集モードで削除操作が要求されたスロットの情報。
+ * 「スロットから削除」か「アンインストール」かをダイアログで選ばせるために保持する。
+ */
+private data class PendingRemoval(
+    val target: String, // "grid" または "dock"
+    val index: Int,
+    val packageName: String,
+    val label: String
+)
 
 /**
  * ランチャーのメイン画面。デバイスの向きや画面サイズに基づいて、
@@ -60,15 +74,55 @@ fun CyberLauncherScreen() {
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
-    
+    var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
+
+    // 指定したスロットを空にする（スロットからの削除。アプリ自体はアンインストールしない）
+    fun clearSlot(removal: PendingRemoval) {
+        if (removal.target == "grid") {
+            val newPackages = gridPackages.toMutableList()
+            if (removal.index < newPackages.size) {
+                newPackages[removal.index] = ""
+                gridPackages = newPackages
+                prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+            }
+        } else {
+            val newPackages = dockPackages.toMutableList()
+            if (removal.index < newPackages.size) {
+                newPackages[removal.index] = ""
+                dockPackages = newPackages
+                prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+            }
+        }
+    }
+
+    // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
+    // SharedPreferencesの"grid_apps"/"dock_apps"を直接書き換える。ここではその変更を
+    // 検知して、画面上のgridPackages/dockPackagesに反映する。
+    DisposableEffect(prefs) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
+            when (key) {
+                "grid_apps" -> gridPackages = sharedPrefs.getString("grid_apps", "")?.split(",") ?: emptyList()
+                "dock_apps" -> dockPackages = sharedPrefs.getString("dock_apps", "")?.split(",") ?: emptyList()
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     var isEditMode by remember { mutableStateOf(false) } // 編集モード
 
     // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
     // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
+    // ON_STOPではなくON_RESUMEで解除する: ON_STOPは他のアクティビティに覆われた瞬間
+    // （システムのアンインストール確認画面が開いた直後なども含む）に発火してしまい、
+    // そのタイミングで大きな再コンポジションが走ると、一部端末でその確認画面自体が
+    // 開いた直後に閉じてしまう不具合があったため。
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
+            if (event == Lifecycle.Event.ON_RESUME) {
                 isEditMode = false
             }
         }
@@ -98,6 +152,27 @@ fun CyberLauncherScreen() {
             AllAppsDrawer(
                 allApps = allApps,
                 onDismiss = { showAllAppsDrawer = false }
+            )
+        }
+    }
+
+    // 編集モードで✗ボタンが押されたときの「スロットから削除」か「アンインストール」かの選択ダイアログ
+    pendingRemoval?.let { removal ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppActionDialog(
+                appName = removal.label,
+                onDismiss = { pendingRemoval = null },
+                onRemoveFromSlot = {
+                    clearSlot(removal)
+                    pendingRemoval = null
+                },
+                onUninstall = {
+                    // スロットはここでは消さない。ユーザーが確認画面で実際にアンインストールを
+                    // 完了した場合のみ、UninstallResultReceiverがSharedPreferencesを書き換え、
+                    // 下のリスナー経由でgridPackages/dockPackagesに反映される。
+                    requestUninstall(context, removal.packageName)
+                    pendingRemoval = null
+                }
             )
         }
     }
@@ -187,11 +262,8 @@ fun CyberLauncherScreen() {
                             },
                             onLongClick = { isEditMode = true },
                             onRemoveClick = { index ->
-                                val newPackages = gridPackages.toMutableList()
-                                if (index < newPackages.size) {
-                                    newPackages[index] = ""
-                                    gridPackages = newPackages
-                                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                                gridApps.getOrNull(index)?.let { appInfo ->
+                                    pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
                                 }
                             }
                         )
@@ -245,11 +317,8 @@ fun CyberLauncherScreen() {
                                 },
                                 onLongClick = { isEditMode = true },
                                 onRemoveClick = { index ->
-                                    val newPackages = gridPackages.toMutableList()
-                                    if (index < newPackages.size) {
-                                        newPackages[index] = ""
-                                        gridPackages = newPackages
-                                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                                    gridApps.getOrNull(index)?.let { appInfo ->
+                                        pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
                                     }
                                 }
                             )
@@ -297,11 +366,8 @@ fun CyberLauncherScreen() {
                     },
                     onLongClick = { isEditMode = true },
                     onRemoveClick = { index ->
-                        val newPackages = dockPackages.toMutableList()
-                        if (index < newPackages.size) {
-                            newPackages[index] = ""
-                            dockPackages = newPackages
-                            prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+                        dockApps.getOrNull(index)?.let { appInfo ->
+                            pendingRemoval = PendingRemoval("dock", index, appInfo.packageName, appInfo.label)
                         }
                     }
                 )

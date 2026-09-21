@@ -13,6 +13,9 @@
     <!-- カレンダーの予定を取得するための権限 -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
 
+    <!-- PackageInstaller.uninstall() APIでアプリをアンインストールするための権限 -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -35,6 +38,9 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- PackageInstaller.uninstall() の結果通知を受け取るためのレシーバー -->
+        <receiver android:name=".UninstallResultReceiver" android:exported="false" />
 
         <!-- 通知監視サービス -->
         <service android:name=".util.CyberNotificationListener"

@@ -2,6 +2,7 @@ package com.example.girdlauncher.util
 
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
+import android.app.PendingIntent
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
+import com.example.girdlauncher.UninstallResultReceiver
 import com.example.girdlauncher.model.AppInfo
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -192,6 +194,35 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
             icon = resolveInfo.loadIcon(packageManager)
         )
     }.sortedBy { it.label }
+}
+
+/**
+ * 指定したパッケージのアンインストール確認画面（システム標準ダイアログ）を起動します。
+ * 実際のアンインストール処理はシステム側で行われるため、ここでは要求を投げるのみです。
+ *
+ * [android.content.pm.PackageInstaller.uninstall] 経由で要求する。ホーム（ランチャー）の
+ * アクティビティから直接 `Intent.ACTION_DELETE` でアクティビティを起動する方式では、
+ * 一部端末で確認画面が開いた直後に自ら閉じてしまう問題があったため、
+ * こちらのAPI経由に変更した。
+ *
+ * アンインストールが実際に完了したかどうかは [UninstallResultReceiver] が結果を
+ * 受け取って判断する（ユーザーがキャンセルした場合はスロットのアプリを残すため）。
+ *
+ * @param context インテントの発行に使用する [Context]。
+ * @param packageName アンインストール対象アプリのパッケージ名。
+ */
+fun requestUninstall(context: Context, packageName: String) {
+    val packageInstaller = context.packageManager.packageInstaller
+    val statusIntent = Intent(context, UninstallResultReceiver::class.java).apply {
+        putExtra(UninstallResultReceiver.EXTRA_PACKAGE_NAME, packageName)
+    }
+    val pendingIntent = PendingIntent.getBroadcast(
+        context,
+        packageName.hashCode(),
+        statusIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+    )
+    packageInstaller.uninstall(packageName, pendingIntent.intentSender)
 }
 
 /**
