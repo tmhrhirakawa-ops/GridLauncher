@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +41,7 @@ import com.example.girdlauncher.util.CyberNotificationListener
 
 /**
  * 現在再生中のメディア（音楽・動画など）を表示し、再生操作を行うウィジェット。
+ * 操作ボタン以外の部分をタップすると、再生中のアプリを開く。
  *
  * @param info 表示する再生中メディアの情報。
  * @param modifier レイアウトに適用するModifier。
@@ -51,6 +53,7 @@ fun NowPlayingWidget(
     modifier: Modifier = Modifier,
     compact: Boolean = false
 ) {
+    val context = LocalContext.current
     // 再生中はイコライザー風のバーをそれぞれ異なる周期でパルスさせる
     val infiniteTransition = rememberInfiniteTransition(label = "nowPlayingAnim")
     val bar1 by infiniteTransition.animateFloat(
@@ -70,6 +73,10 @@ fun NowPlayingWidget(
     )
 
     Surface(
+        onClick = {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(info.packageName)
+            launchIntent?.let { context.startActivity(it) }
+        },
         shape = RoundedCornerShape(4.dp),
         color = LocalCyberColors.current.panel.copy(alpha = 0.6f),
         border = BorderStroke(
