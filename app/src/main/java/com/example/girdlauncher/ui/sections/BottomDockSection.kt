@@ -58,6 +58,7 @@ fun BottomDockSection(
                     val hasNotif = activeNotifications.contains(appInfo.packageName)
                     DockAppCard(
                         name = appInfo.label,
+                        packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.fillMaxHeight().aspectRatio(1.8f),
                         isEditMode = isEditMode,
@@ -98,6 +99,7 @@ fun BottomDockSection(
                     val hasNotif = activeNotifications.contains(appInfo.packageName)
                     DockAppCard(
                         name = appInfo.label,
+                        packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         isEditMode = isEditMode,

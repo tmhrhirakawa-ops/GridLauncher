@@ -98,6 +98,7 @@ fun AccessGridSection(
                                 val hasNotif = activeNotifications.contains(appInfo.packageName)
                                 AppCard(
                                     name = appInfo.label,
+                                    packageName = appInfo.packageName,
                                     icon = appInfo.icon,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     isEditMode = isEditMode,

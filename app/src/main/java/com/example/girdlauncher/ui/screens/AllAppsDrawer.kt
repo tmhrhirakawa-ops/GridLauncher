@@ -78,6 +78,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                             lazyListItems(frequentApps) { appInfo ->
                                 DockAppCard(
                                     name = appInfo.label,
+                                    packageName = appInfo.packageName,
                                     icon = appInfo.icon,
                                     modifier = Modifier.width(80.dp).fillMaxHeight(), // 幅を80dpに固定して統一
                                     onClick = {
@@ -131,6 +132,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                 items(filteredApps) { appInfo ->
                     AppCard(
                         name = appInfo.label,
+                        packageName = appInfo.packageName,
                         icon = appInfo.icon,
                         modifier = Modifier.aspectRatio(2.5f), // ACCESS GRIDの比率に近い形
                         onClick = {

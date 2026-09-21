@@ -25,11 +25,17 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.Icon
+import com.example.girdlauncher.util.customIconMap
 
 /**
  * ボトムドック内でアプリアイコンとラベルを表示するためのコンポーザブル。
  *
  * @param name アプリの名前。
+ * @param packageName アプリのパッケージ名。
+ * @param appCategory アプリのカテゴリ。
  * @param icon アプリのアイコン。
  * @param modifier レイアウトに適用するModifier。
  * @param isEditMode UIが編集モードかどうか。
@@ -42,6 +48,8 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
 @Composable
 fun DockAppCard(
     name: String,
+    packageName: String = "",
+    appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED,
     icon: Drawable?,
     modifier: Modifier = Modifier,
     isEditMode: Boolean = false,
@@ -67,16 +75,58 @@ fun DockAppCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (icon != null) {
-                    val bitmap = icon.toBitmap().asImageBitmap()
-                    Image(
-                        bitmap = bitmap,
+                val customIcon = customIconMap[packageName]
+                if (customIcon != null) {
+                    Icon(
+                        imageVector = customIcon,
                         contentDescription = name,
-                        modifier = Modifier.size(20.dp), // アイコンサイズを少し小さく
-                        colorFilter = ColorFilter.tint(LocalCyberColors.current.accent, BlendMode.SrcIn)
+                        tint = LocalCyberColors.current.accent,
+                        modifier = Modifier.size(20.dp)
                     )
                 } else {
-                    Text("★", fontSize = 18.sp, color = LocalCyberColors.current.text)
+                    val fallbackIcon = when (appCategory) {
+                        android.content.pm.ApplicationInfo.CATEGORY_GAME -> Icons.Outlined.VideogameAsset
+                        android.content.pm.ApplicationInfo.CATEGORY_AUDIO -> Icons.Outlined.Headset
+                        android.content.pm.ApplicationInfo.CATEGORY_VIDEO -> Icons.Outlined.Movie
+                        android.content.pm.ApplicationInfo.CATEGORY_IMAGE -> Icons.Outlined.Image
+                        android.content.pm.ApplicationInfo.CATEGORY_SOCIAL -> Icons.Outlined.People
+                        android.content.pm.ApplicationInfo.CATEGORY_NEWS -> Icons.Outlined.Article
+                        android.content.pm.ApplicationInfo.CATEGORY_MAPS -> Icons.Outlined.Map
+                        android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY -> Icons.Outlined.WorkOutline
+                        else -> null
+                    }
+                    if (fallbackIcon != null) {
+                        Icon(
+                            imageVector = fallbackIcon,
+                            contentDescription = name,
+                            tint = LocalCyberColors.current.accent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
+                        val firstChar = name.first().uppercaseChar()
+                        Box(
+                            modifier = Modifier.size(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = firstChar.toString(),
+                                fontFamily = CyberFont,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LocalCyberColors.current.accent
+                            )
+                        }
+                    } else if (icon != null) {
+                        val bitmap = icon.toBitmap().asImageBitmap()
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = name,
+                            modifier = Modifier.size(20.dp),
+                            colorFilter = ColorFilter.tint(LocalCyberColors.current.accent, BlendMode.SrcIn)
+                        )
+                    } else {
+                        Text("★", fontSize = 18.sp, color = LocalCyberColors.current.text)
+                    }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -90,7 +140,6 @@ fun DockAppCard(
                 )
             }
             
-            // 通知バッジ
             if (hasNotification && !isEditMode) {
                 Box(
                     modifier = Modifier

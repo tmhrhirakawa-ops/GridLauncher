@@ -8,6 +8,44 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Process
 import com.example.girdlauncher.model.AppInfo
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.graphics.vector.ImageVector
+
+// カスタムアイコンのマッピング
+val customIconMap: Map<String, ImageVector> = mapOf(
+    "com.google.android.youtube" to Icons.Outlined.PlayArrow,
+    "com.android.chrome" to Icons.Outlined.Public,
+    "com.google.android.gm" to Icons.Outlined.Email,
+    "com.android.settings" to Icons.Outlined.Settings,
+    "com.samsung.android.calendar" to Icons.Outlined.CalendarMonth, // CalendarMonthに変更
+    "com.google.android.calendar" to Icons.Outlined.CalendarMonth, // CalendarMonthに変更
+    "com.android.vending" to Icons.Outlined.ShoppingBag,
+    "com.google.android.apps.maps" to Icons.Outlined.Place,
+    "com.google.android.apps.photos" to Icons.Outlined.Photo,
+    "com.twitter.android" to Icons.Outlined.Clear, // X (Twitter)
+    "com.instagram.android" to Icons.Outlined.CameraAlt,
+    "com.zhiliaoapp.musically" to Icons.Outlined.MusicNote, // TikTok
+
+    // 追加リクエスト分
+    "com.google.android.apps.walletnfcrel" to Icons.Outlined.CreditCard, // ウォレット
+    "com.samsung.android.dialer" to Icons.Outlined.Phone, // 電話
+    "com.sec.android.app.camera" to Icons.Outlined.CameraAlt, // カメラ
+    "com.amazon.mShop.android.shopping" to Icons.Outlined.Store, // アマゾン
+    "com.google.android.apps.authenticator2" to Icons.Outlined.Emergency, // 認証システム
+    "com.ubercab.eats" to Icons.Outlined.Dining, // Uber Eats
+    "com.amazon.kindle" to Icons.Outlined.AutoStories, // Kindle
+    "jp.mufg.bk.applisp.app" to Icons.Outlined.AccountBalance, // 三菱UFJ
+    "com.google.android.apps.bard" to Icons.Outlined.Assistant, // Gemini
+    "com.anthropic.claude" to Icons.Outlined.LensBlur, // Claude
+    "com.valvesoftware.android.steam.community" to Icons.Outlined.Psychology, // Steam
+    "com.fitbit.FitbitMobile" to Icons.Outlined.FavoriteBorder, // Health (Google Fit等)
+    "com.google.android.apps.healthdata" to Icons.Outlined.FavoriteBorder, // Health Connect
+    "com.getkeepsafe.app" to Icons.Outlined.Key, // Keepsafe
+    "com.google.android.apps.messaging" to Icons.Outlined.Message, // メッセージ (AutoMirroredは一部環境でエラーになるため戻す)
+    "com.google.android.apps.wear.companion" to Icons.Outlined.Watch, //スマートウォッチ
+    "com.google.ar.lens" to Icons.Outlined.CenterFocusStrong //レンズ
+)
 
 /**
  * 起動可能なすべてのインストール済みアプリのリストを取得します。
@@ -21,10 +59,14 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val resolvedInfos = packageManager.queryIntentActivities(intent, 0)
     
     return resolvedInfos.map { resolveInfo ->
+        val appInfo = resolveInfo.activityInfo.applicationInfo
+        val category = appInfo.category
+        
         AppInfo(
             label = resolveInfo.loadLabel(packageManager).toString(),
             packageName = resolveInfo.activityInfo.packageName,
-            icon = resolveInfo.loadIcon(packageManager)
+            icon = resolveInfo.loadIcon(packageManager),
+            category = category
         )
     }.sortedBy { it.label }
 }

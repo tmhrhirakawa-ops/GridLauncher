@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.Icon
+import com.example.girdlauncher.util.customIconMap
 
 /**
  * グリッド内でアプリアイコンとラベルを表示するためのコンポーザブル。
@@ -42,6 +46,8 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
 @Composable
 fun AppCard(
     name: String,
+    packageName: String = "", // パッケージ名を追加
+    appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED, // カテゴリを追加
     icon: Drawable?,
     modifier: Modifier = Modifier,
     isEditMode: Boolean = false,
@@ -66,16 +72,61 @@ fun AppCard(
                     .align(Alignment.CenterStart),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (icon != null) {
-                    val bitmap = icon.toBitmap().asImageBitmap()
-                    Image(
-                        bitmap = bitmap,
+                val customIcon = customIconMap[packageName]
+                if (customIcon != null) {
+                    Icon(
+                        imageVector = customIcon,
                         contentDescription = name,
-                        modifier = Modifier.size(24.dp),
-                        colorFilter = ColorFilter.tint(LocalCyberColors.current.accent, BlendMode.SrcIn)
+                        tint = LocalCyberColors.current.accent,
+                        modifier = Modifier.size(24.dp)
                     )
                 } else {
-                    Text("★", fontSize = 20.sp, color = LocalCyberColors.current.text)
+                    // カテゴリに応じてフォールバックのアイコンを変える
+                    val fallbackIcon = when (appCategory) {
+                        android.content.pm.ApplicationInfo.CATEGORY_GAME -> Icons.Outlined.VideogameAsset
+                        android.content.pm.ApplicationInfo.CATEGORY_AUDIO -> Icons.Outlined.Headset
+                        android.content.pm.ApplicationInfo.CATEGORY_VIDEO -> Icons.Outlined.Movie
+                        android.content.pm.ApplicationInfo.CATEGORY_IMAGE -> Icons.Outlined.Image
+                        android.content.pm.ApplicationInfo.CATEGORY_SOCIAL -> Icons.Outlined.People
+                        android.content.pm.ApplicationInfo.CATEGORY_NEWS -> Icons.Outlined.Article
+                        android.content.pm.ApplicationInfo.CATEGORY_MAPS -> Icons.Outlined.Map
+                        android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY -> Icons.Outlined.WorkOutline
+                        else -> null
+                    }
+                    
+                    if (fallbackIcon != null) {
+                        Icon(
+                            imageVector = fallbackIcon,
+                            contentDescription = name,
+                            tint = LocalCyberColors.current.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
+                        // カスタムアイコンがない場合は、アプリ名の頭文字を表示する
+                        val firstChar = name.first().uppercaseChar()
+                        Box(
+                            modifier = Modifier.size(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = firstChar.toString(),
+                                fontFamily = CyberFont,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = LocalCyberColors.current.accent
+                            )
+                        }
+                    } else if (icon != null) {
+                        val bitmap = icon.toBitmap().asImageBitmap()
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = name,
+                            modifier = Modifier.size(24.dp),
+                            colorFilter = ColorFilter.tint(LocalCyberColors.current.accent, BlendMode.SrcIn)
+                        )
+                    } else {
+                        Text("★", fontSize = 20.sp, color = LocalCyberColors.current.text)
+                    }
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
