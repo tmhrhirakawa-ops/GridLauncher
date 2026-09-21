@@ -36,12 +36,13 @@ class CyberNotificationListener : NotificationListenerService() {
             val notifications = getActiveNotifications() ?: return
             
             val packages = notifications.filter { sbn ->
-                // 通知バッジ（未読マーク）としてふさわしいものだけをフィルタリング
-                // 常駐通知（音楽プレイヤー、歩数計、システムバックグラウンドなど）は除外する
-                val isOngoing = sbn.isOngoing
+                // 通知マークとしてふさわしいものだけをフィルタリング
+                // フォアグラウンドサービス通知（音楽プレイヤー、歩数計など）は除外する
+                // ただし、アプリのバッジ（未読件数）は常駐通知（isOngoing）として
+                // 実装されることが多いため、isOngoingでは除外しない
                 val isForeground = (sbn.notification.flags and android.app.Notification.FLAG_FOREGROUND_SERVICE) != 0
-                
-                !isOngoing && !isForeground
+
+                !isForeground
             }.map { it.packageName }.toSet()
             
             _activeNotifications.value = packages

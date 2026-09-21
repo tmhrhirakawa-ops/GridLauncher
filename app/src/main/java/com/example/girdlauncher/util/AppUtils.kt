@@ -107,6 +107,7 @@ fun getFrequentApps(context: Context, allApps: List<AppInfo>): List<AppInfo> {
 fun hasUsageStatsPermission(context: Context): Boolean {
     val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
     val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        @Suppress("DEPRECATION") // 属性タグ付きの新オーバーロードは今回の用途では不要
         appOps.unsafeCheckOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),

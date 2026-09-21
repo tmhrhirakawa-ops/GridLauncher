@@ -12,4 +12,8 @@
 /captures
 .externalNativeBuild
 .cxx
+
+# 署名鍵・ビルド成果物（秘密情報のため絶対にコミットしない）
+/key/
+/app/release/
 local.properties

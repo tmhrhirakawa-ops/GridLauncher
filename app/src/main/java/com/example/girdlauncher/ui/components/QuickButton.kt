@@ -20,6 +20,7 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  *
  * @param text ボタンに表示するテキスト。
  * @param modifier レイアウトに適用するModifier。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param onClick ボタンがクリックされたときに呼び出されるコールバック。
  */
 @Composable

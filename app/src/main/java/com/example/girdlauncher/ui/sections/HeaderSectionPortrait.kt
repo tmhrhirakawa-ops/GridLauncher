@@ -29,8 +29,8 @@ fun HeaderSectionPortrait() {
     val context = LocalContext.current
     
     // リアルタイム時計とバッテリーの状態管理
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    var batteryLevel by remember { mutableStateOf(100) }
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var batteryLevel by remember { mutableIntStateOf(100) }
     
     LaunchedEffect(Unit) {
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager

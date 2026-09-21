@@ -12,7 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.getInstalledApps
@@ -39,13 +42,13 @@ fun CyberLauncherScreen() {
     }
 
     // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var gridPackages by remember { 
-        mutableStateOf(prefs.getString("grid_apps", "")?.split(",")?.toMutableList() ?: mutableListOf<String>()) 
+    var gridPackages by remember {
+        mutableStateOf(prefs.getString("grid_apps", "")?.split(",") ?: emptyList())
     }
-    
+
     // DockApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var dockPackages by remember { 
-        mutableStateOf(prefs.getString("dock_apps", "")?.split(",")?.toMutableList() ?: mutableListOf<String>()) 
+    var dockPackages by remember {
+        mutableStateOf(prefs.getString("dock_apps", "")?.split(",") ?: emptyList())
     }
 
     val gridApps = gridPackages.map { pkg -> if (pkg.isEmpty()) null else allApps.find { it.packageName == pkg } }
@@ -66,7 +69,9 @@ fun CyberLauncherScreen() {
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     // 画面の幅（dp）を取得
-    val screenWidthDp = configuration.screenWidthDp
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val screenWidthDp = with(density) { windowInfo.containerSize.width.toDp().value.toInt() }
 
     if (showAllAppsDrawer) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -93,7 +98,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         gridPackages = newPackages
-                        prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                     } else if (appSelectorTarget == "dock") {
                         val newPackages = dockPackages.toMutableList()
                         while (newPackages.size <= targetIndex!!) {
@@ -101,7 +106,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         dockPackages = newPackages
-                        prefs.edit().putString("dock_apps", newPackages.joinToString(",")).apply()
+                        prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
                     }
                     appSelectorTarget = null
                     targetIndex = null
@@ -166,7 +171,7 @@ fun CyberLauncherScreen() {
                                 if (index < newPackages.size) {
                                     newPackages[index] = ""
                                     gridPackages = newPackages
-                                    prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                                 }
                             }
                         )
@@ -189,12 +194,12 @@ fun CyberLauncherScreen() {
                             isWallpaperMode = isWallpaperMode,
                             onWallpaperToggle = {
                                 isWallpaperMode = !isWallpaperMode
-                                prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                                prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
                             },
                             onThemeToggle = {
                                 val newTheme = !isDarkTheme
                                 isDarkTheme = newTheme
-                                prefs.edit().putBoolean("is_dark_theme", newTheme).apply()
+                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
                             }
                         )
                     }
@@ -224,7 +229,7 @@ fun CyberLauncherScreen() {
                                     if (index < newPackages.size) {
                                         newPackages[index] = ""
                                         gridPackages = newPackages
-                                        prefs.edit().putString("grid_apps", newPackages.joinToString(",")).apply()
+                                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
                                     }
                                 }
                             )
@@ -246,12 +251,12 @@ fun CyberLauncherScreen() {
                                     isWallpaperMode = isWallpaperMode,
                                     onWallpaperToggle = {
                                         isWallpaperMode = !isWallpaperMode
-                                        prefs.edit().putBoolean("is_wallpaper_mode", isWallpaperMode).apply()
+                                        prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
                                     },
                                     onThemeToggle = {
                                         val newTheme = !isDarkTheme
                                         isDarkTheme = newTheme
-                                        prefs.edit().putBoolean("is_dark_theme", newTheme).apply()
+                                        prefs.edit { putBoolean("is_dark_theme", newTheme) }
                                     }
                                 )
                             }
@@ -276,7 +281,7 @@ fun CyberLauncherScreen() {
                         if (index < newPackages.size) {
                             newPackages[index] = ""
                             dockPackages = newPackages
-                            prefs.edit().putString("dock_apps", newPackages.joinToString(",")).apply()
+                            prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
                         }
                     }
                 )

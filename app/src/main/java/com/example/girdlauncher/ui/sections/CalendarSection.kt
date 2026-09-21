@@ -3,6 +3,8 @@ package com.example.girdlauncher.ui.sections
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,10 +30,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.content.ContentUris
 import java.time.ZoneId
 import java.time.Instant
+import java.time.YearMonth
 import androidx.compose.foundation.shape.CircleShape
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -88,24 +94,19 @@ fun CalendarSection(modifier: Modifier = Modifier) {
             permissionLauncher.launch(Manifest.permission.READ_CALENDAR)
         }
     }
-    
+
     val currentDate = java.time.LocalDate.now()
-    val currentMonth = java.time.YearMonth.now()
-    val monthString = currentMonth.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH).uppercase() + " " + currentMonth.year
-    
-    var eventDays by remember { mutableStateOf(emptySet<Int>()) }
-    LaunchedEffect(hasPermission, currentMonth) {
-        if (hasPermission) {
-            eventDays = fetchEventDays(context, currentMonth)
-        }
+    val baseMonth = remember { YearMonth.now() }
+    // 前後に大きくページを取っておき、実質無限にスワイプできるようにする
+    val initialPage = Int.MAX_VALUE / 2
+    val pagerState = rememberPagerState(initialPage = initialPage) { Int.MAX_VALUE }
+    val coroutineScope = rememberCoroutineScope()
+
+    val displayedMonth = remember(pagerState.currentPage) {
+        baseMonth.plusMonths((pagerState.currentPage - initialPage).toLong())
     }
-    
-    // カレンダーの計算
-    val firstDayOfMonth = currentMonth.atDay(1)
-    val daysInMonth = currentMonth.lengthOfMonth()
-    // getDayOfWeek() は月曜=1, 日曜=7. 日曜始まりにするための計算
-    val startDayOfWeek = firstDayOfMonth.dayOfWeek.value % 7 
-    
+    val monthString = displayedMonth.month.getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH).uppercase() + " " + displayedMonth.year
+
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
@@ -122,10 +123,38 @@ fun CalendarSection(modifier: Modifier = Modifier) {
                 Text("CALENDAR", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
                 Text(" // MONTHLY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "‹",
+                    fontFamily = CyberFont,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = LocalCyberColors.current.accent,
+                    modifier = Modifier
+                        .clickable {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                            }
+                        }
+                        .padding(horizontal = 6.dp)
+                )
                 Text(monthString, fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "›",
+                    fontFamily = CyberFont,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = LocalCyberColors.current.accent,
+                    modifier = Modifier
+                        .clickable {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
+                        }
+                        .padding(horizontal = 6.dp)
+                )
             }
             Spacer(modifier = Modifier.height(0.dp))
-            
+
             // 曜日ヘッダー
             val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -136,67 +165,101 @@ fun CalendarSection(modifier: Modifier = Modifier) {
                 }
             }
             Spacer(modifier = Modifier.height(0.dp))
-            
-            // カレンダーグリッド
-            val totalCells = startDayOfWeek + daysInMonth
-            val rows = (totalCells + 6) / 7
-            
-            Column(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.SpaceEvenly) {
-                for (r in 0 until rows) {
-                    Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        for (c in 0 until 7) {
-                            val cellIndex = r * 7 + c
-                            val dayNumber = cellIndex - startDayOfWeek + 1
+
+            // 月ごとに横スクロール（スワイプ）できるカレンダーグリッド
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            ) { page ->
+                val month = remember(page) { baseMonth.plusMonths((page - initialPage).toLong()) }
+                MonthGrid(
+                    month = month,
+                    currentDate = currentDate,
+                    hasPermission = hasPermission,
+                    context = context
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthGrid(
+    month: YearMonth,
+    currentDate: java.time.LocalDate,
+    hasPermission: Boolean,
+    context: android.content.Context
+) {
+    var eventDays by remember(month) { mutableStateOf(emptySet<Int>()) }
+    LaunchedEffect(hasPermission, month) {
+        if (hasPermission) {
+            eventDays = fetchEventDays(context, month)
+        }
+    }
+
+    // カレンダーの計算
+    val firstDayOfMonth = month.atDay(1)
+    val daysInMonth = month.lengthOfMonth()
+    // getDayOfWeek() は月曜=1, 日曜=7. 日曜始まりにするための計算
+    val startDayOfWeek = firstDayOfMonth.dayOfWeek.value % 7
+
+    val totalCells = startDayOfWeek + daysInMonth
+    val rows = (totalCells + 6) / 7
+
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(), verticalArrangement = Arrangement.SpaceEvenly) {
+        for (r in 0 until rows) {
+            Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
+                for (c in 0 until 7) {
+                    val cellIndex = r * 7 + c
+                    val dayNumber = cellIndex - startDayOfWeek + 1
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (dayNumber in 1..daysInMonth) {
+                            val isToday = month == YearMonth.from(currentDate) && dayNumber == currentDate.dayOfMonth
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .padding(2.dp),
+                                    .fillMaxSize()
+                                    .background(
+                                        color = if (isToday) LocalCyberColors.current.accent else Color.Transparent,
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .clickable {
+                                        // タップした日付からミリ秒のUnixタイムスタンプを作成
+                                        val targetDate = month.atDay(dayNumber)
+                                        val timeInMillis = targetDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            data = "content://com.android.calendar/time/$timeInMillis".toUri()
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (dayNumber in 1..daysInMonth) {
-                                    val isToday = dayNumber == currentDate.dayOfMonth
+                                Text(
+                                    text = dayNumber.toString(),
+                                    fontFamily = CyberFont,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isToday) Color.White else LocalCyberColors.current.text
+                                )
+                                if (eventDays.contains(dayNumber)) {
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                color = if (isToday) LocalCyberColors.current.accent else Color.Transparent,
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                            .clickable {
-                                                // タップした日付からミリ秒のUnixタイムスタンプを作成
-                                                val targetDate = currentMonth.atDay(dayNumber)
-                                                val timeInMillis = targetDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                                
-                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                    data = android.net.Uri.parse("content://com.android.calendar/time/$timeInMillis")
-                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                                }
-                                                try {
-                                                    context.startActivity(intent)
-                                                } catch (e: Exception) {
-                                                    e.printStackTrace()
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = dayNumber.toString(),
-                                            fontFamily = CyberFont,
-                                            fontSize = 12.sp,
-                                            fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isToday) Color.White else LocalCyberColors.current.text
-                                        )
-                                        if (eventDays.contains(dayNumber)) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .padding(top = 2.dp, end = 2.dp)
-                                                    .size(4.dp)
-                                                    .background(if (isToday) Color.White else LocalCyberColors.current.accent, CircleShape)
-                                                    .align(Alignment.TopEnd)
-                                            )
-                                        }
-                                    }
+                                            .padding(top = 2.dp, end = 2.dp)
+                                            .size(4.dp)
+                                            .background(if (isToday) Color.White else LocalCyberColors.current.accent, CircleShape)
+                                            .align(Alignment.TopEnd)
+                                    )
                                 }
                             }
                         }

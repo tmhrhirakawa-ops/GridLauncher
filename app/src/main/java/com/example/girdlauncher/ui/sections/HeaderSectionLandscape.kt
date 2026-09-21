@@ -29,8 +29,8 @@ fun HeaderSectionLandscape() {
     val context = LocalContext.current
     
     // リアルタイム時計とバッテリーの状態管理
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    var batteryLevel by remember { mutableStateOf(100) }
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var batteryLevel by remember { mutableIntStateOf(100) }
     
     // 1秒ごとに時刻とバッテリー状態を更新するコルーチン
     LaunchedEffect(Unit) {

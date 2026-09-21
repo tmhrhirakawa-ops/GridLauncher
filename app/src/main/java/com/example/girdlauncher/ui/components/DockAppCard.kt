@@ -26,6 +26,7 @@ import androidx.core.graphics.drawable.toBitmap
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.Icon
 import com.example.girdlauncher.util.customIconMap
@@ -34,12 +35,13 @@ import com.example.girdlauncher.util.customIconMap
  * ボトムドック内でアプリアイコンとラベルを表示するためのコンポーザブル。
  *
  * @param name アプリの名前。
- * @param packageName アプリのパッケージ名。
- * @param appCategory アプリのカテゴリ。
  * @param icon アプリのアイコン。
  * @param modifier レイアウトに適用するModifier。
+ * @param packageName アプリのパッケージ名。カスタムアイコンの判定に使用。
+ * @param appCategory アプリのカテゴリ。フォールバックアイコンの判定に使用。
  * @param isEditMode UIが編集モードかどうか。
- * @param hasNotification 通知があるかどうか。
+ * @param hasNotification 通知（またはアプリバッジ）があるかどうか。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
@@ -48,10 +50,10 @@ import com.example.girdlauncher.util.customIconMap
 @Composable
 fun DockAppCard(
     name: String,
-    packageName: String = "",
-    appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED,
     icon: Drawable?,
     modifier: Modifier = Modifier,
+    packageName: String = "",
+    appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED,
     isEditMode: Boolean = false,
     hasNotification: Boolean = false,
     isWallpaperMode: Boolean = false,
@@ -91,7 +93,7 @@ fun DockAppCard(
                         android.content.pm.ApplicationInfo.CATEGORY_VIDEO -> Icons.Outlined.Movie
                         android.content.pm.ApplicationInfo.CATEGORY_IMAGE -> Icons.Outlined.Image
                         android.content.pm.ApplicationInfo.CATEGORY_SOCIAL -> Icons.Outlined.People
-                        android.content.pm.ApplicationInfo.CATEGORY_NEWS -> Icons.Outlined.Article
+                        android.content.pm.ApplicationInfo.CATEGORY_NEWS -> Icons.AutoMirrored.Outlined.Article
                         android.content.pm.ApplicationInfo.CATEGORY_MAPS -> Icons.Outlined.Map
                         android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY -> Icons.Outlined.WorkOutline
                         else -> null

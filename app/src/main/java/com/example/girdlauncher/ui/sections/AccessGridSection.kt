@@ -29,7 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
  * @param rows グリッドの行数。
  * @param isPortrait デバイスの向きが縦（ポートレート）かどうか。
  * @param isEditMode UIが編集モードかどうか。
- * @param activeNotifications 通知が来ているアプリのパッケージ名のセット。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名のセット。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick アプリが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
