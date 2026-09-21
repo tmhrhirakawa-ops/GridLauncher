@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -101,7 +102,7 @@ fun DockAppCard(
                         .align(Alignment.TopEnd)
                         .padding(2.dp)
                         .defaultMinSize(minWidth = 14.dp, minHeight = 14.dp)
-                        .background(LocalCyberColors.current.accent, RoundedCornerShape(7.dp))
+                        .border(1.dp, LocalCyberColors.current.accent, RoundedCornerShape(3.dp))
                         .padding(horizontal = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -110,7 +111,7 @@ fun DockAppCard(
                         fontFamily = CyberFont,
                         fontSize = 7.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = LocalCyberColors.current.accent,
                         maxLines = 1
                     )
                 }

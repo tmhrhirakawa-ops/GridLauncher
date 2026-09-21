@@ -11,6 +11,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -101,7 +102,7 @@ fun AppCard(
                         .align(Alignment.TopEnd)
                         .padding(4.dp)
                         .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp)
-                        .background(LocalCyberColors.current.accent, RoundedCornerShape(8.dp))
+                        .border(1.dp, LocalCyberColors.current.accent, RoundedCornerShape(3.dp))
                         .padding(horizontal = 3.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -110,7 +111,7 @@ fun AppCard(
                         fontFamily = CyberFont,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = LocalCyberColors.current.accent,
                         maxLines = 1
                     )
                 }
