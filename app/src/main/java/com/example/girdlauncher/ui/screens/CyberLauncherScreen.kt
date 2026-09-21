@@ -1,6 +1,9 @@
 package com.example.girdlauncher.ui.screens
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import androidx.compose.foundation.clickable
@@ -16,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -47,8 +51,28 @@ private data class PendingRemoval(
 fun CyberLauncherScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
-    val allApps = remember { getInstalledApps(context.packageManager) }
-    
+    var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
+
+    // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
+    // 一覧をその場で更新する。
+    DisposableEffect(context) {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context, intent: Intent) {
+                allApps = getInstalledApps(context.packageManager)
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
     // テーマ判定（SharedPreferencesから取得、なければシステム設定）
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
