@@ -6,46 +6,62 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import android.os.Process
 import com.example.girdlauncher.model.AppInfo
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import kotlin.math.roundToInt
 
-// カスタムアイコンのマッピング
-val customIconMap: Map<String, ImageVector> = mapOf(
-    "com.google.android.youtube" to Icons.Outlined.PlayArrow,
-    "com.android.chrome" to Icons.Outlined.Public,
-    "com.google.android.gm" to Icons.Outlined.Email,
-    "com.android.settings" to Icons.Outlined.Settings,
-    "com.samsung.android.calendar" to Icons.Outlined.CalendarMonth, // CalendarMonthに変更
-    "com.google.android.calendar" to Icons.Outlined.CalendarMonth, // CalendarMonthに変更
-    "com.android.vending" to Icons.Outlined.ShoppingBag,
-    "com.google.android.apps.maps" to Icons.Outlined.Place,
-    "com.google.android.apps.photos" to Icons.Outlined.Photo,
-    "com.twitter.android" to Icons.Outlined.Clear, // X (Twitter)
-    "com.instagram.android" to Icons.Outlined.CameraAlt,
-    "com.zhiliaoapp.musically" to Icons.Outlined.MusicNote, // TikTok
+/**
+ * アプリの実アイコン（[Drawable]）を、明るさをアクセントカラーへマッピングしたデュオトーン風の
+ * [ImageBitmap] に変換します。
+ *
+ * 明るさの指標には輝度（luma = 0.2126R + 0.7152G + 0.0722B）ではなく、
+ * HSLの明度（Lightness = (max(R,G,B) + min(R,G,B)) / 2）を使っています。
+ * lumaは赤の寄与率が低いため、Netflixのような「黒背景+赤ロゴ」を変換すると
+ * 黒く潰れてしまう問題がありました。一方でHSVの明度（Value = max(R,G,B)）は
+ * 逆に彩度の高い背景色まで明るくなりすぎ、白いロゴとのコントラストが失われて
+ * ただの塗りつぶし丸に見えてしまう問題がありました。Lightnessはその中間の
+ * 挙動になるため、両方のケースでロゴの視認性を保ちやすくなります。
+ *
+ * @param drawable 加工対象のアプリアイコン。
+ * @param accent マッピング先のアクセントカラー。
+ */
+fun toDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
+    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
+    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+    val source = drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888)
 
-    // 追加リクエスト分
-    "com.google.android.apps.walletnfcrel" to Icons.Outlined.CreditCard, // ウォレット
-    "com.samsung.android.dialer" to Icons.Outlined.Phone, // 電話
-    "com.sec.android.app.camera" to Icons.Outlined.CameraAlt, // カメラ
-    "com.amazon.mShop.android.shopping" to Icons.Outlined.Store, // アマゾン
-    "com.google.android.apps.authenticator2" to Icons.Outlined.Emergency, // 認証システム
-    "com.ubercab.eats" to Icons.Outlined.Dining, // Uber Eats
-    "com.amazon.kindle" to Icons.Outlined.AutoStories, // Kindle
-    "jp.mufg.bk.applisp.app" to Icons.Outlined.AccountBalance, // 三菱UFJ
-    "com.google.android.apps.bard" to Icons.Outlined.Assistant, // Gemini
-    "com.anthropic.claude" to Icons.Outlined.LensBlur, // Claude
-    "com.valvesoftware.android.steam.community" to Icons.Outlined.Psychology, // Steam
-    "com.fitbit.FitbitMobile" to Icons.Outlined.FavoriteBorder, // Health (Google Fit等)
-    "com.google.android.apps.healthdata" to Icons.Outlined.FavoriteBorder, // Health Connect
-    "com.getkeepsafe.app" to Icons.Outlined.Key, // Keepsafe
-    "com.google.android.apps.messaging" to @Suppress("DEPRECATION") Icons.Outlined.Message,
-    "com.google.android.apps.wear.companion" to Icons.Outlined.Watch, //スマートウォッチ
-    "com.google.ar.lens" to Icons.Outlined.CenterFocusStrong //レンズ
-)
+    val pixels = IntArray(width * height)
+    source.getPixels(pixels, 0, width, 0, 0, width, height)
+
+    val accentR = (accent.red * 255f).roundToInt()
+    val accentG = (accent.green * 255f).roundToInt()
+    val accentB = (accent.blue * 255f).roundToInt()
+
+    for (i in pixels.indices) {
+        val pixel = pixels[i]
+        val alpha = (pixel ushr 24) and 0xFF
+        if (alpha == 0) continue
+
+        val r = (pixel ushr 16) and 0xFF
+        val g = (pixel ushr 8) and 0xFF
+        val b = pixel and 0xFF
+        val lightness = (maxOf(r, g, b) + minOf(r, g, b)) / (2f * 255f)
+
+        val outR = (accentR * lightness).roundToInt().coerceIn(0, 255)
+        val outG = (accentG * lightness).roundToInt().coerceIn(0, 255)
+        val outB = (accentB * lightness).roundToInt().coerceIn(0, 255)
+
+        pixels[i] = (alpha shl 24) or (outR shl 16) or (outG shl 8) or outB
+    }
+
+    return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888).asImageBitmap()
+}
 
 /**
  * 起動可能なすべてのインストール済みアプリのリストを取得します。
@@ -57,16 +73,12 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val intent = Intent(Intent.ACTION_MAIN, null)
     intent.addCategory(Intent.CATEGORY_LAUNCHER)
     val resolvedInfos = packageManager.queryIntentActivities(intent, 0)
-    
+
     return resolvedInfos.map { resolveInfo ->
-        val appInfo = resolveInfo.activityInfo.applicationInfo
-        val category = appInfo.category
-        
         AppInfo(
             label = resolveInfo.loadLabel(packageManager).toString(),
             packageName = resolveInfo.activityInfo.packageName,
-            icon = resolveInfo.loadIcon(packageManager),
-            category = category
+            icon = resolveInfo.loadIcon(packageManager)
         )
     }.sortedBy { it.label }
 }

@@ -18,23 +18,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Article
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.Icon
-import com.example.girdlauncher.util.customIconMap
+import com.example.girdlauncher.util.toDuotoneImageBitmap
 
 /**
  * ボトムドック内でアプリアイコンとラベルを表示するためのコンポーザブル。
@@ -42,8 +35,7 @@ import com.example.girdlauncher.util.customIconMap
  * @param name アプリの名前。
  * @param icon アプリのアイコン。
  * @param modifier レイアウトに適用するModifier。
- * @param packageName アプリのパッケージ名。カスタムアイコンの判定に使用。
- * @param appCategory アプリのカテゴリ。フォールバックアイコンの判定に使用。
+ * @param packageName アプリのパッケージ名。デュオトーン加工のキャッシュキーに使用。
  * @param isEditMode UIが編集モードかどうか。
  * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
@@ -58,7 +50,6 @@ fun DockAppCard(
     icon: Drawable?,
     modifier: Modifier = Modifier,
     packageName: String = "",
-    appCategory: Int = android.content.pm.ApplicationInfo.CATEGORY_UNDEFINED,
     isEditMode: Boolean = false,
     notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
@@ -83,58 +74,31 @@ fun DockAppCard(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                val customIcon = customIconMap[packageName]
-                if (customIcon != null) {
-                    Icon(
-                        imageVector = customIcon,
+                if (icon != null) {
+                    // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
+                    val accent = LocalCyberColors.current.accent
+                    val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
+                    Image(
+                        bitmap = bitmap,
                         contentDescription = name,
-                        tint = LocalCyberColors.current.accent,
                         modifier = Modifier.size(20.dp)
                     )
+                } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
+                    val firstChar = name.first().uppercaseChar()
+                    Box(
+                        modifier = Modifier.size(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = firstChar.toString(),
+                            fontFamily = CyberFont,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = LocalCyberColors.current.accent
+                        )
+                    }
                 } else {
-                    val fallbackIcon = when (appCategory) {
-                        android.content.pm.ApplicationInfo.CATEGORY_GAME -> Icons.Outlined.VideogameAsset
-                        android.content.pm.ApplicationInfo.CATEGORY_AUDIO -> Icons.Outlined.Headset
-                        android.content.pm.ApplicationInfo.CATEGORY_VIDEO -> Icons.Outlined.Movie
-                        android.content.pm.ApplicationInfo.CATEGORY_IMAGE -> Icons.Outlined.Image
-                        android.content.pm.ApplicationInfo.CATEGORY_SOCIAL -> Icons.Outlined.People
-                        android.content.pm.ApplicationInfo.CATEGORY_NEWS -> Icons.AutoMirrored.Outlined.Article
-                        android.content.pm.ApplicationInfo.CATEGORY_MAPS -> Icons.Outlined.Map
-                        android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY -> Icons.Outlined.WorkOutline
-                        else -> null
-                    }
-                    if (fallbackIcon != null) {
-                        Icon(
-                            imageVector = fallbackIcon,
-                            contentDescription = name,
-                            tint = LocalCyberColors.current.accent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else if (name.isNotEmpty() && name.first().isLetterOrDigit()) {
-                        val firstChar = name.first().uppercaseChar()
-                        Box(
-                            modifier = Modifier.size(20.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = firstChar.toString(),
-                                fontFamily = CyberFont,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = LocalCyberColors.current.accent
-                            )
-                        }
-                    } else if (icon != null) {
-                        val bitmap = icon.toBitmap().asImageBitmap()
-                        Image(
-                            bitmap = bitmap,
-                            contentDescription = name,
-                            modifier = Modifier.size(20.dp),
-                            colorFilter = ColorFilter.tint(LocalCyberColors.current.accent, BlendMode.SrcIn)
-                        )
-                    } else {
-                        Text("★", fontSize = 18.sp, color = LocalCyberColors.current.text)
-                    }
+                    Text("★", fontSize = 18.sp, color = LocalCyberColors.current.text)
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
