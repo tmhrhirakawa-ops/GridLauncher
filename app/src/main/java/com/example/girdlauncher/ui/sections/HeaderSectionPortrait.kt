@@ -55,7 +55,7 @@ fun HeaderSectionPortrait(nowPlaying: CyberNotificationListener.NowPlayingInfo? 
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(timeString, fontFamily = CyberFont, fontSize = 56.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
             Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
@@ -65,7 +65,18 @@ fun HeaderSectionPortrait(nowPlaying: CyberNotificationListener.NowPlayingInfo? 
                 Text("22° // TOKYO", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text, fontWeight = FontWeight.Bold)
             }
         }
-        
+
+        // 再生中のメディアがあれば、バッテリー表示の左側に表示する
+        if (nowPlaying != null) {
+            NowPlayingWidget(
+                info = nowPlaying,
+                compact = true,
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .padding(end = 8.dp)
+            )
+        }
+
         // 縦画面は右上に青いコア（FAIRY）とバッテリーを配置
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -86,12 +97,5 @@ fun HeaderSectionPortrait(nowPlaying: CyberNotificationListener.NowPlayingInfo? 
             }
             Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.core, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
-    }
-
-    // 再生中のメディアがあれば、バッテリー表示の下に幅いっぱいで表示する
-    // （縦画面は横幅が狭く、同じ行に収めるとバッテリー表示と衝突するため）
-    if (nowPlaying != null) {
-        Spacer(modifier = Modifier.height(8.dp))
-        NowPlayingWidget(info = nowPlaying, modifier = Modifier.fillMaxWidth(), compact = true)
     }
 }
