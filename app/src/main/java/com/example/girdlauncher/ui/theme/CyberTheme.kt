@@ -84,7 +84,22 @@ data class CyberColors(
     val text: Color,
     val border: Color,
     val core: Color
-)
+) {
+    /**
+     * [accent]色の上に重ねる文字・アイコン用の色。ユーザーがカラーパレットで明るい色を
+     * 選んでも視認性を保てるよう、accentの明るさに応じて白か黒かを自動で切り替える。
+     */
+    val onAccent: Color = contrastingColorFor(accent)
+}
+
+/**
+ * 背景色[color]の上に重ねる文字・アイコンとして、白と黒のどちらが読みやすいかを
+ * 知覚輝度（YIQ形式の輝度式）から判定する。
+ */
+private fun contrastingColorFor(color: Color): Color {
+    val luminance = 0.299f * color.red + 0.587f * color.green + 0.114f * color.blue
+    return if (luminance > 0.5f) Color.Black else Color.White
+}
 
 /**
  * CompositionLocal for providing [CyberColors] down the compose tree.

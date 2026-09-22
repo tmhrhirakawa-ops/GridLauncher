@@ -217,10 +217,12 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.Center,
                             modifier = Modifier.fillMaxSize()
                         ) {
+                            // 背景がaccent色のときは、明るい色でも読めるようcolors.onAccentでコントラストを確保する
+                            val onButtonColor = if (isOptimizing) LocalCyberColors.current.text else LocalCyberColors.current.onAccent
                             Text(
                                 text = if (isOptimizing) "⚙" else "⚡",
                                 fontSize = 14.sp,
-                                color = Color.White,
+                                color = onButtonColor,
                                 modifier = if (isOptimizing) {
                                     Modifier.graphicsLayer { rotationZ = iconRotation }
                                 } else {
@@ -228,7 +230,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                                 }
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = onButtonColor, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

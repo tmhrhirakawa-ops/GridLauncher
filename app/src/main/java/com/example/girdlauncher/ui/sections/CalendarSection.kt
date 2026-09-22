@@ -434,14 +434,14 @@ private fun MonthGrid(
                                     fontFamily = CyberFont,
                                     fontSize = 12.sp,
                                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isToday) Color.White else LocalCyberColors.current.text
+                                    color = if (isToday) LocalCyberColors.current.onAccent else LocalCyberColors.current.text
                                 )
                                 if (eventDays.contains(dayNumber)) {
                                     Box(
                                         modifier = Modifier
                                             .padding(top = 2.dp, end = 2.dp)
                                             .size(4.dp)
-                                            .background(if (isToday) Color.White else LocalCyberColors.current.accent, CircleShape)
+                                            .background(if (isToday) LocalCyberColors.current.onAccent else LocalCyberColors.current.accent, CircleShape)
                                             .align(Alignment.TopEnd)
                                     )
                                 }

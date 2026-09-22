@@ -1,6 +1,8 @@
 package com.example.girdlauncher.ui.sections
 
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.edit
 import com.example.girdlauncher.model.QuickActionId
 import com.example.girdlauncher.ui.components.BrightnessControlDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
@@ -64,6 +67,26 @@ import kotlin.math.sqrt
  * メインテーマのデフォルトのアクセントカラー（従来からのオレンジ）。
  */
 private val DefaultAccentColor = Color(0xFFFF5722)
+
+private const val KEY_RECENT_ACCENT_COLORS = "recent_accent_colors"
+private const val MAX_RECENT_ACCENT_COLORS = 10
+
+/** 直近で設定したアクセントカラーの履歴（新しい順）をSharedPreferencesから読み込む。 */
+private fun loadRecentAccentColors(prefs: SharedPreferences): List<Color> =
+    prefs.getString(KEY_RECENT_ACCENT_COLORS, null)
+        ?.split(",")
+        ?.mapNotNull { token -> token.toIntOrNull()?.let { Color(it) } }
+        ?: emptyList()
+
+/**
+ * [color]を履歴の先頭に追加して保存する（既に含まれていれば重複を除いて先頭に移動し、
+ * 最大[MAX_RECENT_ACCENT_COLORS]件まで保持する）。更新後の履歴を返す。
+ */
+private fun addRecentAccentColor(prefs: SharedPreferences, current: List<Color>, color: Color): List<Color> {
+    val updated = (listOf(color) + current.filter { it.toArgb() != color.toArgb() }).take(MAX_RECENT_ACCENT_COLORS)
+    prefs.edit { putString(KEY_RECENT_ACCENT_COLORS, updated.joinToString(",") { it.toArgb().toString() }) }
+    return updated
+}
 
 /**
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
@@ -98,9 +121,11 @@ fun QuickAccessSection(
     onExitEditMode: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
     var showColorPicker by remember { mutableStateOf(false) }
     var showVolumeControl by remember { mutableStateOf(false) }
     var showBrightnessControl by remember { mutableStateOf(false) }
+    var recentAccentColors by remember { mutableStateOf(loadRecentAccentColors(prefs)) }
 
     fun handleActionClick(action: QuickActionId) {
         when (action) {
@@ -255,8 +280,12 @@ fun QuickAccessSection(
     if (showColorPicker) {
         AccentColorPickerDialog(
             currentColor = accentColor,
+            recentColors = recentAccentColors,
             onColorSelected = onAccentColorChange,
-            onDismiss = { showColorPicker = false }
+            onDismiss = {
+                recentAccentColors = addRecentAccentColor(prefs, recentAccentColors, accentColor)
+                showColorPicker = false
+            }
         )
     }
 }
@@ -269,6 +298,7 @@ fun QuickAccessSection(
 @Composable
 private fun AccentColorPickerDialog(
     currentColor: Color,
+    recentColors: List<Color>,
     onColorSelected: (Color) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -337,6 +367,46 @@ private fun AccentColorPickerDialog(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    if (recentColors.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text(
+                            "最近使った色",
+                            fontFamily = CyberFont,
+                            fontSize = 9.sp,
+                            color = colors.text.copy(alpha = 0.6f),
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val swatchSize = 24.dp
+                        val swatchSpacing = 10.dp
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            // 横幅に入るだけ1行に並べ、入り切らない分だけ次の行へ折り返す
+                            val maxPerRow = ((maxWidth + swatchSpacing) / (swatchSize + swatchSpacing)).toInt().coerceAtLeast(1)
+                            val columns = min(maxPerRow, recentColors.size)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                recentColors.chunked(columns).forEach { rowColors ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(swatchSpacing)) {
+                                        rowColors.forEach { swatch ->
+                                            val isSelected = swatch.toArgb() == currentColor.toArgb()
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(swatchSize)
+                                                    .clip(CircleShape)
+                                                    .background(swatch)
+                                                    .border(
+                                                        width = if (isSelected) 2.dp else 0.dp,
+                                                        color = if (isSelected) colors.text else Color.Transparent,
+                                                        shape = CircleShape
+                                                    )
+                                                    .clickable { onColorSelected(swatch) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
