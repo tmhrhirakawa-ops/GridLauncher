@@ -63,6 +63,7 @@ fun BottomDockSection(
                     DockAppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
+                        isMonochrome = appInfo.iconIsMonochrome,
                         icon = appInfo.icon,
                         modifier = Modifier.fillMaxHeight().aspectRatio(1.8f),
                         isEditMode = isEditMode,
@@ -109,6 +110,7 @@ fun BottomDockSection(
                     DockAppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
+                        isMonochrome = appInfo.iconIsMonochrome,
                         icon = appInfo.icon,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                         isEditMode = isEditMode,

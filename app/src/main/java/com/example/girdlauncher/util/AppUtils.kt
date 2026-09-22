@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
@@ -22,33 +23,24 @@ import kotlin.math.roundToInt
 
 /**
  * アプリの実アイコン（[Drawable]）を、背景色を含まない単色（デュオトーン）加工した
- * [ImageBitmap] に変換します。加工元として以下を優先順位順に使います。
+ * [ImageBitmap] に変換します。
  *
- * 1. モノクロレイヤー（Android 13+の「テーマアイコン」用レイヤー）
- *    背景を含まない単色シルエット専用に作られているため、そのままアクセントカラーで
- *    塗りつぶすだけで綺麗に仕上がる。
- * 2. 前景レイヤー（Adaptive Icon、Android 8.0+）
- *    背景レイヤーとロゴ（前景レイヤー）が分離されているため、前景だけを使うことで
- *    背景色を含まないロゴのみの表示にできる。
- * 3. 通常のアイコン全体（上記が使えない古い形式のアプリ向けのフォールバック）
- *    背景込みの単一画像しか無いため、背景色は残ったまま加工する。
+ * どのレイヤー（モノクロ/前景/そのまま）を加工対象にするかは[extractDisplayIcon]で
+ * あらかじめ決定済みである前提で、ここでは[isMonochrome]の値に応じて加工方法を選ぶだけです。
  *
- * @param drawable 加工対象のアプリアイコン。
+ * @param drawable 加工対象のアプリアイコン（[extractDisplayIcon]が選んだレイヤー）。
+ * @param isMonochrome [drawable]がモノクロレイヤー由来かどうか。
+ *   trueの場合は明るさ変換をせず元のアルファ形状をそのままアクセントカラーで塗りつぶす
+ *   （モノクロレイヤーは既に単色シルエット用に作られているため）。falseの場合は
+ *   明るさをアクセントカラーの濃淡にマッピングするデュオトーン加工をする。
  * @param accent マッピング先のアクセントカラー。
  */
-fun toDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
-    val monochrome = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && drawable is AdaptiveIconDrawable) {
-        drawable.monochrome
-    } else null
-
-    if (monochrome != null) {
-        // モノクロレイヤーは既に単色シルエット用に作られているため、明るさ変換はせず
-        // 元のアルファ形状をそのままアクセントカラーで塗りつぶす
-        return toFlatTintedImageBitmap(monochrome, accent)
+fun toDuotoneImageBitmap(drawable: Drawable, isMonochrome: Boolean, accent: Color): ImageBitmap {
+    return if (isMonochrome) {
+        toFlatTintedImageBitmap(drawable, accent)
+    } else {
+        toLightnessDuotoneImageBitmap(drawable, accent)
     }
-
-    val foreground = (drawable as? AdaptiveIconDrawable)?.foreground
-    return toLightnessDuotoneImageBitmap(foreground ?: drawable, accent)
 }
 
 /**
@@ -77,6 +69,36 @@ private fun resolveProcessingSize(drawable: Drawable): Pair<Int, Int> {
     val width = (intrinsicWidth * scale).roundToInt().coerceAtLeast(1)
     val height = (intrinsicHeight * scale).roundToInt().coerceAtLeast(1)
     return width to height
+}
+
+/**
+ * アプリ一覧の読み込み時に、表示用アイコンを準備します。
+ *
+ * [android.content.pm.ResolveInfo.loadIcon]が返す[Drawable]は、端末の表示密度によっては
+ * 実際の表示サイズ（24〜28dp）よりもずっと大きいビットマップを内部に保持していることがある。
+ * インストール済みの全アプリ分（数百に上ることもある）をそのまま保持し続けるとメモリを
+ * 圧迫するため、[toDuotoneImageBitmap]が使うレイヤー（モノクロ/前景/そのまま）を先に選んだ
+ * うえで、この時点で表示に十分な解像度までダウンサンプリングしておく。
+ *
+ * @param drawable [android.content.pm.ResolveInfo.loadIcon]などから得た加工前のアイコン。
+ * @return ダウンサンプリング済みの[Drawable]と、それがモノクロレイヤー由来かどうかの組。
+ */
+fun extractDisplayIcon(drawable: Drawable): Pair<Drawable, Boolean> {
+    val monochrome = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && drawable is AdaptiveIconDrawable) {
+        drawable.monochrome
+    } else null
+
+    val (layer, isMonochrome) = if (monochrome != null) {
+        monochrome to true
+    } else {
+        val foreground = (drawable as? AdaptiveIconDrawable)?.foreground
+        (foreground ?: drawable) to false
+    }
+
+    val (width, height) = resolveProcessingSize(layer)
+    @Suppress("DEPRECATION") // Resourcesが無い呼び出し元でも使えるよう、あえて非推奨コンストラクタを使う
+    val downsized = BitmapDrawable(layer.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888))
+    return downsized to isMonochrome
 }
 
 /**
@@ -214,10 +236,12 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val resolvedInfos = packageManager.queryIntentActivities(intent, 0)
 
     return resolvedInfos.map { resolveInfo ->
+        val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
         AppInfo(
             label = resolveInfo.loadLabel(packageManager).toString(),
             packageName = resolveInfo.activityInfo.packageName,
-            icon = resolveInfo.loadIcon(packageManager)
+            icon = icon,
+            iconIsMonochrome = isMonochrome
         )
     }.sortedBy { it.label }
 }

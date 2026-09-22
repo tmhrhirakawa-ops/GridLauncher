@@ -37,6 +37,7 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
  * @param icon アプリのアイコン。
  * @param modifier レイアウトに適用するModifier。
  * @param packageName アプリのパッケージ名。デュオトーン加工のキャッシュキーに使用。
+ * @param isMonochrome [icon]がモノクロレイヤー由来かどうか。デュオトーン加工方法の選択に使う。
  * @param isEditMode UIが編集モードかどうか。
  * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
@@ -51,6 +52,7 @@ fun DockAppCard(
     icon: Drawable,
     modifier: Modifier = Modifier,
     packageName: String = "",
+    isMonochrome: Boolean = false,
     isEditMode: Boolean = false,
     notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
@@ -77,7 +79,7 @@ fun DockAppCard(
             ) {
                 // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
                 val accent = LocalCyberColors.current.accent
-                val bitmap = remember(packageName, icon, accent) { toDuotoneImageBitmap(icon, accent) }
+                val bitmap = remember(packageName, icon, isMonochrome, accent) { toDuotoneImageBitmap(icon, isMonochrome, accent) }
                 Image(
                     bitmap = bitmap,
                     contentDescription = name,

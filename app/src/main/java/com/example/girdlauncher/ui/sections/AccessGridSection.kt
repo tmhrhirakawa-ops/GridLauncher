@@ -103,6 +103,7 @@ fun AccessGridSection(
                                 AppCard(
                                     name = appInfo.label,
                                     packageName = appInfo.packageName,
+                                    isMonochrome = appInfo.iconIsMonochrome,
                                     icon = appInfo.icon,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     isEditMode = isEditMode,

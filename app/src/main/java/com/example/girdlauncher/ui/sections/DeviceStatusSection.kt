@@ -76,30 +76,26 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
     val usedMemGB = String.format(Locale.US, "%.1f", usedMemBytes / (1024.0 * 1024 * 1024))
     val memUsageRatio = if (totalMemBytes > 0) usedMemBytes.toFloat() / totalMemBytes.toFloat() else 0f
 
-    // キャッシュクリア風のエフェクト用
+    // キャッシュクリア風のエフェクト用（演出のみ。System.gc()は自プロセスのヒープにしか働かず、
+    // 実際のシステムメモリ解放にはならないうえ強制GCによる無用なジャンクを招くため呼ばない）
     var isOptimizing by remember { mutableStateOf(false) }
-    // 最適化で解放できたメモリ量（バイト）。nullの間は結果表示を隠す
-    var optimizeFreedBytes by remember { mutableStateOf<Long?>(null) }
+    // 結果表示（演出）を出すかどうか
+    var showOptimizeResult by remember { mutableStateOf(false) }
 
     LaunchedEffect(isOptimizing) {
         if (isOptimizing) {
-            val before = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
-            System.gc()
             delay(1500) // 最適化中...の演出時間
-            System.gc()
-            val after = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
-
-            trigger++ // ゲージを再取得
-            optimizeFreedBytes = after - before
+            trigger++ // ゲージを最新の値に再取得
+            showOptimizeResult = true
             isOptimizing = false
         }
     }
 
     // 結果表示を数秒後に自動で消す
-    LaunchedEffect(optimizeFreedBytes) {
-        if (optimizeFreedBytes != null) {
+    LaunchedEffect(showOptimizeResult) {
+        if (showOptimizeResult) {
             delay(3000)
-            optimizeFreedBytes = null
+            showOptimizeResult = false
         }
     }
 
@@ -189,7 +185,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                 Surface(
                     onClick = {
                         if (!isOptimizing) {
-                            optimizeFreedBytes = null
+                            showOptimizeResult = false
                             isOptimizing = true
                         }
                     },
@@ -239,17 +235,16 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
 
                 // 最適化結果の表示（数秒でフェードアウト）
                 AnimatedVisibility(
-                    visible = optimizeFreedBytes != null,
+                    visible = showOptimizeResult,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    val freedMB = (optimizeFreedBytes ?: 0L) / (1024 * 1024)
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = if (freedMB > 0) "✔ ${freedMB}MB FREED" else "✔ SYSTEM OPTIMAL",
+                            text = "✔ SYSTEM OPTIMAL",
                             fontFamily = CyberFont,
                             fontSize = 9.sp,
                             color = LocalCyberColors.current.accent,
