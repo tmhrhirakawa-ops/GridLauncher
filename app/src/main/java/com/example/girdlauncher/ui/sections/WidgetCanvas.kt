@@ -65,9 +65,11 @@ import kotlin.math.roundToInt
  * @param rows グリッドの行数。
  * @param placedWidgets 現在配置されているウィジェットの一覧。
  * @param isWidgetEditMode ウィジェット編集モードかどうか。
- * @param iconCellSizes ウィジェットの種類ごとの、アイコン1個分のサイズ（キャンバスのセル単位、小数可）。
- *   指定された種類は、リサイズ時にキャンバスの粗いセル単位ではなく、このアイコン1個分の固定サイズを
- *   単位として1行・1列ずつスナップする（指定がない種類は従来通りセル単位でスナップ）。
+ * @param iconCellSizes キャンバスのセル1つ分の実サイズ（dp）を受け取り、ウィジェットの種類ごとの
+ *   アイコン1個分のサイズ（キャンバスのセル単位、小数可）を返す関数。指定された種類は、リサイズ時に
+ *   キャンバスの粗いセル単位ではなく、このアイコン1個分の固定サイズを単位として1行・1列ずつ
+ *   スナップする（指定がない種類は従来通りセル単位でスナップ）。呼び出し側がセルサイズ算出のために
+ *   別途`BoxWithConstraints`で画面を測り直さずに済むよう、ここで測定済みの値をそのまま渡す。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
  * @param onWidgetLongClick ウィジェットのヘッダーなど（個々のスロット以外）が長押しされたときの
@@ -75,7 +77,8 @@ import kotlin.math.roundToInt
  * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップ（長押しの閾値に
  *   達する前に指を離す）されたときのコールバック。
  * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、現在表示中の
- *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、サイズ確定済みの
+ *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、[iconCellSizes]が
+ *   このウィジェットの種類に対して返したアイコン1個分のサイズ（未指定なら`null`）、サイズ確定済みの
  *   [Modifier]を受け取り、既存の`AccessGridSection`等を呼び出す）。呼び出し側はこのcolSpan・
  *   rowSpanを使って、内部のスロット数などをリサイズ中もリアルタイムに追従させられる。
  */
@@ -86,17 +89,18 @@ fun SharedTransitionScope.WidgetCanvas(
     rows: Int,
     placedWidgets: List<PlacedWidget>,
     isWidgetEditMode: Boolean,
-    iconCellSizes: Map<WidgetPanel, Pair<Float, Float>> = emptyMap(),
+    iconCellSizes: (cellWidth: Dp, cellHeight: Dp) -> Map<WidgetPanel, Pair<Float, Float>> = { _, _ -> emptyMap() },
     onLayoutChange: (List<PlacedWidget>) -> Unit,
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Modifier) -> Unit
+    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Pair<Float, Float>?, Modifier) -> Unit
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val cellWidth = maxWidth / columns
         val cellHeight = maxHeight / rows
+        val resolvedIconCellSizes = iconCellSizes(cellWidth, cellHeight)
 
         placedWidgets.forEach { widget ->
             key(widget.type) {
@@ -109,7 +113,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     cellHeight = cellHeight,
                     isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
-                    iconCellSize = iconCellSizes[widget.type],
+                    iconCellSize = resolvedIconCellSizes[widget.type],
                     onMoved = { newCol, newRow ->
                         onLayoutChange(placedWidgets.map { if (it.type == widget.type) it.copy(col = newCol, row = newRow) else it })
                     },
@@ -128,7 +132,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     onWidgetLongClick = onWidgetLongClick,
                     onExitWidgetEditMode = onExitWidgetEditMode
                 ) { liveColSpan, liveRowSpan, boxModifier ->
-                    content(widget.type, liveColSpan, liveRowSpan, boxModifier)
+                    content(widget.type, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier)
                 }
             }
         }

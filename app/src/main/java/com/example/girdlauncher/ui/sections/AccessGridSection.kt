@@ -33,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
  * @param items 表示するスロットの中身のリスト（アプリ・フォルダ・null=空きスロット）。
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
- * @param isPortrait デバイスの向きが縦（ポートレート）かどうか。
  * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
@@ -53,7 +52,6 @@ fun SharedTransitionScope.AccessGridSection(
     items: List<GridItem?>,
     columns: Int,
     rows: Int,
-    isPortrait: Boolean = false,
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),

@@ -574,21 +574,19 @@ fun CyberLauncherScreen() {
                 HeaderDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // ACCESS GRID内部のアプリ一覧のMサイズ（基準列数・行数）・見出しは、画面モードごとに
+                // ACCESS GRID内部のアプリ一覧のMサイズ（基準列数・行数）は、画面モードごとに
                 // 従来と同じ値を使う。
                 val accessGridMColumns: Int
                 val accessGridMRows: Int
-                val accessGridIsPortrait: Boolean
                 when (widgetLayoutMode) {
                     WidgetLayoutMode.SMALL_PORTRAIT -> {
-                        accessGridMColumns = 3; accessGridMRows = 3; accessGridIsPortrait = true
+                        accessGridMColumns = 3; accessGridMRows = 3
                     }
                     WidgetLayoutMode.LARGE_PORTRAIT -> {
-                        // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
-                        accessGridMColumns = 4; accessGridMRows = 3; accessGridIsPortrait = false
+                        accessGridMColumns = 4; accessGridMRows = 3
                     }
                     WidgetLayoutMode.LANDSCAPE -> {
-                        accessGridMColumns = 3; accessGridMRows = 5; accessGridIsPortrait = false
+                        accessGridMColumns = 3; accessGridMRows = 5
                     }
                 }
                 val accessGridDefaultWidget = remember(widgetLayoutMode) {
@@ -596,63 +594,61 @@ fun CyberLauncherScreen() {
                 }
 
                 // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSを、追加・削除・リサイズ・
-                // 移動できるウィジェットとして配置するキャンバス
-                BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                    // キャンバスのセル1つ分の実サイズ（dp）。S/M/Lの各サイズを、画面の実寸から
-                    // 逆算するために使う
-                    val canvasCellWidth = maxWidth / widgetLayoutMode.columns
-                    val canvasCellHeight = maxHeight / widgetLayoutMode.rows
+                // 移動できるウィジェットとして配置するキャンバス。
+                // アイコン1個分の固定サイズ（S/M/L）の算出にはキャンバスのセル実寸（dp）が必要だが、
+                // WidgetCanvas自身が内部でBoxWithConstraintsによりそれを測定済みのため、二重に
+                // 測定し直さずに済むよう、その値をこのラムダで受け取る
+                WidgetCanvas(
+                    columns = widgetLayoutMode.columns,
+                    rows = widgetLayoutMode.rows,
+                    placedWidgets = placedWidgets,
+                    isWidgetEditMode = isWidgetEditMode,
+                    // APP LISTはリサイズ時、アイコン1個分の固定サイズを単位に1行・1列ずつスナップする
+                    iconCellSizes = { canvasCellWidth, canvasCellHeight ->
+                        // Mサイズ：アイコン1個分の固定サイズ（キャンバスセル単位）を、
+                        // 「デフォルトの外枠サイズにMColumns×MRows個のアイコンが入る」ことから求める
+                        val mIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridMColumns
+                        val mIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridMRows
 
-                    // Mサイズ：アイコン1個分の固定サイズ（キャンバスセル単位）を、
-                    // 「デフォルトの外枠サイズにMColumns×MRows個のアイコンが入る」ことから求める
-                    val mIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridMColumns
-                    val mIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridMRows
+                        // Lサイズ：Mと同じ外枠サイズに、列・行をそれぞれ1つ減らした数しか入らない
+                        // 大きさ（アイコンが一回り大きくなる）
+                        val accessGridLColumns = (accessGridMColumns - 1).coerceAtLeast(1)
+                        val accessGridLRows = (accessGridMRows - 1).coerceAtLeast(1)
+                        val lIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridLColumns
+                        val lIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridLRows
 
-                    // Lサイズ：Mと同じ外枠サイズに、列・行をそれぞれ1つ減らした数しか入らない
-                    // 大きさ（アイコンが一回り大きくなる）
-                    val accessGridLColumns = (accessGridMColumns - 1).coerceAtLeast(1)
-                    val accessGridLRows = (accessGridMRows - 1).coerceAtLeast(1)
-                    val lIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridLColumns
-                    val lIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridLRows
+                        // Sサイズ：アイコンが正方形になるサイズ。Mのアイコンの短辺の長さを1辺として、
+                        // デフォルトの外枠サイズに敷き詰められるだけ敷き詰める
+                        val mIconWidthDp = canvasCellWidth * mIconWidthUnits
+                        val mIconHeightDp = canvasCellHeight * mIconHeightUnits
+                        val squareSideDp = minOf(mIconWidthDp, mIconHeightDp)
+                        val accessGridSColumns = ((canvasCellWidth * accessGridDefaultWidget.colSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
+                        val accessGridSRows = ((canvasCellHeight * accessGridDefaultWidget.rowSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
+                        val sIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridSColumns
+                        val sIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridSRows
 
-                    // Sサイズ：アイコンが正方形になるサイズ。Mのアイコンの短辺の長さを1辺として、
-                    // デフォルトの外枠サイズに敷き詰められるだけ敷き詰める
-                    val mIconWidthDp = canvasCellWidth * mIconWidthUnits
-                    val mIconHeightDp = canvasCellHeight * mIconHeightUnits
-                    val squareSideDp = minOf(mIconWidthDp, mIconHeightDp)
-                    val accessGridSColumns = ((canvasCellWidth * accessGridDefaultWidget.colSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
-                    val accessGridSRows = ((canvasCellHeight * accessGridDefaultWidget.rowSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
-                    val sIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridSColumns
-                    val sIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridSRows
-
-                    val (accessGridIconWidthUnits, accessGridIconHeightUnits) = when (accessGridSlotSize) {
-                        AccessGridSlotSize.S -> sIconWidthUnits to sIconHeightUnits
-                        AccessGridSlotSize.M -> mIconWidthUnits to mIconHeightUnits
-                        AccessGridSlotSize.L -> lIconWidthUnits to lIconHeightUnits
-                    }
-
-                    WidgetCanvas(
-                        columns = widgetLayoutMode.columns,
-                        rows = widgetLayoutMode.rows,
-                        placedWidgets = placedWidgets,
-                        isWidgetEditMode = isWidgetEditMode,
-                        // APP LISTはリサイズ時、アイコン1個分の固定サイズを単位に1行・1列ずつスナップする
-                        iconCellSizes = mapOf(WidgetPanel.ACCESS_GRID to (accessGridIconWidthUnits to accessGridIconHeightUnits)),
-                        onLayoutChange = { updatePlacedWidgets(it) },
-                        onRequestAddWidget = { showWidgetTypeSelector = true },
-                        onWidgetLongClick = { enterWidgetEditMode() },
-                        onExitWidgetEditMode = { isWidgetEditMode = false }
-                    ) { type, liveColSpan, liveRowSpan, boxModifier ->
-                        // 列数・行数は現在表示中のcolSpan・rowSpan（リサイズドラッグ中はそのライブ
-                        // プレビュー値）から毎回求めるため、ドラッグ中もリアルタイムに追従する
-                        val accessGridColumns = (liveColSpan / accessGridIconWidthUnits).roundToInt().coerceAtLeast(1)
-                        val accessGridRows = (liveRowSpan / accessGridIconHeightUnits).roundToInt().coerceAtLeast(1)
-                        when (type) {
-                            WidgetPanel.ACCESS_GRID -> AccessGridSection(
+                        val (iconWidthUnits, iconHeightUnits) = when (accessGridSlotSize) {
+                            AccessGridSlotSize.S -> sIconWidthUnits to sIconHeightUnits
+                            AccessGridSlotSize.M -> mIconWidthUnits to mIconHeightUnits
+                            AccessGridSlotSize.L -> lIconWidthUnits to lIconHeightUnits
+                        }
+                        mapOf(WidgetPanel.ACCESS_GRID to (iconWidthUnits to iconHeightUnits))
+                    },
+                    onLayoutChange = { updatePlacedWidgets(it) },
+                    onRequestAddWidget = { showWidgetTypeSelector = true },
+                    onWidgetLongClick = { enterWidgetEditMode() },
+                    onExitWidgetEditMode = { isWidgetEditMode = false },
+                    modifier = Modifier.weight(1f)
+                ) { type, liveColSpan, liveRowSpan, iconCellSize, boxModifier ->
+                    // 列数・行数は現在表示中のcolSpan・rowSpan（リサイズドラッグ中はそのライブ
+                    // プレビュー値）から毎回求めるため、ドラッグ中もリアルタイムに追従する
+                    when (type) {
+                        WidgetPanel.ACCESS_GRID -> {
+                            val (iconWidthUnits, iconHeightUnits) = iconCellSize ?: (1f to 1f)
+                            AccessGridSection(
                                 items = gridItems,
-                                columns = accessGridColumns,
-                                rows = accessGridRows,
-                                isPortrait = accessGridIsPortrait,
+                                columns = (liveColSpan / iconWidthUnits).roundToInt().coerceAtLeast(1),
+                                rows = (liveRowSpan / iconHeightUnits).roundToInt().coerceAtLeast(1),
                                 isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications,
@@ -666,36 +662,36 @@ fun CyberLauncherScreen() {
                                 onRemoveClick = { index -> removeGridItem(index) },
                                 onExitEditMode = { isEditMode = false }
                             )
-                            WidgetPanel.CALENDAR -> CalendarSection(
-                                modifier = boxModifier,
-                                showBorder = WidgetPanel.CALENDAR !in hiddenWidgetPanels
-                            )
-                            WidgetPanel.DEVICE_STATUS -> DeviceStatusSection(
-                                modifier = boxModifier,
-                                showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels
-                            )
-                            WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
-                                modifier = boxModifier,
-                                slots = quickActionSlots,
-                                isEditMode = isEditMode,
-                                isWallpaperMode = isWallpaperMode,
-                                accentColor = accentColor,
-                                showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
-                                onThemeToggle = {
-                                    val newTheme = !isDarkTheme
-                                    isDarkTheme = newTheme
-                                    prefs.edit { putBoolean("is_dark_theme", newTheme) }
-                                },
-                                onAccentColorChange = { color ->
-                                    accentColor = color
-                                    prefs.edit { putInt("accent_color", color.toArgb()) }
-                                },
-                                onAddClick = { index -> quickActionAddIndex = index },
-                                onLongClick = { enterSlotEditMode() },
-                                onRemoveClick = { index -> removeQuickAction(index) },
-                                onExitEditMode = { isEditMode = false }
-                            )
                         }
+                        WidgetPanel.CALENDAR -> CalendarSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.CALENDAR !in hiddenWidgetPanels
+                        )
+                        WidgetPanel.DEVICE_STATUS -> DeviceStatusSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels
+                        )
+                        WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
+                            modifier = boxModifier,
+                            slots = quickActionSlots,
+                            isEditMode = isEditMode,
+                            isWallpaperMode = isWallpaperMode,
+                            accentColor = accentColor,
+                            showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
+                            onThemeToggle = {
+                                val newTheme = !isDarkTheme
+                                isDarkTheme = newTheme
+                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                            },
+                            onAccentColorChange = { color ->
+                                accentColor = color
+                                prefs.edit { putInt("accent_color", color.toArgb()) }
+                            },
+                            onAddClick = { index -> quickActionAddIndex = index },
+                            onLongClick = { enterSlotEditMode() },
+                            onRemoveClick = { index -> removeQuickAction(index) },
+                            onExitEditMode = { isEditMode = false }
+                        )
                     }
                 }
 
