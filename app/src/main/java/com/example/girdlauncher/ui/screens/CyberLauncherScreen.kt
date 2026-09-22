@@ -33,16 +33,19 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.girdlauncher.model.FolderInfo
 import com.example.girdlauncher.model.GridItem
+import com.example.girdlauncher.model.PlacedWidget
 import com.example.girdlauncher.model.QuickActionId
 import com.example.girdlauncher.model.WidgetPanel
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.PermissionRationaleDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
+import com.example.girdlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.createFolder
 import com.example.girdlauncher.util.deleteFolder
+import com.example.girdlauncher.util.findFreeGridSlot
 import com.example.girdlauncher.util.folderIdFromSlotValue
 import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
@@ -50,12 +53,15 @@ import com.example.girdlauncher.util.isFolderSlotValue
 import com.example.girdlauncher.util.isNotificationListenerEnabled
 import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.loadHiddenWidgetPanels
+import com.example.girdlauncher.util.loadPlacedWidgets
 import com.example.girdlauncher.util.loadQuickActionSlots
 import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.saveFolder
 import com.example.girdlauncher.util.saveHiddenWidgetPanels
+import com.example.girdlauncher.util.savePlacedWidgets
 import com.example.girdlauncher.util.saveQuickActionSlots
 import com.example.girdlauncher.util.CyberNotificationListener
+import com.example.girdlauncher.util.WidgetLayoutMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
@@ -296,6 +302,20 @@ fun CyberLauncherScreen() {
     val density = LocalDensity.current
     val screenWidthDp = with(density) { windowInfo.containerSize.width.toDp().value.toInt() }
 
+    // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSをウィジェットとして配置するキャンバス。
+    // 画面モードごとに別々のグリッド寸法・配置を持つ。
+    val widgetLayoutMode = when {
+        isPortrait && screenWidthDp < 600 -> WidgetLayoutMode.SMALL_PORTRAIT
+        isPortrait -> WidgetLayoutMode.LARGE_PORTRAIT
+        else -> WidgetLayoutMode.LANDSCAPE
+    }
+    var placedWidgets by remember(widgetLayoutMode) { mutableStateOf(loadPlacedWidgets(prefs, widgetLayoutMode)) }
+    fun updatePlacedWidgets(newWidgets: List<PlacedWidget>) {
+        placedWidgets = newWidgets
+        savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
+    }
+    var showWidgetTypeSelector by remember { mutableStateOf(false) } // 「+ ADD WIDGET」タップ時（種類選択待ち）
+
     // 初回起動時、通知アクセス権限が未許可なら理由を説明してから権限付与画面へ案内する
     if (showNotificationAccessRationale) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -424,6 +444,26 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // 「+ ADD WIDGET」タップ時、追加するウィジェットの種類を選ばせる
+    if (showWidgetTypeSelector) {
+        val placedTypes = placedWidgets.map { it.type }.toSet()
+        val availableWidgets = WidgetPanel.entries.filterNot { it in placedTypes }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            WidgetTypeSelectorDialog(
+                availableWidgets = availableWidgets,
+                onDismiss = { showWidgetTypeSelector = false },
+                onSelect = { type ->
+                    val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
+                    if (slot != null) {
+                        val (col, row, colSpan, rowSpan) = slot
+                        updatePlacedWidgets(placedWidgets + PlacedWidget(type, col, row, colSpan, rowSpan))
+                    }
+                    showWidgetTypeSelector = false
+                }
+            )
+        }
+    }
+
     CompositionLocalProvider(LocalCyberColors provides colors) {
         // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
         // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
@@ -473,58 +513,6 @@ fun CyberLauncherScreen() {
                         onToggleAllBorders = { toggleAllWidgetBorders() },
                         onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HeaderDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Box(modifier = Modifier.weight(1.5f)) {
-                        AccessGridSection(
-                            items = gridItems,
-                            columns = 3,
-                            rows = 3,
-                            isPortrait = isPortrait, // isPortrait を渡す
-                            isEditMode = isEditMode,
-                            isWallpaperMode = isWallpaperMode,
-                            activeNotifications = activeNotifications, // 追加
-                            openFolderId = openFolderId,
-                            showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
-                            onAddClick = { index -> addSlotChoiceIndex = index },
-                            onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
-                            onLongClick = { isEditMode = true },
-                            onRemoveClick = { index -> removeGridItem(index) },
-                            onExitEditMode = { isEditMode = false }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // ウィジェットエリア
-                    Row(modifier = Modifier.weight(1f)) {
-                        DeviceStatusSection(modifier = Modifier.weight(1.5f), showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        // 横画面と同じ2列×3行のQUICK ACCESSを使用する
-                        QuickAccessSection(
-                            modifier = Modifier.weight(1f),
-                            slots = quickActionSlots,
-                            isEditMode = isEditMode,
-                            isWallpaperMode = isWallpaperMode,
-                            accentColor = accentColor,
-                            showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
-                            onThemeToggle = {
-                                val newTheme = !isDarkTheme
-                                isDarkTheme = newTheme
-                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
-                            },
-                            onAccentColorChange = { color ->
-                                accentColor = color
-                                prefs.edit { putInt("accent_color", color.toArgb()) }
-                            },
-                            onAddClick = { index -> quickActionAddIndex = index },
-                            onLongClick = { isEditMode = true },
-                            onRemoveClick = { index -> removeQuickAction(index) },
-                            onExitEditMode = { isEditMode = false }
-                        )
-                    }
                 } else if (isPortrait) {
                     // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                     HeaderSectionPortrait(
@@ -539,42 +527,83 @@ fun CyberLauncherScreen() {
                         onToggleAllBorders = { toggleAllWidgetBorders() },
                         onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HeaderDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    // 横画面（ランドスケープ/メイン画面）のレイアウト
+                    HeaderSectionLandscape(
+                        nowPlaying = nowPlaying,
+                        isWallpaperMode = isWallpaperMode,
+                        onWallpaperToggle = {
+                            isWallpaperMode = !isWallpaperMode
+                            prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
+                        },
+                        hiddenPanels = hiddenWidgetPanels,
+                        onToggleAllBorders = { toggleAllWidgetBorders() },
+                        onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                HeaderDivider()
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    // アクセスグリッドの表示領域は（小）よりも縮小し、下のウィジェットエリアを広く取る
-                    Box(modifier = Modifier.weight(1f)) {
-                        AccessGridSection(
-                            items = gridItems,
-                            columns = 4,
-                            rows = 3,
-                            // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
-                            isPortrait = false,
-                            isEditMode = isEditMode,
-                            isWallpaperMode = isWallpaperMode,
-                            activeNotifications = activeNotifications, // 追加
-                            openFolderId = openFolderId,
-                            showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
-                            onAddClick = { index -> addSlotChoiceIndex = index },
-                            onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
-                            onLongClick = { isEditMode = true },
-                            onRemoveClick = { index -> removeGridItem(index) },
-                            onExitEditMode = { isEditMode = false }
-                        )
+                // ACCESS GRID内部のアプリ一覧の列数・行数・見出しは、画面モードごとに従来と
+                // 同じ値を使う（リサイズと連動はさせない。外枠のサイズだけがウィジェット
+                // キャンバス側で可変になる）。
+                val accessGridColumns: Int
+                val accessGridRows: Int
+                val accessGridIsPortrait: Boolean
+                when (widgetLayoutMode) {
+                    WidgetLayoutMode.SMALL_PORTRAIT -> {
+                        accessGridColumns = 3; accessGridRows = 3; accessGridIsPortrait = true
                     }
+                    WidgetLayoutMode.LARGE_PORTRAIT -> {
+                        // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
+                        accessGridColumns = 4; accessGridRows = 3; accessGridIsPortrait = false
+                    }
+                    WidgetLayoutMode.LANDSCAPE -> {
+                        accessGridColumns = 3; accessGridRows = 5; accessGridIsPortrait = false
+                    }
+                }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // ウィジェットエリア: 左側にカレンダー、右側にSYSTEM MONITORとQUICK ACCESSを縦に並べる
-                    Row(modifier = Modifier.weight(1.5f)) {
-                        CalendarSection(modifier = Modifier.weight(1.4f), showBorder = WidgetPanel.CALENDAR !in hiddenWidgetPanels)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            DeviceStatusSection(modifier = Modifier.weight(1f), showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            QuickAccessSection(
-                                modifier = Modifier.weight(1f),
+                // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSを、追加・削除・リサイズ・
+                // 移動できるウィジェットとして配置するキャンバス
+                Box(modifier = Modifier.weight(1f)) {
+                    WidgetCanvas(
+                        columns = widgetLayoutMode.columns,
+                        rows = widgetLayoutMode.rows,
+                        placedWidgets = placedWidgets,
+                        isEditMode = isEditMode,
+                        onLayoutChange = { updatePlacedWidgets(it) },
+                        onRequestAddWidget = { showWidgetTypeSelector = true },
+                        onLongClick = { isEditMode = true },
+                        onExitEditMode = { isEditMode = false }
+                    ) { type, boxModifier ->
+                        when (type) {
+                            WidgetPanel.ACCESS_GRID -> AccessGridSection(
+                                items = gridItems,
+                                columns = accessGridColumns,
+                                rows = accessGridRows,
+                                isPortrait = accessGridIsPortrait,
+                                isEditMode = isEditMode,
+                                isWallpaperMode = isWallpaperMode,
+                                activeNotifications = activeNotifications,
+                                openFolderId = openFolderId,
+                                showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
+                                onAddClick = { index -> addSlotChoiceIndex = index },
+                                onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
+                                onLongClick = { isEditMode = true },
+                                onRemoveClick = { index -> removeGridItem(index) },
+                                onExitEditMode = { isEditMode = false }
+                            )
+                            WidgetPanel.CALENDAR -> CalendarSection(
+                                modifier = boxModifier,
+                                showBorder = WidgetPanel.CALENDAR !in hiddenWidgetPanels
+                            )
+                            WidgetPanel.DEVICE_STATUS -> DeviceStatusSection(
+                                modifier = boxModifier,
+                                showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels
+                            )
+                            WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
+                                modifier = boxModifier,
                                 slots = quickActionSlots,
                                 isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
@@ -596,79 +625,6 @@ fun CyberLauncherScreen() {
                             )
                         }
                     }
-                } else {
-                    // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape(
-                        nowPlaying = nowPlaying,
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
-                        },
-                        hiddenPanels = hiddenWidgetPanels,
-                        onToggleAllBorders = { toggleAllWidgetBorders() },
-                        onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HeaderDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.weight(1f)) {
-                        // 左側: アプリグリッド (weight 1f)
-                        Box(modifier = Modifier.weight(1f)) {
-                            AccessGridSection(
-                                items = gridItems,
-                                columns = 3,
-                                rows = 5,
-                                isPortrait = isPortrait, // isPortrait を渡す
-                                isEditMode = isEditMode,
-                                isWallpaperMode = isWallpaperMode,
-                                activeNotifications = activeNotifications, // 追加
-                                openFolderId = openFolderId,
-                                showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
-                                onAddClick = { index -> addSlotChoiceIndex = index },
-                                onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
-                                onLongClick = { isEditMode = true },
-                                onRemoveClick = { index -> removeGridItem(index) },
-                                onExitEditMode = { isEditMode = false }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(24.dp))
-
-                        // 右側: ウィジェットエリア (weight 1f に戻す)
-                        Column(modifier = Modifier.weight(1f)) {
-                            CalendarSection(modifier = Modifier.weight(1f), showBorder = WidgetPanel.CALENDAR !in hiddenWidgetPanels)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            // 下段エリアの高さを縦方向に広げる (weight を 1.5f に設定)
-                            Row(modifier = Modifier.weight(0.8f)) {
-                                DeviceStatusSection(modifier = Modifier.weight(1f), showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                // QUICK ACCESS は横幅を戻す
-                                QuickAccessSection(
-                                    modifier = Modifier.weight(1f),
-                                    slots = quickActionSlots,
-                                    isEditMode = isEditMode,
-                                    isWallpaperMode = isWallpaperMode,
-                                    accentColor = accentColor,
-                                    showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
-                                    onThemeToggle = {
-                                        val newTheme = !isDarkTheme
-                                        isDarkTheme = newTheme
-                                        prefs.edit { putBoolean("is_dark_theme", newTheme) }
-                                    },
-                                    onAccentColorChange = { color ->
-                                        accentColor = color
-                                        prefs.edit { putInt("accent_color", color.toArgb()) }
-                                    },
-                                    onAddClick = { index -> quickActionAddIndex = index },
-                                    onLongClick = { isEditMode = true },
-                                    onRemoveClick = { index -> removeQuickAction(index) },
-                                    onExitEditMode = { isEditMode = false }
-                                )
-                            }
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -680,8 +636,8 @@ fun CyberLauncherScreen() {
                     isEditMode = isEditMode,
                     isWallpaperMode = isWallpaperMode,
                     activeNotifications = activeNotifications, // 追加
-                    onAddClick = { index -> 
-                        appSelectorTarget = "dock" 
+                    onAddClick = { index ->
+                        appSelectorTarget = "dock"
                         targetIndex = index
                     },
                     onLongClick = { isEditMode = true },
