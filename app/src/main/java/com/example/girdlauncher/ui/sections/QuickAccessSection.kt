@@ -20,11 +20,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Wallpaper as WallpaperFilled
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Wallpaper as WallpaperOutlined
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -97,13 +92,13 @@ private fun addRecentAccentColor(prefs: SharedPreferences, current: List<Color>,
  * @param isEditMode UIが編集モードかどうか（メイングリッドと共通の状態）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param accentColor 現在のメインテーマ（アクセント）カラー。
- * @param onWallpaperToggle 壁紙透過切り替えボタンがクリックされたときのコールバック。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick ボタンが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除バッジがクリックされたときのコールバック。
  * @param onExitEditMode 編集モード中に削除バッジ以外の部分がタップされたときのコールバック。
+ * @param showBorder 枠線を表示するかどうか。
  */
 @Composable
 fun QuickAccessSection(
@@ -112,7 +107,7 @@ fun QuickAccessSection(
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     accentColor: Color = DefaultAccentColor,
-    onWallpaperToggle: () -> Unit = {},
+    showBorder: Boolean = true,
     onThemeToggle: () -> Unit = {},
     onAccentColorChange: (Color) -> Unit = {},
     onAddClick: (Int) -> Unit = {},
@@ -169,65 +164,18 @@ fun QuickAccessSection(
 
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+        color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
+        border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
          Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier
-                        .size(6.dp)
-                        .background(LocalCyberColors.current.accent))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                    Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // 設定（歯車）ボタン
-                    Surface(
-                        onClick = {
-                            val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        },
-                        shape = RoundedCornerShape(4.dp),
-                        color = androidx.compose.ui.graphics.Color.Transparent,
-                        border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                        modifier = Modifier.size(26.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Settings,
-                                contentDescription = "Settings",
-                                tint = LocalCyberColors.current.text.copy(alpha = 0.5f),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                    }
-                    // 壁紙切り替えボタン
-                    Surface(
-                        onClick = onWallpaperToggle,
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (isWallpaperMode) LocalCyberColors.current.accent.copy(alpha = 0.15f) else androidx.compose.ui.graphics.Color.Transparent,
-                        border = BorderStroke(1.dp, if (isWallpaperMode) LocalCyberColors.current.accent else LocalCyberColors.current.border),
-                        modifier = Modifier.size(26.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (isWallpaperMode) Icons.Filled.WallpaperFilled else Icons.Outlined.WallpaperOutlined,
-                                contentDescription = "Toggle Wallpaper",
-                                tint = if (isWallpaperMode) LocalCyberColors.current.accent else LocalCyberColors.current.text.copy(alpha = 0.5f),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                    }
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier
+                    .size(6.dp)
+                    .background(LocalCyberColors.current.accent))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
+                Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             }
             Spacer(modifier = Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

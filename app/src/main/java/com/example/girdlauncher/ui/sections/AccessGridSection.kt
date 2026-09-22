@@ -53,6 +53,7 @@ fun SharedTransitionScope.AccessGridSection(
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
     openFolderId: String? = null,
+    showBorder: Boolean = true,
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -61,7 +62,13 @@ fun SharedTransitionScope.AccessGridSection(
 ) {
     val context = LocalContext.current
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
+        border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
+        modifier = Modifier.fillMaxSize()
+    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier
                 .size(8.dp)
@@ -75,7 +82,7 @@ fun SharedTransitionScope.AccessGridSection(
             }
         }
         Spacer(modifier = Modifier.height(12.dp))
-        
+
         // アプリ・フォルダを指定された行数・列数で分割
         val pageSize = columns * rows
         // 少なくとも1ページ分は空きスロットを表示する
@@ -173,5 +180,6 @@ fun SharedTransitionScope.AccessGridSection(
                 }
             }
         }
+    }
     }
 }

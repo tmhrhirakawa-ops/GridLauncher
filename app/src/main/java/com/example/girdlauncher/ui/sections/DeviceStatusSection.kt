@@ -40,9 +40,10 @@ import java.util.Locale
  * ストレージとメモリの使用状況など、デバイスのステータスを表示するセクション。
  *
  * @param modifier レイアウトに適用するModifier。
+ * @param showBorder 枠線を表示するかどうか。
  */
 @Composable
-fun DeviceStatusSection(modifier: Modifier = Modifier) {
+fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = true) {
     val context = LocalContext.current
     
     // 定期的に状態を更新するための状態変数
@@ -116,8 +117,8 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
 
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+        color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
+        border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {

@@ -174,9 +174,10 @@ private fun formatDayLabel(day: LocalDate): String {
  * 週間・日間表示では、その期間に含まれる予定の中身（時刻・タイトル）まで一覧表示する。
  *
  * @param modifier レイアウトに適用するModifier。
+ * @param showBorder 枠線を表示するかどうか。
  */
 @Composable
-fun CalendarSection(modifier: Modifier = Modifier) {
+fun CalendarSection(modifier: Modifier = Modifier, showBorder: Boolean = true) {
     val context = LocalContext.current
 
     var hasPermission by remember {
@@ -233,8 +234,8 @@ fun CalendarSection(modifier: Modifier = Modifier) {
 
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+        color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
+        border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
