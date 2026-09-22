@@ -119,13 +119,9 @@ fun HeaderSectionPortrait(
                 )
             }
 
-            // 縦画面は右上に青いコア（FAIRY）とバッテリーを配置
+            // 縦画面は右上に青いコア（Core）とバッテリーを配置
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("SYSTEM // STANDBY", fontFamily = CyberFont, fontSize = 8.sp, color = LocalCyberColors.current.accent)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                }
+
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
                     CircularProgressIndicator(
@@ -173,7 +169,11 @@ fun HeaderSectionPortrait(
                         }
                     }
                 }
-                Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.core, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.core, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, modifier = Modifier.padding(top = 4.dp))
+                }
             }
         }
     }

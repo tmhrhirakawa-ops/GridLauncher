@@ -266,7 +266,20 @@ fun CyberLauncherScreen() {
         }
     }
 
-    var isEditMode by remember { mutableStateOf(false) } // 編集モード
+    // スロット編集モード（アプリアイコン・ボタンなど個々のスロットの長押しで入る。✗バッジ表示用）
+    var isEditMode by remember { mutableStateOf(false) }
+    // ウィジェット編集モード（ウィジェットのヘッダーなど、個々のスロット以外の長押しで入る。
+    // 移動・リサイズ・削除ハンドル表示用）。スロット編集モードとは独立しており、片方に入ると
+    // もう片方は自動的に抜ける。
+    var isWidgetEditMode by remember { mutableStateOf(false) }
+    fun enterSlotEditMode() {
+        isEditMode = true
+        isWidgetEditMode = false
+    }
+    fun enterWidgetEditMode() {
+        isWidgetEditMode = true
+        isEditMode = false
+    }
 
     // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
     // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
@@ -279,6 +292,7 @@ fun CyberLauncherScreen() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isEditMode = false
+                isWidgetEditMode = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -484,10 +498,11 @@ fun CyberLauncherScreen() {
                             change.consume()
                         } else {
                             isEditMode = false
+                            isWidgetEditMode = false
                         }
                     }
                 }
-                .clickable { isEditMode = false }, // 空白タップで編集モード解除
+                .clickable { isEditMode = false; isWidgetEditMode = false }, // 空白タップで編集モード解除
             color = if (isWallpaperMode) Color.Transparent else LocalCyberColors.current.bg
         ) {
             Column(
@@ -571,11 +586,11 @@ fun CyberLauncherScreen() {
                         columns = widgetLayoutMode.columns,
                         rows = widgetLayoutMode.rows,
                         placedWidgets = placedWidgets,
-                        isEditMode = isEditMode,
+                        isWidgetEditMode = isWidgetEditMode,
                         onLayoutChange = { updatePlacedWidgets(it) },
                         onRequestAddWidget = { showWidgetTypeSelector = true },
-                        onLongClick = { isEditMode = true },
-                        onExitEditMode = { isEditMode = false }
+                        onWidgetLongClick = { enterWidgetEditMode() },
+                        onExitWidgetEditMode = { isWidgetEditMode = false }
                     ) { type, boxModifier ->
                         when (type) {
                             WidgetPanel.ACCESS_GRID -> AccessGridSection(
@@ -590,7 +605,7 @@ fun CyberLauncherScreen() {
                                 showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
-                                onLongClick = { isEditMode = true },
+                                onLongClick = { enterSlotEditMode() },
                                 onRemoveClick = { index -> removeGridItem(index) },
                                 onExitEditMode = { isEditMode = false }
                             )
@@ -619,7 +634,7 @@ fun CyberLauncherScreen() {
                                     prefs.edit { putInt("accent_color", color.toArgb()) }
                                 },
                                 onAddClick = { index -> quickActionAddIndex = index },
-                                onLongClick = { isEditMode = true },
+                                onLongClick = { enterSlotEditMode() },
                                 onRemoveClick = { index -> removeQuickAction(index) },
                                 onExitEditMode = { isEditMode = false }
                             )
@@ -640,7 +655,7 @@ fun CyberLauncherScreen() {
                         appSelectorTarget = "dock"
                         targetIndex = index
                     },
-                    onLongClick = { isEditMode = true },
+                    onLongClick = { enterSlotEditMode() },
                     onRemoveClick = { index ->
                         dockApps.getOrNull(index)?.let { appInfo ->
                             pendingRemoval = PendingRemoval("dock", index, appInfo.packageName, appInfo.label)

@@ -238,7 +238,7 @@ fun CalendarSection(modifier: Modifier = Modifier, showBorder: Boolean = true) {
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             // ヘッダー部分
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier

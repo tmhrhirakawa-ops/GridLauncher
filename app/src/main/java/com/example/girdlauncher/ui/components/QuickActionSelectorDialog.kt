@@ -47,17 +47,26 @@ fun QuickActionSelectorDialog(
             } else {
                 Column {
                     availableActions.forEach { action ->
-                        Text(
-                            text = action.label,
-                            fontFamily = CyberFont,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.accent,
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onSelect(action) }
                                 .padding(vertical = 10.dp)
-                        )
+                        ) {
+                            Text(
+                                text = action.label,
+                                fontFamily = CyberFont,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accent
+                            )
+                            Text(
+                                text = action.description,
+                                fontFamily = CyberFont,
+                                fontSize = 10.sp,
+                                color = colors.text.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 }
             }

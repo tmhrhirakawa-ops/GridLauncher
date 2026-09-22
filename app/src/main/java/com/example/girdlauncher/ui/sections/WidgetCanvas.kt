@@ -11,6 +11,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,18 +55,23 @@ import kotlin.math.roundToInt
  * ウィジェットとして配置するキャンバス。[columns]×[rows]の粗いグリッド上に、各ウィジェットを
  * 矩形（[PlacedWidget]）として配置する。
  *
- * 編集モード（[isEditMode]、アプリの長押しなどで入る既存のグローバルな編集モードと共通）中は、
- * 各ウィジェットの左上に移動ハンドル、右上に削除バッジ、右下にリサイズハンドルを表示する。
+ * 編集モードには2種類あり、それぞれ独立している：
+ * - **ウィジェット編集モード**（[isWidgetEditMode]）: ウィジェットのヘッダーなど、個々のスロット
+ *   （アプリアイコン・ボタンなど）ではない部分を長押しすると入る。移動・リサイズ・削除ハンドルを表示。
+ * - **スロット編集モード**: 個々のアプリアイコン・ボタン自体を長押しすると入る、既存の編集モード
+ *   （`AccessGridSection`/`QuickAccessSection`が内部で管理する✗バッジの表示・非表示）。
  * ドラッグ確定時に他のウィジェットと重なる場合は、元の位置・サイズへスナップバックする。
  *
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
  * @param placedWidgets 現在配置されているウィジェットの一覧。
- * @param isEditMode UIが編集モードかどうか。
+ * @param isWidgetEditMode ウィジェット編集モードかどうか。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
- * @param onLongClick ウィジェットが長押しされたときのコールバック（編集モードに入る）。
- * @param onExitEditMode 編集モード中にウィジェット本体がタップされたときのコールバック。
+ * @param onWidgetLongClick ウィジェットのヘッダーなど（個々のスロット以外）が長押しされたときの
+ *   コールバック（ウィジェット編集モードに入る）。
+ * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップされたときの
+ *   コールバック。
  * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類とサイズ確定済みの
  *   [Modifier]を受け取り、既存の`AccessGridSection`等を呼び出す）。
  */
@@ -75,11 +81,11 @@ fun SharedTransitionScope.WidgetCanvas(
     columns: Int,
     rows: Int,
     placedWidgets: List<PlacedWidget>,
-    isEditMode: Boolean,
+    isWidgetEditMode: Boolean,
     onLayoutChange: (List<PlacedWidget>) -> Unit,
     onRequestAddWidget: () -> Unit,
-    onLongClick: () -> Unit,
-    onExitEditMode: () -> Unit,
+    onWidgetLongClick: () -> Unit,
+    onExitWidgetEditMode: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable SharedTransitionScope.(WidgetPanel, Modifier) -> Unit
 ) {
@@ -96,7 +102,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     rows = rows,
                     cellWidth = cellWidth,
                     cellHeight = cellHeight,
-                    isEditMode = isEditMode,
+                    isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
                     onMoved = { newCol, newRow ->
                         onLayoutChange(placedWidgets.map { if (it.type == widget.type) it.copy(col = newCol, row = newRow) else it })
@@ -107,8 +113,8 @@ fun SharedTransitionScope.WidgetCanvas(
                     onRemove = {
                         onLayoutChange(placedWidgets.filter { it.type != widget.type })
                     },
-                    onLongClick = onLongClick,
-                    onExitEditMode = onExitEditMode
+                    onWidgetLongClick = onWidgetLongClick,
+                    onExitWidgetEditMode = onExitWidgetEditMode
                 ) { boxModifier ->
                     content(widget.type, boxModifier)
                 }
@@ -140,13 +146,13 @@ private fun WidgetSlot(
     rows: Int,
     cellWidth: Dp,
     cellHeight: Dp,
-    isEditMode: Boolean,
+    isWidgetEditMode: Boolean,
     otherWidgets: List<PlacedWidget>,
     onMoved: (col: Int, row: Int) -> Unit,
     onResized: (colSpan: Int, rowSpan: Int) -> Unit,
     onRemove: () -> Unit,
-    onLongClick: () -> Unit,
-    onExitEditMode: () -> Unit,
+    onWidgetLongClick: () -> Unit,
+    onExitWidgetEditMode: () -> Unit,
     content: @Composable (Modifier) -> Unit
 ) {
     val colors = LocalCyberColors.current
@@ -174,10 +180,19 @@ private fun WidgetSlot(
                 height = (baseHeight + resizeDeltaYDp).coerceAtLeast(cellHeight)
             )
             .padding(4.dp)
+            // ウィジェットのヘッダーなど、個々のスロット（アプリアイコン・ボタンなど）が
+            // 独自にタップ/長押しを処理していない「余白」部分でのみ、この検出が働く
+            // （子のクリック領域が先に消費するため、ここには落ちてこない）。
+            .pointerInput(widget.type) {
+                detectTapGestures(
+                    onTap = { onExitWidgetEditMode() },
+                    onLongPress = { onWidgetLongClick() }
+                )
+            }
     ) {
         content(Modifier.fillMaxSize())
 
-        if (isEditMode) {
+        if (isWidgetEditMode) {
             // 移動ハンドル（左上）
             AnimatedVisibility(
                 visible = true,

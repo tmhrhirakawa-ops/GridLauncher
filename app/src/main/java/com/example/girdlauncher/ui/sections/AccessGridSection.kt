@@ -68,20 +68,16 @@ fun SharedTransitionScope.AccessGridSection(
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = Modifier.fillMaxSize()
     ) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier
                 .size(8.dp)
                 .background(LocalCyberColors.current.accent))
             Spacer(modifier = Modifier.width(8.dp))
-            if (isPortrait) {
-                Text("N.E.P.T // COVER TERMINAL", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-            } else {
-                Text("ACCESS GRID", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Text(" // APP NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
-            }
+            Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
+            Text(" // APP NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // アプリ・フォルダを指定された行数・列数で分割
         val pageSize = columns * rows

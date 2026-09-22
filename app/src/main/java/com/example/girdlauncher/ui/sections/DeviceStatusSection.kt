@@ -121,7 +121,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             // ヘッダー部分
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier
@@ -132,7 +132,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
                 Text("SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
                 Text(" // MONITOR", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth(),

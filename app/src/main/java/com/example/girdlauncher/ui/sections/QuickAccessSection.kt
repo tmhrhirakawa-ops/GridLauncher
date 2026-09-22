@@ -159,6 +159,18 @@ fun QuickAccessSection(
             QuickActionId.THEME -> onThemeToggle()
             QuickActionId.VOLUME -> showVolumeControl = true
             QuickActionId.BRIGHTNESS -> showBrightnessControl = true
+            QuickActionId.APP -> {
+                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            }
+            QuickActionId.WALLPAPER -> {
+                val intent = Intent(Intent.ACTION_SET_WALLPAPER).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            }
         }
     }
 
@@ -168,7 +180,7 @@ fun QuickAccessSection(
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
-         Column(modifier = Modifier.padding(16.dp)) {
+         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier
                     .size(6.dp)
@@ -177,7 +189,7 @@ fun QuickAccessSection(
                 Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
                 Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (rowIndex in 0 until QUICK_ACTION_CAPACITY / 2) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
