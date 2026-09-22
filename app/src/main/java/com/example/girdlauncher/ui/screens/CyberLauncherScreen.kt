@@ -155,6 +155,13 @@ fun CyberLauncherScreen() {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
     }).copy(accent = accentColor)
 
+    // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。ヘッダーのボタンで切り替える。
+    var accessGridIconOnly by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only", false)) }
+    fun toggleAccessGridIconOnly() {
+        accessGridIconOnly = !accessGridIconOnly
+        prefs.edit { putBoolean("access_grid_icon_only", accessGridIconOnly) }
+    }
+
     // 各ウィジェットパネルの枠線表示設定（非表示にしているものだけを保持する）
     var hiddenWidgetPanels by remember { mutableStateOf(loadHiddenWidgetPanels(prefs)) }
     fun toggleAllWidgetBorders() {
@@ -631,6 +638,8 @@ fun CyberLauncherScreen() {
                                 activeNotifications = activeNotifications,
                                 openFolderId = openFolderId,
                                 showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
+                                isIconOnly = accessGridIconOnly,
+                                onIconOnlyClick = { toggleAccessGridIconOnly() },
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                                 onLongClick = { enterSlotEditMode() },

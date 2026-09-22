@@ -4,6 +4,8 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -24,6 +26,7 @@ import com.example.girdlauncher.ui.components.FolderCard
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import androidx.compose.ui.text.font.FontWeight
+import kotlin.math.roundToInt
 
 /** スロットがこれより狭くなるとアプリ名が読めなくなるとみなす、1スロットの最小幅。 */
 private val MinSlotWidth = 108.dp
@@ -37,6 +40,18 @@ private val MaxSlotWidth = 180.dp
 /** スロットがこれより高くなると余白が間延びして見えるとみなす、1スロットの最大高さ。 */
 private val MaxSlotHeight = 72.dp
 
+/**
+ * ICON ONLYモード（正方形スロット・アイコンのみ表示）のときの、1スロットの最小の一辺の長さ。
+ * 名前を表示しないため、通常モードよりずっと小さくても問題ない
+ */
+private val IconOnlySlotMinSize = 56.dp
+
+/**
+ * ICON ONLYモードのときの、1スロットの最大の一辺の長さ。アイコン単体だと通常モードより
+ * 小さいサイズで間延びして見え始めるため、通常モードより小さい値にしている
+ */
+private val IconOnlySlotMaxSize = 64.dp
+
 /** スロット間の余白。列数・行数の算出にもこの値を使う。 */
 private val SlotSpacing = 12.dp
 
@@ -49,6 +64,10 @@ private val SlotSpacing = 12.dp
  * アプリの数を減らすことで読みやすさを保つ）、逆に[MaxSlotWidth]・[MaxSlotHeight]を超えて
  * 間延びしそうなほど広くなったときは列数・行数を増やして余白を詰める。
  *
+ * ヘッダー右上の「ICON ONLY」ボタンでアイコンのみ表示（名前非表示・正方形スロット）に切り替え
+ * られる。この場合はスロットが正方形になるよう列数から行数を導出し、名前がないぶん最小・最大
+ * サイズのしきい値（[IconOnlySlotMinSize]・[IconOnlySlotMaxSize]）も通常モードより小さくする。
+ *
  * @param items 表示するスロットの中身のリスト（アプリ・フォルダ・null=空きスロット）。
  * @param baseColumns グリッドの基準列数（ウィジェットのサイズがちょうどよいときに使う列数）。
  * @param baseRows グリッドの基準行数（ウィジェットのサイズがちょうどよいときに使う行数）。
@@ -57,6 +76,8 @@ private val SlotSpacing = 12.dp
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param openFolderId 現在ポップアップで開いているフォルダのID。該当するフォルダのカードは、
  *   ポップアップへ拡大するアニメーション（共有要素）のため見た目を隠す。
+ * @param isIconOnly ICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。
+ * @param onIconOnlyClick ICON ONLYボタンがクリックされたとき（オン・オフを切り替える）のコールバック。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
  * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
@@ -74,6 +95,8 @@ fun SharedTransitionScope.AccessGridSection(
     activeNotifications: Map<String, Int> = emptyMap(),
     openFolderId: String? = null,
     showBorder: Boolean = true,
+    isIconOnly: Boolean = false,
+    onIconOnlyClick: () -> Unit = {},
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -97,12 +120,40 @@ fun SharedTransitionScope.AccessGridSection(
             Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             Text(" // APP NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.weight(1f))
+            // ICON ONLY切り替えボタン（オンのときは塗りつぶし、オフのときは枠線のみ）
+            Text(
+                text = "ICON ONLY",
+                fontFamily = CyberFont,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isIconOnly) LocalCyberColors.current.bg else LocalCyberColors.current.accent,
+                modifier = Modifier
+                    .then(
+                        if (isIconOnly) {
+                            Modifier.background(LocalCyberColors.current.accent, RoundedCornerShape(4.dp))
+                        } else {
+                            Modifier.border(1.dp, LocalCyberColors.current.accent.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        }
+                    )
+                    .clickable { onIconOnlyClick() }
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            )
         }
         Spacer(modifier = Modifier.height(6.dp))
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val columns = adaptiveSlotCount(maxWidth, baseColumns, MinSlotWidth, MaxSlotWidth, SlotSpacing)
-            val rows = adaptiveSlotCount(maxHeight, baseRows, MinSlotHeight, MaxSlotHeight, SlotSpacing)
+            val columns: Int
+            val rows: Int
+            if (isIconOnly) {
+                // 列数は幅から通常通り決め、行数はそのスロット1辺の長さになるべく近くなる数を
+                // 逆算する（スロットを正方形にするため）
+                columns = adaptiveSlotCount(maxWidth, baseColumns, IconOnlySlotMinSize, IconOnlySlotMaxSize, SlotSpacing)
+                val slotSize = (maxWidth - SlotSpacing * (columns - 1)) / columns
+                rows = squareCountForSlotSize(maxHeight, slotSize, SlotSpacing)
+            } else {
+                columns = adaptiveSlotCount(maxWidth, baseColumns, MinSlotWidth, MaxSlotWidth, SlotSpacing)
+                rows = adaptiveSlotCount(maxHeight, baseRows, MinSlotHeight, MaxSlotHeight, SlotSpacing)
+            }
 
             // アプリ・フォルダを実際の行数・列数で分割
             val pageSize = columns * rows
@@ -148,6 +199,7 @@ fun SharedTransitionScope.AccessGridSection(
                                             isEditMode = isEditMode,
                                             notificationCount = notifCount,
                                             isWallpaperMode = isWallpaperMode,
+                                            isCompact = isIconOnly,
                                             onClick = {
                                                 if (isEditMode) {
                                                     onExitEditMode()
@@ -227,4 +279,13 @@ private fun adaptiveSlotCount(availableSize: Dp, preferredCount: Int, minSlotSiz
         count++
     }
     return count
+}
+
+/**
+ * 1辺の長さが[targetSlotSize]になるべく近くなるような数を返す（ICON ONLYモードで、列数から
+ * 決まったスロットの一辺の長さに行数を合わせ、正方形のスロットにするために使う）。
+ */
+private fun squareCountForSlotSize(availableSize: Dp, targetSlotSize: Dp, spacing: Dp): Int {
+    val raw = (availableSize + spacing) / (targetSlotSize + spacing)
+    return raw.coerceAtLeast(1f).roundToInt()
 }
