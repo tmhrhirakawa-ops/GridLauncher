@@ -74,8 +74,9 @@ import kotlin.math.roundToInt
  *
  * 移動・リサイズ中は、指の動きにそのまま滑らかに追従する（グリッドへのスナップはしない）。
  * 代わりに、指を離したときに実際にスナップする位置・サイズを、破線枠のガイドとして
- * リアルタイムに表示する。ドラッグ確定時にガイドの位置が他のウィジェットと重なる場合は、
- * 元の位置・サイズへスナップバックする。
+ * リアルタイムに表示する。ガイドは他のウィジェットと重ならない、直近で確定可能だった位置に
+ * 固定され続けるため、指を重なる位置へ動かしてもガイドはそこへ追従しない。指を離すと、常に
+ * このガイドの位置・サイズで確定する。
  *
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
@@ -199,13 +200,6 @@ private val ResizeHandleTouchSize = 56.dp
 /** リサイズハンドルの見た目のブラケットのサイズ。[ResizeHandleTouchSize]とは独立して見た目を保つ。 */
 private val ResizeHandleVisualSize = 40.dp
 
-/**
- * 移動・リサイズ先が他のウィジェットと重なっていて確定できないことを示すガイドの警告色。
- * このテーマ自体がアクセントカラーとして赤系統を使っているため、赤系統だと通常のガイドと
- * 見分けがつかない。黄色（アンバー）にすることでテーマ内で唯一無二の「警告色」として機能させる
- */
-private val WidgetInvalidColor = Color(0xFFFFC400)
-
 @Composable
 private fun WidgetSlot(
     widget: PlacedWidget,
@@ -235,6 +229,16 @@ private fun WidgetSlot(
     var activeCorner by remember { mutableStateOf<ResizeCorner?>(null) }
     // 移動ドラッグ中、指が「ここにドラッグして削除」ゾーンの上にあるかどうか
     var isOverDeleteZone by remember { mutableStateOf(false) }
+    // スナップ先ガイドが指すべき、直近で確定可能だった（＝他のウィジェットと重ならない）位置・
+    // サイズ。ドラッグ中に指が重なる位置へ入っても、ここは最後に有効だった値のまま動かさない
+    // （＝ガイドが「最終的にここへスナップされる」場所に固定され続ける）。ドラッグ開始時に
+    // ウィジェットの現在値でリセットする
+    var lastValidMoveCol by remember { mutableStateOf(widget.col) }
+    var lastValidMoveRow by remember { mutableStateOf(widget.row) }
+    var lastValidResizeCol by remember { mutableStateOf(widget.col) }
+    var lastValidResizeRow by remember { mutableStateOf(widget.row) }
+    var lastValidResizeColSpan by remember { mutableStateOf(widget.colSpan) }
+    var lastValidResizeRowSpan by remember { mutableStateOf(widget.rowSpan) }
     // 移動ハンドルバーのルート座標系での位置（指のルート座標を求めるために使う）
     var barCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     // 四隅のリサイズハンドルそれぞれのルート座標系での位置
@@ -247,16 +251,21 @@ private fun WidgetSlot(
     val baseWidthPx = cellWidthPx * widget.colSpan
     val baseHeightPx = cellHeightPx * widget.rowSpan
 
-    // 移動：グリッドへスナップしない連続値（指に滑らかに追従させる表示用）と、
-    // 確定時・ガイド表示用のスナップ値の両方を求める
+    // 移動：グリッドへスナップしない連続値（指に滑らかに追従させる表示用）
     val maxCol = floor(columns - widget.colSpan).coerceAtLeast(0f)
     val maxRow = floor(rows - widget.rowSpan).coerceAtLeast(0f)
     val rawDeltaCol = dragOffsetPx.x / cellWidthPx
     val rawDeltaRow = dragOffsetPx.y / cellHeightPx
     val rawMoveCol = (widget.col + rawDeltaCol).coerceIn(0f, maxCol)
     val rawMoveRow = (widget.row + rawDeltaRow).coerceIn(0f, maxRow)
-    val snappedCol = (widget.col + rawDeltaCol.roundToInt()).coerceIn(0f, maxCol)
-    val snappedRow = (widget.row + rawDeltaRow.roundToInt()).coerceIn(0f, maxRow)
+
+    // 指の生の移動量から、グリッドにスナップした移動先候補を求める（有効かどうかのチェックは
+    // 呼び出し側で行う）
+    fun snappedMoveCandidate(deltaPx: Offset): PlacedWidget {
+        val col = (widget.col + (deltaPx.x / cellWidthPx).roundToInt()).coerceIn(0f, maxCol)
+        val row = (widget.row + (deltaPx.y / cellHeightPx).roundToInt()).coerceIn(0f, maxRow)
+        return widget.copy(col = col, row = row)
+    }
 
     // リサイズ：アイコン1個分の固定サイズが指定されている種類はそのサイズを単位に、未指定の種類は
     // キャンバスのセル1つを単位にスナップする（固定サイズを使うことで、現在のwidget.colSpanに
@@ -281,13 +290,23 @@ private fun WidgetSlot(
     val rawResizeCol = if (leftEdgeMoves) (rightEdge - rawColSpan) else widget.col
     val rawResizeRow = if (topEdgeMoves) (bottomEdge - rawRowSpan) else widget.row
 
-    // 確定時・ガイド表示用のスナップ値
-    val snappedColSpan = (((baseWidthPx + widthDeltaPx) / iconWidthPx).roundToInt().coerceAtLeast(1) * (iconWidthPx / cellWidthPx))
-        .coerceIn(minColSpan, maxColSpan)
-    val snappedRowSpan = (((baseHeightPx + heightDeltaPx) / iconHeightPx).roundToInt().coerceAtLeast(1) * (iconHeightPx / cellHeightPx))
-        .coerceIn(minRowSpan, maxRowSpan)
-    val snappedResizeCol = if (leftEdgeMoves) (rightEdge - snappedColSpan) else widget.col
-    val snappedResizeRow = if (topEdgeMoves) (bottomEdge - snappedRowSpan) else widget.row
+    // 指の生のリサイズ量から、アイコン単位にスナップしたリサイズ先候補を求める（有効かどうかの
+    // チェックは呼び出し側で行う）
+    fun snappedResizeCandidate(corner: ResizeCorner, deltaPx: Offset): PlacedWidget {
+        val cornerLeftEdgeMoves = corner == ResizeCorner.TOP_LEFT || corner == ResizeCorner.BOTTOM_LEFT
+        val cornerTopEdgeMoves = corner == ResizeCorner.TOP_LEFT || corner == ResizeCorner.TOP_RIGHT
+        val cornerWidthDeltaPx = if (cornerLeftEdgeMoves) -deltaPx.x else deltaPx.x
+        val cornerHeightDeltaPx = if (cornerTopEdgeMoves) -deltaPx.y else deltaPx.y
+        val cornerMaxColSpan = if (cornerLeftEdgeMoves) rightEdge else (columns - widget.col)
+        val cornerMaxRowSpan = if (cornerTopEdgeMoves) bottomEdge else (rows - widget.row)
+        val colSpan = (((baseWidthPx + cornerWidthDeltaPx) / iconWidthPx).roundToInt().coerceAtLeast(1) * (iconWidthPx / cellWidthPx))
+            .coerceIn(minColSpan, cornerMaxColSpan)
+        val rowSpan = (((baseHeightPx + cornerHeightDeltaPx) / iconHeightPx).roundToInt().coerceAtLeast(1) * (iconHeightPx / cellHeightPx))
+            .coerceIn(minRowSpan, cornerMaxRowSpan)
+        val col = if (cornerLeftEdgeMoves) (rightEdge - colSpan) else widget.col
+        val row = if (cornerTopEdgeMoves) (bottomEdge - rowSpan) else widget.row
+        return widget.copy(col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
+    }
 
     val isResizing = activeCorner != null
     val isMoving = dragOffsetPx != Offset.Zero && !isResizing
@@ -300,27 +319,19 @@ private fun WidgetSlot(
     val displayColSpan = if (isResizing) rawColSpan else widget.colSpan
     val displayRowSpan = if (isResizing) rawRowSpan else widget.rowSpan
 
-    // スナップ先ガイドの位置・サイズ（指を離したときに実際にスナップする場所のプレビュー）
-    val guideCol = if (isResizing) snappedResizeCol else snappedCol
-    val guideRow = if (isResizing) snappedResizeRow else snappedRow
-    val guideColSpan = if (isResizing) snappedColSpan else widget.colSpan
-    val guideRowSpan = if (isResizing) snappedRowSpan else widget.rowSpan
-
-    // ガイドの位置に指を離した場合、実際に確定できるかどうか（他のウィジェットと重ならないか）。
-    // 重なっている間は、ガイドを警告色にして「ここには置けない」ことを視覚的に伝える
-    // （重なっている場合は無言でスナップバックするだけなので、これがないと一見動いていない
-    // ように見えてしまう）
-    val guideCandidate = widget.copy(col = guideCol, row = guideRow, colSpan = guideColSpan, rowSpan = guideRowSpan)
-    val isGuideValid = otherWidgets.none { it.overlaps(guideCandidate) }
+    // スナップ先ガイドの位置・サイズ（指を離したときに実際にスナップする場所のプレビュー）。
+    // 直近で確定可能だった位置に固定し続ける（lastValidMoveCol等）ため、指が他のウィジェットと
+    // 重なる位置に入っても、ガイドはそこへは追従せず最後に有効だった場所にとどまる
+    val guideCol = if (isResizing) lastValidResizeCol else lastValidMoveCol
+    val guideRow = if (isResizing) lastValidResizeRow else lastValidMoveRow
+    val guideColSpan = if (isResizing) lastValidResizeColSpan else widget.colSpan
+    val guideRowSpan = if (isResizing) lastValidResizeRowSpan else widget.rowSpan
 
     val onMoveDragEnd: () -> Unit = {
         if (isOverDeleteZone) {
             onRequestDeleteConfirm()
         } else {
-            val candidate = widget.copy(col = snappedCol, row = snappedRow)
-            if (otherWidgets.none { it.overlaps(candidate) }) {
-                onMoved(snappedCol, snappedRow)
-            }
+            onMoved(lastValidMoveCol, lastValidMoveRow)
         }
         dragOffsetPx = Offset.Zero
         isOverDeleteZone = false
@@ -332,16 +343,16 @@ private fun WidgetSlot(
     val currentOnExitWidgetEditMode = rememberUpdatedState(onExitWidgetEditMode)
 
     // スナップ先ガイド（破線枠。ドラッグ中のみ表示。削除ゾーンの上にいる間は移動先の意味が
-    // なくなるため隠す）。他のウィジェットと重なっていて確定できない位置にいる間は警告色にする
+    // なくなるため隠す）。直近で有効だった位置に固定し続けるため常に確定可能な位置を指しており、
+    // 警告色は不要
     if (isDragging && !isOverDeleteZone) {
-        val guideColor = if (isGuideValid) colors.accent else WidgetInvalidColor
         Box(
             modifier = Modifier
                 .offset(x = cellWidth * guideCol, y = cellHeight * guideRow)
                 .size(width = cellWidth * guideColSpan, height = cellHeight * guideRowSpan)
                 .padding(4.dp)
-                .border(2.dp, guideColor.copy(alpha = 0.9f), RoundedCornerShape(6.dp))
-                .background(guideColor.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                .border(2.dp, colors.accent.copy(alpha = 0.9f), RoundedCornerShape(6.dp))
+                .background(colors.accent.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
         )
     }
 
@@ -424,9 +435,18 @@ private fun WidgetSlot(
         if (isWidgetEditMode) {
             // 移動ハンドルバー（上部中央。四隅のリサイズハンドルと被らないよう左右に余白を取る）
             MoveHandleBar(
-                onDragStart = { onDragStateChanged(true, false) },
+                onDragStart = {
+                    lastValidMoveCol = widget.col
+                    lastValidMoveRow = widget.row
+                    onDragStateChanged(true, false)
+                },
                 onDrag = { localPosition, amount ->
                     dragOffsetPx += amount
+                    val candidate = snappedMoveCandidate(dragOffsetPx)
+                    if (otherWidgets.none { it.overlaps(candidate) }) {
+                        lastValidMoveCol = candidate.col
+                        lastValidMoveRow = candidate.row
+                    }
                     val rootPosition = barCoordinates?.localToRoot(localPosition)
                     isOverDeleteZone = deleteZoneBoundsInRoot != null && rootPosition != null &&
                         deleteZoneBoundsInRoot.contains(rootPosition)
@@ -465,19 +485,26 @@ private fun WidgetSlot(
                     CornerResizeHandle(
                         corner = corner,
                         onDrag = { amount ->
-                            activeCorner = corner
+                            if (activeCorner != corner) {
+                                // 新しいリサイズジェスチャーの開始：直近有効値をウィジェットの
+                                // 現在値でリセットする
+                                activeCorner = corner
+                                lastValidResizeCol = widget.col
+                                lastValidResizeRow = widget.row
+                                lastValidResizeColSpan = widget.colSpan
+                                lastValidResizeRowSpan = widget.rowSpan
+                            }
                             resizeDeltaPx += amount
+                            val candidate = snappedResizeCandidate(corner, resizeDeltaPx)
+                            if (otherWidgets.none { it.overlaps(candidate) }) {
+                                lastValidResizeCol = candidate.col
+                                lastValidResizeRow = candidate.row
+                                lastValidResizeColSpan = candidate.colSpan
+                                lastValidResizeRowSpan = candidate.rowSpan
+                            }
                         },
                         onDragEnd = {
-                            val candidate = widget.copy(
-                                col = snappedResizeCol,
-                                row = snappedResizeRow,
-                                colSpan = snappedColSpan,
-                                rowSpan = snappedRowSpan
-                            )
-                            if (otherWidgets.none { it.overlaps(candidate) }) {
-                                onResized(snappedResizeCol, snappedResizeRow, snappedColSpan, snappedRowSpan)
-                            }
+                            onResized(lastValidResizeCol, lastValidResizeRow, lastValidResizeColSpan, lastValidResizeRowSpan)
                             resizeDeltaPx = Offset.Zero
                             activeCorner = null
                         },
