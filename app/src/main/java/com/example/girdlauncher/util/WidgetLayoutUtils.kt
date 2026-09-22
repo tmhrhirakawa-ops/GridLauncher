@@ -12,39 +12,47 @@ import com.example.girdlauncher.model.WidgetPanel
  * @property rows グリッドの行数。
  * @property defaultWidgets 初回（未保存時）のデフォルト配置。
  */
+// キャンバスグリッドの細かさの倍率。値を大きくするほど、移動・リサイズのスナップ単位が細かくなり
+// 配置の自由度が上がる（以前は等倍で、デフォルト配置がグリッドを隙間なく埋め尽くしてしまい、
+// 少し動かす・広げるだけで必ず他のウィジェットと重なってしまっていたため導入した）
+private const val GRID_SCALE = 3
+
 enum class WidgetLayoutMode(val columns: Int, val rows: Int, val defaultWidgets: List<PlacedWidget>) {
     SMALL_PORTRAIT(
-        columns = 2,
-        rows = 6,
+        columns = 2 * GRID_SCALE,
+        rows = 6 * GRID_SCALE,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2f, rowSpan = 3f),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 0, row = 3, colSpan = 1f, rowSpan = 3f),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 1, row = 3, colSpan = 1f, rowSpan = 3f)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0f, row = 0f, colSpan = 2f * GRID_SCALE, rowSpan = 3f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 0f, row = 3f * GRID_SCALE, colSpan = 1f * GRID_SCALE, rowSpan = 3f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 1f * GRID_SCALE, row = 3f * GRID_SCALE, colSpan = 1f * GRID_SCALE, rowSpan = 3f * GRID_SCALE)
         )
     ),
     LARGE_PORTRAIT(
-        columns = 4,
-        rows = 7,
+        columns = 4 * GRID_SCALE,
+        rows = 7 * GRID_SCALE,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 4f, rowSpan = 3f),
-            PlacedWidget(WidgetPanel.CALENDAR, col = 0, row = 3, colSpan = 2f, rowSpan = 4f),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 3, colSpan = 2f, rowSpan = 2f),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 2, row = 5, colSpan = 2f, rowSpan = 2f)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0f, row = 0f, colSpan = 4f * GRID_SCALE, rowSpan = 3f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.CALENDAR, col = 0f, row = 3f * GRID_SCALE, colSpan = 2f * GRID_SCALE, rowSpan = 4f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2f * GRID_SCALE, row = 3f * GRID_SCALE, colSpan = 2f * GRID_SCALE, rowSpan = 2f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 2f * GRID_SCALE, row = 5f * GRID_SCALE, colSpan = 2f * GRID_SCALE, rowSpan = 2f * GRID_SCALE)
         )
     ),
     LANDSCAPE(
-        columns = 4,
-        rows = 4,
+        columns = 4 * GRID_SCALE,
+        rows = 4 * GRID_SCALE,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2f, rowSpan = 4f),
-            PlacedWidget(WidgetPanel.CALENDAR, col = 2, row = 0, colSpan = 2f, rowSpan = 2f),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 2, colSpan = 1f, rowSpan = 2f),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 3, row = 2, colSpan = 1f, rowSpan = 2f)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0f, row = 0f, colSpan = 2f * GRID_SCALE, rowSpan = 4f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.CALENDAR, col = 2f * GRID_SCALE, row = 0f, colSpan = 2f * GRID_SCALE, rowSpan = 2f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2f * GRID_SCALE, row = 2f * GRID_SCALE, colSpan = 1f * GRID_SCALE, rowSpan = 2f * GRID_SCALE),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 3f * GRID_SCALE, row = 2f * GRID_SCALE, colSpan = 1f * GRID_SCALE, rowSpan = 2f * GRID_SCALE)
         )
     )
 }
 
-private fun widgetLayoutKey(mode: WidgetLayoutMode) = "widget_layout_${mode.name}"
+// v2: グリッドの細かさ（GRID_SCALE）を導入した際に座標の意味が変わったため、キーを分けて
+// 旧スケールで保存された配置を誤って読み込まないようにしている（該当端末は一度だけ
+// デフォルト配置に戻る）
+private fun widgetLayoutKey(mode: WidgetLayoutMode) = "widget_layout_v2_${mode.name}"
 
 /**
  * 指定した画面モードのウィジェット配置をSharedPreferencesから読み込む。
@@ -57,8 +65,8 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
         val parts = entry.split(":")
         if (parts.size != 5) return@mapNotNull null
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
-        val col = parts[1].toIntOrNull() ?: return@mapNotNull null
-        val row = parts[2].toIntOrNull() ?: return@mapNotNull null
+        val col = parts[1].toFloatOrNull() ?: return@mapNotNull null
+        val row = parts[2].toFloatOrNull() ?: return@mapNotNull null
         val colSpan = parts[3].toFloatOrNull() ?: return@mapNotNull null
         val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
         PlacedWidget(type, col, row, colSpan, rowSpan)
@@ -72,13 +80,13 @@ fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets:
 }
 
 /**
- * まだ何も配置されていない領域から、2×2（入らなければ1×1）が収まる最初のセルを
- * 行優先で探す。見つからなければnull。
+ * まだ何も配置されていない領域から、6×6（入らなければ3×3、それも入らなければ1×1）が
+ * 収まる最初のセルを行優先で探す。見つからなければnull。
  *
  * @return 見つかった場合 (col, row, colSpan, rowSpan) の組。
  */
 fun findFreeGridSlot(placed: List<PlacedWidget>, columns: Int, rows: Int): IntArray? {
-    for (span in intArrayOf(2, 1)) {
+    for (span in intArrayOf(2 * GRID_SCALE, GRID_SCALE, 1)) {
         if (span > columns || span > rows) continue
         for (row in 0..rows - span) {
             for (col in 0..columns - span) {

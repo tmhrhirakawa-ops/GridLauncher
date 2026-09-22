@@ -143,6 +143,7 @@ fun SharedTransitionScope.AccessGridSection(
                                         isEditMode = isEditMode,
                                         notificationCount = notifCount,
                                         isWallpaperMode = isWallpaperMode,
+                                        isCompact = slotSize == AccessGridSlotSize.S,
                                         onClick = {
                                             if (isEditMode) {
                                                 onExitEditMode()

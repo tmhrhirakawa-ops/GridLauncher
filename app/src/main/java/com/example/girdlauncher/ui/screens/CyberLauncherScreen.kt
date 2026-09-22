@@ -484,7 +484,7 @@ fun CyberLauncherScreen() {
                     val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
                     if (slot != null) {
                         val (col, row, colSpan, rowSpan) = slot
-                        updatePlacedWidgets(placedWidgets + PlacedWidget(type, col, row, colSpan.toFloat(), rowSpan.toFloat()))
+                        updatePlacedWidgets(placedWidgets + PlacedWidget(type, col.toFloat(), row.toFloat(), colSpan.toFloat(), rowSpan.toFloat()))
                     }
                     showWidgetTypeSelector = false
                 }
@@ -574,38 +574,63 @@ fun CyberLauncherScreen() {
                 HeaderDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // ACCESS GRID内部のアプリ一覧の基準列数・行数（=Lサイズ）・見出しは、画面モード
-                // ごとに従来と同じ値を使う。この基準値とヘッダーのSLOT SIZEボタン（S/M/L）から、
-                // 「デフォルトの外枠サイズのときにアイコンが何個入るか」＝アイコン1個分の固定サイズ
-                // （キャンバスセル単位）を求める。実際の列数・行数は、ウィジェットの現在の外枠サイズを
-                // このアイコン1個分のサイズで割って求める（リサイズすると連動して増減する）。
-                val accessGridBaseColumns: Int
-                val accessGridBaseRows: Int
+                // ACCESS GRID内部のアプリ一覧のMサイズ（基準列数・行数）・見出しは、画面モードごとに
+                // 従来と同じ値を使う。
+                val accessGridMColumns: Int
+                val accessGridMRows: Int
                 val accessGridIsPortrait: Boolean
                 when (widgetLayoutMode) {
                     WidgetLayoutMode.SMALL_PORTRAIT -> {
-                        accessGridBaseColumns = 3; accessGridBaseRows = 3; accessGridIsPortrait = true
+                        accessGridMColumns = 3; accessGridMRows = 3; accessGridIsPortrait = true
                     }
                     WidgetLayoutMode.LARGE_PORTRAIT -> {
                         // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
-                        accessGridBaseColumns = 4; accessGridBaseRows = 3; accessGridIsPortrait = false
+                        accessGridMColumns = 4; accessGridMRows = 3; accessGridIsPortrait = false
                     }
                     WidgetLayoutMode.LANDSCAPE -> {
-                        accessGridBaseColumns = 3; accessGridBaseRows = 5; accessGridIsPortrait = false
+                        accessGridMColumns = 3; accessGridMRows = 5; accessGridIsPortrait = false
                     }
                 }
                 val accessGridDefaultWidget = remember(widgetLayoutMode) {
                     widgetLayoutMode.defaultWidgets.first { it.type == WidgetPanel.ACCESS_GRID }
                 }
-                // アイコン1個分の固定サイズ（キャンバスセル単位）。SLOT SIZEボタンで選んだ密度ごとに、
-                // 「デフォルトの外枠サイズに何個のアイコンが入るか」から逆算するため、ボタンを押すと
-                // 外枠サイズはそのままアイコンの密度だけが変わる
-                val accessGridIconWidthUnits = accessGridDefaultWidget.colSpan / (accessGridBaseColumns + accessGridSlotSize.colDelta)
-                val accessGridIconHeightUnits = accessGridDefaultWidget.rowSpan / (accessGridBaseRows + accessGridSlotSize.rowDelta)
 
                 // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSを、追加・削除・リサイズ・
                 // 移動できるウィジェットとして配置するキャンバス
-                Box(modifier = Modifier.weight(1f)) {
+                BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                    // キャンバスのセル1つ分の実サイズ（dp）。S/M/Lの各サイズを、画面の実寸から
+                    // 逆算するために使う
+                    val canvasCellWidth = maxWidth / widgetLayoutMode.columns
+                    val canvasCellHeight = maxHeight / widgetLayoutMode.rows
+
+                    // Mサイズ：アイコン1個分の固定サイズ（キャンバスセル単位）を、
+                    // 「デフォルトの外枠サイズにMColumns×MRows個のアイコンが入る」ことから求める
+                    val mIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridMColumns
+                    val mIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridMRows
+
+                    // Lサイズ：Mと同じ外枠サイズに、列・行をそれぞれ1つ減らした数しか入らない
+                    // 大きさ（アイコンが一回り大きくなる）
+                    val accessGridLColumns = (accessGridMColumns - 1).coerceAtLeast(1)
+                    val accessGridLRows = (accessGridMRows - 1).coerceAtLeast(1)
+                    val lIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridLColumns
+                    val lIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridLRows
+
+                    // Sサイズ：アイコンが正方形になるサイズ。Mのアイコンの短辺の長さを1辺として、
+                    // デフォルトの外枠サイズに敷き詰められるだけ敷き詰める
+                    val mIconWidthDp = canvasCellWidth * mIconWidthUnits
+                    val mIconHeightDp = canvasCellHeight * mIconHeightUnits
+                    val squareSideDp = minOf(mIconWidthDp, mIconHeightDp)
+                    val accessGridSColumns = ((canvasCellWidth * accessGridDefaultWidget.colSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
+                    val accessGridSRows = ((canvasCellHeight * accessGridDefaultWidget.rowSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
+                    val sIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridSColumns
+                    val sIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridSRows
+
+                    val (accessGridIconWidthUnits, accessGridIconHeightUnits) = when (accessGridSlotSize) {
+                        AccessGridSlotSize.S -> sIconWidthUnits to sIconHeightUnits
+                        AccessGridSlotSize.M -> mIconWidthUnits to mIconHeightUnits
+                        AccessGridSlotSize.L -> lIconWidthUnits to lIconHeightUnits
+                    }
+
                     WidgetCanvas(
                         columns = widgetLayoutMode.columns,
                         rows = widgetLayoutMode.rows,
