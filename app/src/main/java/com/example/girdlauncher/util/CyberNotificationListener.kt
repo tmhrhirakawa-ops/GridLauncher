@@ -1,6 +1,7 @@
 package com.example.girdlauncher.util
 
 import android.content.ComponentName
+import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -10,8 +11,16 @@ import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * 通知アクセス（[NotificationListenerService]へのバインド許可）が現在有効かどうかを判定する。
+ * 通知バッジ・再生中メディアの取得や、QUICK ACCESSのミュート操作に必要。
+ */
+fun isNotificationListenerEnabled(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
 /**
  * デバイスの通知状態・再生中メディアを監視するサービス。
@@ -26,12 +35,20 @@ class CyberNotificationListener : NotificationListenerService() {
      * @property title 再生中のタイトル。
      * @property artist アーティスト/チャンネル名など。
      * @property isPlaying 再生中かどうか（falseの場合は一時停止中）。
+     * @property position [lastPositionUpdateTime]時点での再生位置（ミリ秒）。
+     * @property duration 再生コンテンツの総再生時間（ミリ秒）。取得できない場合は0以下。
+     * @property playbackSpeed 再生速度（等倍なら1.0）。再生中の経過時間の補間に使う。
+     * @property lastPositionUpdateTime [position]が計測された時刻（[android.os.SystemClock.elapsedRealtime]基準）。
      */
     data class NowPlayingInfo(
         val packageName: String,
         val title: String?,
         val artist: String?,
-        val isPlaying: Boolean
+        val isPlaying: Boolean,
+        val position: Long = 0L,
+        val duration: Long = 0L,
+        val playbackSpeed: Float = 1f,
+        val lastPositionUpdateTime: Long = 0L
     )
 
     companion object {
@@ -192,7 +209,8 @@ class CyberNotificationListener : NotificationListenerService() {
             return
         }
 
-        val isPlaying = controller.playbackState?.state == PlaybackState.STATE_PLAYING
+        val playbackState = controller.playbackState
+        val isPlaying = playbackState?.state == PlaybackState.STATE_PLAYING
 
         if (controller.sessionToken == dismissedToken) {
             if (isPlaying) {
@@ -214,7 +232,11 @@ class CyberNotificationListener : NotificationListenerService() {
             packageName = controller.packageName,
             title = title,
             artist = artist,
-            isPlaying = isPlaying
+            isPlaying = isPlaying,
+            position = playbackState?.position ?: 0L,
+            duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L,
+            playbackSpeed = playbackState?.playbackSpeed ?: 1f,
+            lastPositionUpdateTime = playbackState?.lastPositionUpdateTime ?: 0L
         )
     }
 

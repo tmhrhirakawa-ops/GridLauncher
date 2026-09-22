@@ -1,11 +1,15 @@
 package com.example.girdlauncher.ui.sections
 
 import android.content.Context
+import android.content.Intent
 import android.os.BatteryManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,10 +18,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.girdlauncher.model.WidgetPanel
+import com.example.girdlauncher.ui.components.CoreMenuPopup
 import com.example.girdlauncher.ui.components.NowPlayingWidget
+import com.example.girdlauncher.ui.components.PermissionRationaleDialog
+import com.example.girdlauncher.ui.components.WidgetBorderSettingsDialog
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import com.example.girdlauncher.util.CyberNotificationListener
+import com.example.girdlauncher.util.openPowerMenuOrRequestPermission
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -27,10 +36,25 @@ import java.util.Locale
  * 横画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
  *
  * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
+ * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param onWallpaperToggle 壁紙透過切り替えボタンがクリックされたときのコールバック。
+ * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
+ * @param onToggleAllBorders 枠線切り替えボタンがタップされたときのコールバック（全ウィジェット一括切り替え）。
+ * @param onTogglePanelBorder 枠線切り替えボタンの長押しメニューで、個別のウィジェットが切り替えられたときのコールバック。
  */
 @Composable
-fun HeaderSectionLandscape(nowPlaying: CyberNotificationListener.NowPlayingInfo? = null) {
+fun HeaderSectionLandscape(
+    nowPlaying: CyberNotificationListener.NowPlayingInfo? = null,
+    isWallpaperMode: Boolean = false,
+    onWallpaperToggle: () -> Unit = {},
+    hiddenPanels: Set<WidgetPanel> = emptySet(),
+    onToggleAllBorders: () -> Unit = {},
+    onTogglePanelBorder: (WidgetPanel) -> Unit = {}
+) {
     val context = LocalContext.current
+    var showCoreMenu by remember { mutableStateOf(false) }
+    var showBorderSettings by remember { mutableStateOf(false) }
+    var showPowerPermissionRationale by remember { mutableStateOf(false) }
     
     // リアルタイム時計とバッテリーの状態管理
     var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -59,10 +83,14 @@ fun HeaderSectionLandscape(nowPlaying: CyberNotificationListener.NowPlayingInfo?
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(timeString, fontFamily = CyberFont, fontSize = 48.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
-            Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+            Text(timeString, fontFamily = CyberFont, fontSize = 42.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(6.dp).background(LocalCyberColors.current.accent))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+            }
         }
-        
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("SYSTEM ONLINE", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
             Text("MAIN TERMINAL", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
@@ -89,9 +117,66 @@ fun HeaderSectionLandscape(nowPlaying: CyberNotificationListener.NowPlayingInfo?
                     strokeWidth = 6.dp,
                     modifier = Modifier.fillMaxSize()
                 )
-                // 真ん中の青いコア（目のように見える部分）
-                Box(modifier = Modifier.size(20.dp).background(LocalCyberColors.current.core, RoundedCornerShape(10.dp)))
+                // 真ん中の青い歯車（タップすると壁紙透過・枠線切り替えメニューがにゅいっと出てくる）
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "Menu",
+                        tint = LocalCyberColors.current.core,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clickable { showCoreMenu = true }
+                    )
+                    if (showCoreMenu) {
+                        CoreMenuPopup(
+                            onOpenSettings = {
+                                showCoreMenu = false
+                                val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            },
+                            isWallpaperMode = isWallpaperMode,
+                            onWallpaperToggle = onWallpaperToggle,
+                            bordersVisible = hiddenPanels.isEmpty(),
+                            onToggleAllBorders = onToggleAllBorders,
+                            onLongPressBorderToggle = {
+                                showCoreMenu = false
+                                showBorderSettings = true
+                            },
+                            onOpenPowerMenu = {
+                                showCoreMenu = false
+                                openPowerMenuOrRequestPermission(context) {
+                                    showPowerPermissionRationale = true
+                                }
+                            },
+                            onDismiss = { showCoreMenu = false }
+                        )
+                    }
+                }
             }
         }
+    }
+
+    if (showBorderSettings) {
+        WidgetBorderSettingsDialog(
+            hiddenPanels = hiddenPanels,
+            onTogglePanel = onTogglePanelBorder,
+            onDismiss = { showBorderSettings = false }
+        )
+    }
+
+    if (showPowerPermissionRationale) {
+        PermissionRationaleDialog(
+            message = "電源メニュー（電源を切る/再起動）を開くには、GirdLauncherのアクセシビリティサービスを有効にしてください。",
+            onConfirm = {
+                showPowerPermissionRationale = false
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            },
+            onDismiss = { showPowerPermissionRationale = false }
+        )
     }
 }

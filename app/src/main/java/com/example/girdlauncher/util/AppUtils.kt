@@ -2,15 +2,18 @@ package com.example.girdlauncher.util
 
 import android.annotation.SuppressLint
 import android.app.AppOpsManager
+import android.app.PendingIntent
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
+import com.example.girdlauncher.UninstallResultReceiver
 import com.example.girdlauncher.model.AppInfo
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -20,33 +23,82 @@ import kotlin.math.roundToInt
 
 /**
  * アプリの実アイコン（[Drawable]）を、背景色を含まない単色（デュオトーン）加工した
- * [ImageBitmap] に変換します。加工元として以下を優先順位順に使います。
+ * [ImageBitmap] に変換します。
  *
- * 1. モノクロレイヤー（Android 13+の「テーマアイコン」用レイヤー）
- *    背景を含まない単色シルエット専用に作られているため、そのままアクセントカラーで
- *    塗りつぶすだけで綺麗に仕上がる。
- * 2. 前景レイヤー（Adaptive Icon、Android 8.0+）
- *    背景レイヤーとロゴ（前景レイヤー）が分離されているため、前景だけを使うことで
- *    背景色を含まないロゴのみの表示にできる。
- * 3. 通常のアイコン全体（上記が使えない古い形式のアプリ向けのフォールバック）
- *    背景込みの単一画像しか無いため、背景色は残ったまま加工する。
+ * どのレイヤー（モノクロ/前景/そのまま）を加工対象にするかは[extractDisplayIcon]で
+ * あらかじめ決定済みである前提で、ここでは[isMonochrome]の値に応じて加工方法を選ぶだけです。
  *
- * @param drawable 加工対象のアプリアイコン。
+ * @param drawable 加工対象のアプリアイコン（[extractDisplayIcon]が選んだレイヤー）。
+ * @param isMonochrome [drawable]がモノクロレイヤー由来かどうか。
+ *   trueの場合は明るさ変換をせず元のアルファ形状をそのままアクセントカラーで塗りつぶす
+ *   （モノクロレイヤーは既に単色シルエット用に作られているため）。falseの場合は
+ *   明るさをアクセントカラーの濃淡にマッピングするデュオトーン加工をする。
  * @param accent マッピング先のアクセントカラー。
  */
-fun toDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
+fun toDuotoneImageBitmap(drawable: Drawable, isMonochrome: Boolean, accent: Color): ImageBitmap {
+    return if (isMonochrome) {
+        toFlatTintedImageBitmap(drawable, accent)
+    } else {
+        toLightnessDuotoneImageBitmap(drawable, accent)
+    }
+}
+
+/**
+ * アイコン加工処理で扱う一辺の最大ピクセル数。
+ *
+ * グリッド/ドックでの実際の表示サイズは24〜28dp程度だが、[Drawable.getIntrinsicWidth]は
+ * 高密度端末では100〜400px超になることがある。表示に対して不必要に高い解像度のまま
+ * ピクセル単位の加工（[toFlatTintedImageBitmap] / [toLightnessDuotoneImageBitmap]）を行うと、
+ * CPU時間とBitmapのメモリ使用量の両方を無駄に消費してしまうため、事前にこのサイズへ
+ * ダウンサンプリングしてから加工する。
+ */
+private const val MAX_ICON_PROCESSING_SIZE = 128
+
+/**
+ * [drawable] の本来の縦横比を保ったまま、[MAX_ICON_PROCESSING_SIZE] を超えないサイズを求めます。
+ */
+private fun resolveProcessingSize(drawable: Drawable): Pair<Int, Int> {
+    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
+    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
+
+    if (intrinsicWidth <= MAX_ICON_PROCESSING_SIZE && intrinsicHeight <= MAX_ICON_PROCESSING_SIZE) {
+        return intrinsicWidth to intrinsicHeight
+    }
+
+    val scale = MAX_ICON_PROCESSING_SIZE.toFloat() / maxOf(intrinsicWidth, intrinsicHeight)
+    val width = (intrinsicWidth * scale).roundToInt().coerceAtLeast(1)
+    val height = (intrinsicHeight * scale).roundToInt().coerceAtLeast(1)
+    return width to height
+}
+
+/**
+ * アプリ一覧の読み込み時に、表示用アイコンを準備します。
+ *
+ * [android.content.pm.ResolveInfo.loadIcon]が返す[Drawable]は、端末の表示密度によっては
+ * 実際の表示サイズ（24〜28dp）よりもずっと大きいビットマップを内部に保持していることがある。
+ * インストール済みの全アプリ分（数百に上ることもある）をそのまま保持し続けるとメモリを
+ * 圧迫するため、[toDuotoneImageBitmap]が使うレイヤー（モノクロ/前景/そのまま）を先に選んだ
+ * うえで、この時点で表示に十分な解像度までダウンサンプリングしておく。
+ *
+ * @param drawable [android.content.pm.ResolveInfo.loadIcon]などから得た加工前のアイコン。
+ * @return ダウンサンプリング済みの[Drawable]と、それがモノクロレイヤー由来かどうかの組。
+ */
+fun extractDisplayIcon(drawable: Drawable): Pair<Drawable, Boolean> {
     val monochrome = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && drawable is AdaptiveIconDrawable) {
         drawable.monochrome
     } else null
 
-    if (monochrome != null) {
-        // モノクロレイヤーは既に単色シルエット用に作られているため、明るさ変換はせず
-        // 元のアルファ形状をそのままアクセントカラーで塗りつぶす
-        return toFlatTintedImageBitmap(monochrome, accent)
+    val (layer, isMonochrome) = if (monochrome != null) {
+        monochrome to true
+    } else {
+        val foreground = (drawable as? AdaptiveIconDrawable)?.foreground
+        (foreground ?: drawable) to false
     }
 
-    val foreground = (drawable as? AdaptiveIconDrawable)?.foreground
-    return toLightnessDuotoneImageBitmap(foreground ?: drawable, accent)
+    val (width, height) = resolveProcessingSize(layer)
+    @Suppress("DEPRECATION") // Resourcesが無い呼び出し元でも使えるよう、あえて非推奨コンストラクタを使う
+    val downsized = BitmapDrawable(layer.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888))
+    return downsized to isMonochrome
 }
 
 /**
@@ -54,8 +106,7 @@ fun toDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
  * モノクロレイヤーのような「背景を含まない単色シルエット」向け。
  */
 private fun toFlatTintedImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+    val (width, height) = resolveProcessingSize(drawable)
     val source = drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888)
 
     val pixels = IntArray(width * height)
@@ -86,8 +137,7 @@ private fun toFlatTintedImageBitmap(drawable: Drawable, accent: Color): ImageBit
  * 挙動になるため、両方のケースでロゴの視認性を保ちやすくなります。
  */
 private fun toLightnessDuotoneImageBitmap(drawable: Drawable, accent: Color): ImageBitmap {
-    val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
-    val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+    val (width, height) = resolveProcessingSize(drawable)
     val source = drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888)
 
     val pixels = IntArray(width * height)
@@ -186,12 +236,43 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val resolvedInfos = packageManager.queryIntentActivities(intent, 0)
 
     return resolvedInfos.map { resolveInfo ->
+        val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
         AppInfo(
             label = resolveInfo.loadLabel(packageManager).toString(),
             packageName = resolveInfo.activityInfo.packageName,
-            icon = resolveInfo.loadIcon(packageManager)
+            icon = icon,
+            iconIsMonochrome = isMonochrome
         )
     }.sortedBy { it.label }
+}
+
+/**
+ * 指定したパッケージのアンインストール確認画面（システム標準ダイアログ）を起動します。
+ * 実際のアンインストール処理はシステム側で行われるため、ここでは要求を投げるのみです。
+ *
+ * [android.content.pm.PackageInstaller.uninstall] 経由で要求する。ホーム（ランチャー）の
+ * アクティビティから直接 `Intent.ACTION_DELETE` でアクティビティを起動する方式では、
+ * 一部端末で確認画面が開いた直後に自ら閉じてしまう問題があったため、
+ * こちらのAPI経由に変更した。
+ *
+ * アンインストールが実際に完了したかどうかは [UninstallResultReceiver] が結果を
+ * 受け取って判断する（ユーザーがキャンセルした場合はスロットのアプリを残すため）。
+ *
+ * @param context インテントの発行に使用する [Context]。
+ * @param packageName アンインストール対象アプリのパッケージ名。
+ */
+fun requestUninstall(context: Context, packageName: String) {
+    val packageInstaller = context.packageManager.packageInstaller
+    val statusIntent = Intent(context, UninstallResultReceiver::class.java).apply {
+        putExtra(UninstallResultReceiver.EXTRA_PACKAGE_NAME, packageName)
+    }
+    val pendingIntent = PendingIntent.getBroadcast(
+        context,
+        packageName.hashCode(),
+        statusIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+    )
+    packageInstaller.uninstall(packageName, pendingIntent.intentSender)
 }
 
 /**

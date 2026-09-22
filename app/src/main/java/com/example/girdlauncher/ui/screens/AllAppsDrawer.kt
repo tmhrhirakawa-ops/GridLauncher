@@ -19,12 +19,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.model.AppInfo
+import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.AppCard
 import com.example.girdlauncher.ui.components.DockAppCard
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import com.example.girdlauncher.util.getFrequentApps
 import com.example.girdlauncher.util.hasUsageStatsPermission
+import com.example.girdlauncher.util.requestUninstall
 import android.content.res.Configuration
 
 /**
@@ -39,6 +41,18 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     val filteredApps = allApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
     val context = LocalContext.current
+    var uninstallTarget by remember { mutableStateOf<AppInfo?>(null) } // 長押しでアンインストール確認中のアプリ
+
+    uninstallTarget?.let { appInfo ->
+        AppActionDialog(
+            appName = appInfo.label,
+            onDismiss = { uninstallTarget = null },
+            onUninstall = {
+                requestUninstall(context, appInfo.packageName)
+                uninstallTarget = null
+            }
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -79,6 +93,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                 DockAppCard(
                                     name = appInfo.label,
                                     packageName = appInfo.packageName,
+                                    isMonochrome = appInfo.iconIsMonochrome,
                                     icon = appInfo.icon,
                                     modifier = Modifier.width(80.dp).fillMaxHeight(), // 幅を80dpに固定して統一
                                     onClick = {
@@ -87,7 +102,8 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                             context.startActivity(launchIntent)
                                             onDismiss()
                                         }
-                                    }
+                                    },
+                                    onLongClick = { uninstallTarget = appInfo }
                                 )
                             }
                         }
@@ -133,6 +149,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                     AppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
+                        isMonochrome = appInfo.iconIsMonochrome,
                         icon = appInfo.icon,
                         modifier = Modifier.aspectRatio(2.5f), // ACCESS GRIDの比率に近い形
                         onClick = {
@@ -141,7 +158,8 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                 context.startActivity(launchIntent)
                                 onDismiss()
                             }
-                        }
+                        },
+                        onLongClick = { uninstallTarget = appInfo }
                     )
                 }
             }

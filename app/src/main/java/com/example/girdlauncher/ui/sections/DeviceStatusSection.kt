@@ -40,9 +40,10 @@ import java.util.Locale
  * ストレージとメモリの使用状況など、デバイスのステータスを表示するセクション。
  *
  * @param modifier レイアウトに適用するModifier。
+ * @param showBorder 枠線を表示するかどうか。
  */
 @Composable
-fun DeviceStatusSection(modifier: Modifier = Modifier) {
+fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = true) {
     val context = LocalContext.current
     
     // 定期的に状態を更新するための状態変数
@@ -76,30 +77,26 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
     val usedMemGB = String.format(Locale.US, "%.1f", usedMemBytes / (1024.0 * 1024 * 1024))
     val memUsageRatio = if (totalMemBytes > 0) usedMemBytes.toFloat() / totalMemBytes.toFloat() else 0f
 
-    // キャッシュクリア風のエフェクト用
+    // キャッシュクリア風のエフェクト用（演出のみ。System.gc()は自プロセスのヒープにしか働かず、
+    // 実際のシステムメモリ解放にはならないうえ強制GCによる無用なジャンクを招くため呼ばない）
     var isOptimizing by remember { mutableStateOf(false) }
-    // 最適化で解放できたメモリ量（バイト）。nullの間は結果表示を隠す
-    var optimizeFreedBytes by remember { mutableStateOf<Long?>(null) }
+    // 結果表示（演出）を出すかどうか
+    var showOptimizeResult by remember { mutableStateOf(false) }
 
     LaunchedEffect(isOptimizing) {
         if (isOptimizing) {
-            val before = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
-            System.gc()
             delay(1500) // 最適化中...の演出時間
-            System.gc()
-            val after = ActivityManager.MemoryInfo().also { activityManager.getMemoryInfo(it) }.availMem
-
-            trigger++ // ゲージを再取得
-            optimizeFreedBytes = after - before
+            trigger++ // ゲージを最新の値に再取得
+            showOptimizeResult = true
             isOptimizing = false
         }
     }
 
     // 結果表示を数秒後に自動で消す
-    LaunchedEffect(optimizeFreedBytes) {
-        if (optimizeFreedBytes != null) {
+    LaunchedEffect(showOptimizeResult) {
+        if (showOptimizeResult) {
             delay(3000)
-            optimizeFreedBytes = null
+            showOptimizeResult = false
         }
     }
 
@@ -120,11 +117,11 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
 
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
-        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+        color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
+        border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             // ヘッダー部分
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier
@@ -132,10 +129,9 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                     .background(LocalCyberColors.current.accent)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Text(" // MONITOR", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+                Text("SYSTEM MONITOR", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -189,7 +185,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                 Surface(
                     onClick = {
                         if (!isOptimizing) {
-                            optimizeFreedBytes = null
+                            showOptimizeResult = false
                             isOptimizing = true
                         }
                     },
@@ -221,10 +217,12 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.Center,
                             modifier = Modifier.fillMaxSize()
                         ) {
+                            // 背景がaccent色のときは、明るい色でも読めるようcolors.onAccentでコントラストを確保する
+                            val onButtonColor = if (isOptimizing) LocalCyberColors.current.text else LocalCyberColors.current.onAccent
                             Text(
                                 text = if (isOptimizing) "⚙" else "⚡",
                                 fontSize = 14.sp,
-                                color = Color.White,
+                                color = onButtonColor,
                                 modifier = if (isOptimizing) {
                                     Modifier.graphicsLayer { rotationZ = iconRotation }
                                 } else {
@@ -232,24 +230,23 @@ fun DeviceStatusSection(modifier: Modifier = Modifier) {
                                 }
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(if (isOptimizing) "OPTIMIZING..." else "OPTIMIZE SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, color = onButtonColor, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
                 // 最適化結果の表示（数秒でフェードアウト）
                 AnimatedVisibility(
-                    visible = optimizeFreedBytes != null,
+                    visible = showOptimizeResult,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    val freedMB = (optimizeFreedBytes ?: 0L) / (1024 * 1024)
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = if (freedMB > 0) "✔ ${freedMB}MB FREED" else "✔ SYSTEM OPTIMAL",
+                            text = "✔ SYSTEM OPTIMAL",
                             fontFamily = CyberFont,
                             fontSize = 9.sp,
                             color = LocalCyberColors.current.accent,
