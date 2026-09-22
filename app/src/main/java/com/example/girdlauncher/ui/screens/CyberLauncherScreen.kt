@@ -47,6 +47,7 @@ import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.saveFolder
 import com.example.girdlauncher.util.CyberNotificationListener
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
 /**
  * 編集モードで削除操作が要求されたスロットの情報。
@@ -106,11 +107,13 @@ fun CyberLauncherScreen() {
     // テーマ判定（SharedPreferencesから取得、なければシステム設定）
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
-    val colors = if (isDarkTheme) {
+    // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
+    var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
+    val colors = (if (isDarkTheme) {
         CyberColors(DarkBgColor, DarkPanelColor, DarkAccentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
     } else {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
-    }
+    }).copy(accent = accentColor)
 
     // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
     var gridPackages by remember {
@@ -406,6 +409,7 @@ fun CyberLauncherScreen() {
                         QuickAccessSection(
                             modifier = Modifier.weight(1f),
                             isWallpaperMode = isWallpaperMode,
+                            accentColor = accentColor,
                             onWallpaperToggle = {
                                 isWallpaperMode = !isWallpaperMode
                                 prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
@@ -414,6 +418,10 @@ fun CyberLauncherScreen() {
                                 val newTheme = !isDarkTheme
                                 isDarkTheme = newTheme
                                 prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                            },
+                            onAccentColorChange = { color ->
+                                accentColor = color
+                                prefs.edit { putInt("accent_color", color.toArgb()) }
                             }
                         )
                     }
@@ -456,6 +464,7 @@ fun CyberLauncherScreen() {
                             QuickAccessSection(
                                 modifier = Modifier.weight(1f),
                                 isWallpaperMode = isWallpaperMode,
+                                accentColor = accentColor,
                                 onWallpaperToggle = {
                                     isWallpaperMode = !isWallpaperMode
                                     prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
@@ -464,6 +473,10 @@ fun CyberLauncherScreen() {
                                     val newTheme = !isDarkTheme
                                     isDarkTheme = newTheme
                                     prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                                },
+                                onAccentColorChange = { color ->
+                                    accentColor = color
+                                    prefs.edit { putInt("accent_color", color.toArgb()) }
                                 }
                             )
                         }
@@ -509,6 +522,7 @@ fun CyberLauncherScreen() {
                                 QuickAccessSection(
                                     modifier = Modifier.weight(1f),
                                     isWallpaperMode = isWallpaperMode,
+                                    accentColor = accentColor,
                                     onWallpaperToggle = {
                                         isWallpaperMode = !isWallpaperMode
                                         prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
@@ -517,6 +531,10 @@ fun CyberLauncherScreen() {
                                         val newTheme = !isDarkTheme
                                         isDarkTheme = newTheme
                                         prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                                    },
+                                    onAccentColorChange = { color ->
+                                        accentColor = color
+                                        prefs.edit { putInt("accent_color", color.toArgb()) }
                                     }
                                 )
                             }
