@@ -25,11 +25,20 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.girdlauncher.model.GridItem
+import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
+import com.example.girdlauncher.util.createFolder
+import com.example.girdlauncher.util.deleteFolder
+import com.example.girdlauncher.util.folderIdFromSlotValue
+import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
+import com.example.girdlauncher.util.isFolderSlotValue
+import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.requestUninstall
+import com.example.girdlauncher.util.saveFolder
 import com.example.girdlauncher.util.CyberNotificationListener
 import androidx.compose.ui.graphics.Color
 
@@ -106,13 +115,46 @@ fun CyberLauncherScreen() {
         mutableStateOf(prefs.getString("dock_apps", "")?.split(",") ?: emptyList())
     }
 
-    val gridApps = gridPackages.map { pkg -> if (pkg.isEmpty()) null else allApps.find { it.packageName == pkg } }
+    // フォルダ: SharedPreferencesから保存されたフォルダ（ID→FolderInfo）を読み込む
+    // （ドックはフォルダに対応しないため、グリッドのみで使う）
+    var folders by remember { mutableStateOf(loadFolders(prefs)) }
+
+    val gridItems: List<GridItem?> = gridPackages.map { pkg ->
+        when {
+            pkg.isEmpty() -> null
+            isFolderSlotValue(pkg) -> folderIdFromSlotValue(pkg)?.let { folders[it] }?.let { GridItem.FolderItem(it) }
+            else -> allApps.find { it.packageName == pkg }?.let { GridItem.AppItem(it) }
+        }
+    }
     val dockApps = dockPackages.map { pkg -> if (pkg.isEmpty()) null else allApps.find { it.packageName == pkg } }
 
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
+    var addSlotChoiceIndex by remember { mutableStateOf<Int?>(null) } // グリッドの空きスロットタップ時（アプリ/フォルダ選択待ち）
+    var openFolderId by remember { mutableStateOf<String?>(null) } // 中身を表示中のフォルダ
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
+
+    // グリッドのスロット（アプリ or フォルダ）を削除する。フォルダはアンインストールの概念が
+    // ないため、確認ダイアログなしでスロットとフォルダ自体を即座に削除する。
+    fun removeGridItem(index: Int) {
+        when (val item = gridItems.getOrNull(index)) {
+            is GridItem.FolderItem -> {
+                deleteFolder(prefs, item.folder.id)
+                folders = folders - item.folder.id
+                val newPackages = gridPackages.toMutableList()
+                if (index < newPackages.size) {
+                    newPackages[index] = ""
+                    gridPackages = newPackages
+                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                }
+            }
+            is GridItem.AppItem -> {
+                pendingRemoval = PendingRemoval("grid", index, item.appInfo.packageName, item.appInfo.label)
+            }
+            null -> Unit
+        }
+    }
 
     // 指定したスロットを空にする（スロットからの削除。アプリ自体はアンインストールしない）
     fun clearSlot(removal: PendingRemoval) {
@@ -248,6 +290,75 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // グリッドの空きスロットタップ時、「アプリを追加」か「フォルダを作成」かを選ばせる
+    addSlotChoiceIndex?.let { index ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AddSlotChoiceDialog(
+                onDismiss = { addSlotChoiceIndex = null },
+                onAddApp = {
+                    appSelectorTarget = "grid"
+                    targetIndex = index
+                    addSlotChoiceIndex = null
+                },
+                onCreateFolder = {
+                    val folder = createFolder(prefs, "新しいフォルダ")
+                    folders = folders + (folder.id to folder)
+                    val newPackages = gridPackages.toMutableList()
+                    while (newPackages.size <= index) {
+                        newPackages.add("")
+                    }
+                    newPackages[index] = folderSlotValue(folder.id)
+                    gridPackages = newPackages
+                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                    addSlotChoiceIndex = null
+                }
+            )
+        }
+    }
+
+    // フォルダの中身を表示・編集するポップアップ
+    openFolderId?.let { folderId ->
+        val folder = folders[folderId]
+        if (folder != null) {
+            CompositionLocalProvider(LocalCyberColors provides colors) {
+                FolderContentsDialog(
+                    folder = folder,
+                    allApps = allApps,
+                    isWallpaperMode = isWallpaperMode,
+                    onDismiss = { openFolderId = null },
+                    onRename = { newName ->
+                        val updated = folder.copy(name = newName)
+                        folders = folders + (updated.id to updated)
+                        saveFolder(prefs, updated)
+                    },
+                    onAddApp = { index, packageName ->
+                        val newPackages = folder.packageNames.toMutableList()
+                        while (newPackages.size <= index) {
+                            newPackages.add("")
+                        }
+                        newPackages[index] = packageName
+                        val updated = folder.copy(packageNames = newPackages)
+                        folders = folders + (updated.id to updated)
+                        saveFolder(prefs, updated)
+                    },
+                    onRemoveApp = { index ->
+                        val newPackages = folder.packageNames.toMutableList()
+                        if (index < newPackages.size) {
+                            newPackages[index] = ""
+                            val updated = folder.copy(packageNames = newPackages)
+                            folders = folders + (updated.id to updated)
+                            saveFolder(prefs, updated)
+                        }
+                    },
+                    onLaunchApp = { packageName ->
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                        launchIntent?.let { context.startActivity(it) }
+                    }
+                )
+            }
+        }
+    }
+
     CompositionLocalProvider(LocalCyberColors provides colors) {
         Surface(
             modifier = Modifier
@@ -289,23 +400,17 @@ fun CyberLauncherScreen() {
 
                     Box(modifier = Modifier.weight(1.5f)) {
                         AccessGridSection(
-                            apps = gridApps,
+                            items = gridItems,
                             columns = 3,
                             rows = 3,
                             isPortrait = isPortrait, // isPortrait を渡す
                             isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             activeNotifications = activeNotifications, // 追加
-                            onAddClick = { index ->
-                                appSelectorTarget = "grid"
-                                targetIndex = index
-                            },
+                            onAddClick = { index -> addSlotChoiceIndex = index },
+                            onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                             onLongClick = { isEditMode = true },
-                            onRemoveClick = { index ->
-                                gridApps.getOrNull(index)?.let { appInfo ->
-                                    pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
-                                }
-                            },
+                            onRemoveClick = { index -> removeGridItem(index) },
                             onExitEditMode = { isEditMode = false }
                         )
                     }
@@ -341,7 +446,7 @@ fun CyberLauncherScreen() {
                     // アクセスグリッドの表示領域は（小）よりも縮小し、下のウィジェットエリアを広く取る
                     Box(modifier = Modifier.weight(1f)) {
                         AccessGridSection(
-                            apps = gridApps,
+                            items = gridItems,
                             columns = 4,
                             rows = 3,
                             // 縦画面（大）は見出しを「COVER TERMINAL」ではなく「ACCESS GRID」にする
@@ -349,16 +454,10 @@ fun CyberLauncherScreen() {
                             isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             activeNotifications = activeNotifications, // 追加
-                            onAddClick = { index ->
-                                appSelectorTarget = "grid"
-                                targetIndex = index
-                            },
+                            onAddClick = { index -> addSlotChoiceIndex = index },
+                            onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                             onLongClick = { isEditMode = true },
-                            onRemoveClick = { index ->
-                                gridApps.getOrNull(index)?.let { appInfo ->
-                                    pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
-                                }
-                            },
+                            onRemoveClick = { index -> removeGridItem(index) },
                             onExitEditMode = { isEditMode = false }
                         )
                     }
@@ -398,23 +497,17 @@ fun CyberLauncherScreen() {
                         // 左側: アプリグリッド (weight 1f)
                         Box(modifier = Modifier.weight(1f)) {
                             AccessGridSection(
-                                apps = gridApps,
+                                items = gridItems,
                                 columns = 3,
                                 rows = 5,
                                 isPortrait = isPortrait, // isPortrait を渡す
                                 isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications, // 追加
-                                onAddClick = { index -> 
-                                    appSelectorTarget = "grid" 
-                                    targetIndex = index
-                                },
+                                onAddClick = { index -> addSlotChoiceIndex = index },
+                                onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                                 onLongClick = { isEditMode = true },
-                                onRemoveClick = { index ->
-                                    gridApps.getOrNull(index)?.let { appInfo ->
-                                        pendingRemoval = PendingRemoval("grid", index, appInfo.packageName, appInfo.label)
-                                    }
-                                },
+                                onRemoveClick = { index -> removeGridItem(index) },
                                 onExitEditMode = { isEditMode = false }
                             )
                         }

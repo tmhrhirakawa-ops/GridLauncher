@@ -15,16 +15,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.girdlauncher.model.AppInfo
+import com.example.girdlauncher.model.GridItem
 import com.example.girdlauncher.ui.components.AppCard
+import com.example.girdlauncher.ui.components.FolderCard
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import androidx.compose.ui.text.font.FontWeight
 
 /**
- * アプリアイコンのグリッドを表示するセクション。
+ * アプリアイコン・フォルダのグリッドを表示するセクション。
  *
- * @param apps 表示するアプリのリスト。
+ * @param items 表示するスロットの中身のリスト（アプリ・フォルダ・null=空きスロット）。
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
  * @param isPortrait デバイスの向きが縦（ポートレート）かどうか。
@@ -32,13 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
- * @param onLongClick アプリが長押しされたときのコールバック。
+ * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
+ * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
  * @param onExitEditMode 編集モード中に削除アイコン以外の部分がタップされたときのコールバック。
  */
 @Composable
 fun AccessGridSection(
-    apps: List<AppInfo?>,
+    items: List<GridItem?>,
     columns: Int,
     rows: Int,
     isPortrait: Boolean = false,
@@ -46,6 +48,7 @@ fun AccessGridSection(
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
     onAddClick: (Int) -> Unit,
+    onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
     onRemoveClick: (Int) -> Unit = {},
     onExitEditMode: () -> Unit = {}
@@ -67,19 +70,19 @@ fun AccessGridSection(
         }
         Spacer(modifier = Modifier.height(12.dp))
         
-        // アプリを指定された行数・列数で分割
+        // アプリ・フォルダを指定された行数・列数で分割
         val pageSize = columns * rows
         // 少なくとも1ページ分は空きスロットを表示する
-        val pageCount = maxOf(1, ((apps.size + 1) / pageSize) + if (((apps.size + 1) % pageSize) == 0) 0 else 1)
+        val pageCount = maxOf(1, ((items.size + 1) / pageSize) + if (((items.size + 1) % pageSize) == 0) 0 else 1)
         val pagerState = rememberPagerState(pageCount = { pageCount })
-        
+
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize()
         ) { page ->
             val startIndex = page * pageSize
-            val pageApps = apps.asSequence().drop(startIndex).take(pageSize).toList()
-            
+            val pageItems = items.asSequence().drop(startIndex).take(pageSize).toList()
+
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -94,45 +97,62 @@ fun AccessGridSection(
                     ) {
                         // 列のループ
                         for (colIndex in 0 until columns) {
-                            val appIndex = rowIndex + (colIndex * rows) // 縦埋めから横埋めに変更が必要な場合はここを修正
-                            val globalIndex = startIndex + appIndex
-                            
-                            if (appIndex < pageApps.size && pageApps[appIndex] != null) {
-                                val appInfo = pageApps[appIndex]!!
-                                val notifCount = activeNotifications[appInfo.packageName] ?: 0
-                                AppCard(
-                                    name = appInfo.label,
-                                    packageName = appInfo.packageName,
-                                    isMonochrome = appInfo.iconIsMonochrome,
-                                    icon = appInfo.icon,
-                                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                                    isEditMode = isEditMode,
-                                    notificationCount = notifCount,
-                                    isWallpaperMode = isWallpaperMode,
-                                    onClick = {
-                                        if (isEditMode) {
-                                            onExitEditMode()
-                                        } else {
-                                            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                                            launchIntent?.let {
-                                                context.startActivity(it)
+                            val itemIndex = rowIndex + (colIndex * rows) // 縦埋めから横埋めに変更が必要な場合はここを修正
+                            val globalIndex = startIndex + itemIndex
+                            val item = pageItems.getOrNull(itemIndex)
+
+                            when (item) {
+                                is GridItem.AppItem -> {
+                                    val appInfo = item.appInfo
+                                    val notifCount = activeNotifications[appInfo.packageName] ?: 0
+                                    AppCard(
+                                        name = appInfo.label,
+                                        packageName = appInfo.packageName,
+                                        isMonochrome = appInfo.iconIsMonochrome,
+                                        icon = appInfo.icon,
+                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                        isEditMode = isEditMode,
+                                        notificationCount = notifCount,
+                                        isWallpaperMode = isWallpaperMode,
+                                        onClick = {
+                                            if (isEditMode) {
+                                                onExitEditMode()
+                                            } else {
+                                                val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
+                                                launchIntent?.let {
+                                                    context.startActivity(it)
+                                                }
                                             }
+                                        },
+                                        onLongClick = onLongClick,
+                                        onRemoveClick = { onRemoveClick(globalIndex) }
+                                    )
+                                }
+                                is GridItem.FolderItem -> {
+                                    FolderCard(
+                                        name = item.folder.name,
+                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                        isEditMode = isEditMode,
+                                        isWallpaperMode = isWallpaperMode,
+                                        onClick = {
+                                            if (isEditMode) onExitEditMode() else onFolderClick(item)
+                                        },
+                                        onLongClick = onLongClick,
+                                        onRemoveClick = { onRemoveClick(globalIndex) }
+                                    )
+                                }
+                                null -> {
+                                    // 空きスロット（タップでアプリ追加。編集モード中は編集モード終了のみ）
+                                    Surface(
+                                        onClick = { if (isEditMode) onExitEditMode() else onAddClick(globalIndex) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color.Transparent,
+                                        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("EMPTY SLOT", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
                                         }
-                                    },
-                                    onLongClick = onLongClick,
-                                    onRemoveClick = { onRemoveClick(globalIndex) }
-                                )
-                            } else {
-                                // 空きスロット（タップでアプリ追加。編集モード中は編集モード終了のみ）
-                                Surface(
-                                    onClick = { if (isEditMode) onExitEditMode() else onAddClick(globalIndex) },
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color.Transparent,
-                                    border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                                    modifier = Modifier.weight(1f).fillMaxHeight()
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text("EMPTY SLOT", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
                                     }
                                 }
                             }
