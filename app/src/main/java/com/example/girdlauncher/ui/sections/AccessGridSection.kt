@@ -56,6 +56,12 @@ private val IconOnlySlotMaxSize = 64.dp
 private val SlotSpacing = 12.dp
 
 /**
+ * ウィジェット全体の幅がこれを下回ったら、ヘッダーが窮屈だとみなしICON ONLYボタンの文字を
+ * 「IO」に略す（「APP LIST // APP NODES」との衝突・折り返しでレイアウトが崩れるのを防ぐため）。
+ */
+private val HeaderNarrowWidthThreshold = 260.dp
+
+/**
  * アプリアイコン・フォルダのグリッドを表示するセクション。
  *
  * 列数・行数は[baseColumns]・[baseRows]を基準に、ウィジェットの実際の描画サイズに応じて
@@ -111,6 +117,10 @@ fun SharedTransitionScope.AccessGridSection(
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = Modifier.fillMaxSize()
     ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // ウィジェットが狭くリサイズされてヘッダーが窮屈になってきたら、ICON ONLYボタンの
+        // 文字を「IO」に略してレイアウトが崩れないようにする
+        val isHeaderNarrow = maxWidth < HeaderNarrowWidthThreshold
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier
@@ -122,7 +132,7 @@ fun SharedTransitionScope.AccessGridSection(
             Spacer(modifier = Modifier.weight(1f))
             // ICON ONLY切り替えボタン（オンのときは塗りつぶし、オフのときは枠線のみ）
             Text(
-                text = "ICON ONLY",
+                text = if (isHeaderNarrow) "IO" else "ICON ONLY",
                 fontFamily = CyberFont,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -254,6 +264,7 @@ fun SharedTransitionScope.AccessGridSection(
                 }
             }
         }
+    }
     }
     }
 }

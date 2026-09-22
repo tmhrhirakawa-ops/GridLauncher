@@ -770,16 +770,21 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // 「ここにドラッグして削除」ゾーンにドロップされたウィジェットの削除確認
+    // 「ここにドラッグして削除」ゾーンにドロップされたウィジェットの削除確認。
+    // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
+    // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
+    // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
     pendingDeleteWidgetType?.let { widgetType ->
-        WidgetDeleteConfirmDialog(
-            widgetLabel = widgetType.label,
-            onConfirm = {
-                updatePlacedWidgets(placedWidgets.filter { it.type != widgetType })
-                pendingDeleteWidgetType = null
-            },
-            onDismiss = { pendingDeleteWidgetType = null }
-        )
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            WidgetDeleteConfirmDialog(
+                widgetLabel = widgetType.label,
+                onConfirm = {
+                    updatePlacedWidgets(placedWidgets.filter { it.type != widgetType })
+                    pendingDeleteWidgetType = null
+                },
+                onDismiss = { pendingDeleteWidgetType = null }
+            )
+        }
     }
 }
 
