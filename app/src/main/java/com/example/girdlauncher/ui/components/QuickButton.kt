@@ -10,7 +10,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -51,7 +50,6 @@ fun QuickButton(
         color = if (isWallpaperMode) LocalCyberColors.current.panel.copy(alpha = 0.55f) else LocalCyberColors.current.panel,
         border = BorderStroke(1.dp, LocalCyberColors.current.border),
         modifier = modifier
-            .height(32.dp)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {

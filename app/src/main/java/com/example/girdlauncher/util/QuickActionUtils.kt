@@ -4,8 +4,12 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.example.girdlauncher.model.QuickActionId
 
-/** QUICK ACCESSのスロット数（2列×4行）。 */
-const val QUICK_ACTION_CAPACITY = 8
+/**
+ * QUICK ACCESSに配置できるスロット数の上限。設定できる機能（[QuickActionId]）の総数と同じにする
+ * （機能が増えれば自動的にこの上限も増える）。実際にウィジェット上に表示される列数・行数は
+ * ウィジェットのサイズに応じてこれ以下の範囲で自動調整される。
+ */
+val QUICK_ACTION_CAPACITY: Int = QuickActionId.entries.size
 
 private const val KEY_QUICK_ACTIONS = "quick_actions"
 

@@ -626,7 +626,7 @@ fun CyberLauncherScreen() {
                     },
                     onRequestDeleteConfirm = { type -> pendingDeleteWidgetType = type },
                     modifier = Modifier.weight(1f)
-                ) { type, _, _, _, boxModifier ->
+                ) { type, _, _, _, boxModifier, isResizing ->
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -660,8 +660,13 @@ fun CyberLauncherScreen() {
                             slots = quickActionSlots,
                             isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
+                            isResizing = isResizing,
                             accentColor = accentColor,
                             showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
+                            onSlotsChanged = { newSlots ->
+                                quickActionSlots = newSlots
+                                saveQuickActionSlots(prefs, newSlots)
+                            },
                             onThemeToggle = {
                                 val newTheme = !isDarkTheme
                                 isDarkTheme = newTheme

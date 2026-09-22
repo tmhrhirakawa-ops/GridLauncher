@@ -25,6 +25,7 @@ import com.example.girdlauncher.ui.components.AppCard
 import com.example.girdlauncher.ui.components.FolderCard
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import com.example.girdlauncher.util.adaptiveSlotCount
 import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.roundToInt
 
@@ -267,29 +268,6 @@ fun SharedTransitionScope.AccessGridSection(
     }
     }
     }
-}
-
-/**
- * [preferredCount]を基準に、各スロットのサイズが[minSlotSize]〜[maxSlotSize]の範囲に収まるように
- * 数を調整する。[preferredCount]のままだとスロットが[minSlotSize]未満になってしまう場合は数を
- * 減らし、逆に[maxSlotSize]を超えて間延びしてしまう場合は数を増やす。どちらの範囲にも収まって
- * いれば[preferredCount]をそのまま使う。
- */
-private fun adaptiveSlotCount(availableSize: Dp, preferredCount: Int, minSlotSize: Dp, maxSlotSize: Dp, spacing: Dp): Int {
-    var count = preferredCount.coerceAtLeast(1)
-    // 狭すぎる場合は数を減らしてスロットのサイズを確保する
-    while (count > 1) {
-        val slotSize = (availableSize - spacing * (count - 1)) / count
-        if (slotSize >= minSlotSize) break
-        count--
-    }
-    // 広すぎて間延びする場合は数を増やして余白を詰める
-    while (true) {
-        val slotSize = (availableSize - spacing * (count - 1)) / count
-        if (slotSize <= maxSlotSize) break
-        count++
-    }
-    return count
 }
 
 /**

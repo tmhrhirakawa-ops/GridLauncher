@@ -106,8 +106,12 @@ import kotlin.math.roundToInt
  * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、現在表示中の
  *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、[iconCellSizes]が
  *   このウィジェットの種類に対して返したアイコン1個分のサイズ（未指定なら`null`）、サイズ確定済みの
- *   [Modifier]を受け取り、既存の`AccessGridSection`等を呼び出す）。呼び出し側はこのcolSpan・
- *   rowSpanを使って、内部のスロット数などをリサイズ中もリアルタイムに追従させられる。
+ *   [Modifier]、現在リサイズドラッグ中かどうかを受け取り、既存の`AccessGridSection`等を呼び出す）。
+ *   呼び出し側はこのcolSpan・rowSpanを使って、内部のスロット数などをリサイズ中もリアルタイムに
+ *   追従させられる。リサイズ中かどうかのフラグは、呼び出し側が「ドラッグ中はライブプレビューだけ
+ *   行い、指を離してサイズが確定したタイミングでだけ内部状態を変更する」といった処理の分岐に使える
+ *   （例：QUICK ACCESSがウィジェットサイズに収まらなくなったスロットを、ドラッグ中は表示から
+ *   隠すだけにして、指を離した時にだけ実際に空きスロットとして確定させる）。
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -125,7 +129,7 @@ fun SharedTransitionScope.WidgetCanvas(
     onWidgetDragStateChanged: (type: WidgetPanel, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
     onRequestDeleteConfirm: (WidgetPanel) -> Unit = {},
     modifier: Modifier = Modifier,
-    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Pair<Float, Float>?, Modifier) -> Unit
+    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val cellWidth = maxWidth / columns
@@ -161,8 +165,8 @@ fun SharedTransitionScope.WidgetCanvas(
                     onExitWidgetEditMode = onExitWidgetEditMode,
                     onDragStateChanged = { dragging, overDeleteZone -> onWidgetDragStateChanged(widget.type, dragging, overDeleteZone) },
                     onRequestDeleteConfirm = { onRequestDeleteConfirm(widget.type) }
-                ) { liveColSpan, liveRowSpan, boxModifier ->
-                    content(widget.type, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier)
+                ) { liveColSpan, liveRowSpan, boxModifier, isResizing ->
+                    content(widget.type, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier, isResizing)
                 }
             }
         }
@@ -217,7 +221,7 @@ private fun WidgetSlot(
     onExitWidgetEditMode: () -> Unit,
     onDragStateChanged: (dragging: Boolean, overDeleteZone: Boolean) -> Unit,
     onRequestDeleteConfirm: () -> Unit,
-    content: @Composable (colSpan: Float, rowSpan: Float, modifier: Modifier) -> Unit
+    content: @Composable (colSpan: Float, rowSpan: Float, modifier: Modifier, isResizing: Boolean) -> Unit
 ) {
     val colors = LocalCyberColors.current
     val density = LocalDensity.current
@@ -430,7 +434,7 @@ private fun WidgetSlot(
                 }
             }
     ) {
-        content(displayColSpan, displayRowSpan, Modifier.fillMaxSize())
+        content(displayColSpan, displayRowSpan, Modifier.fillMaxSize(), isResizing)
 
         if (isWidgetEditMode) {
             // 移動ハンドルバー（上部中央。四隅のリサイズハンドルと被らないよう左右に余白を取る）

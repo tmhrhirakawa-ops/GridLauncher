@@ -52,6 +52,7 @@ import com.example.girdlauncher.ui.components.VolumeControlDialog
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import com.example.girdlauncher.util.QUICK_ACTION_CAPACITY
+import com.example.girdlauncher.util.adaptiveSlotCount
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
@@ -62,6 +63,20 @@ import kotlin.math.sqrt
  * メインテーマのデフォルトのアクセントカラー（従来からのオレンジ）。
  */
 private val DefaultAccentColor = Color(0xFFFF5722)
+
+/** ボタンがこれより狭く・低くなると窮屈になるとみなす、1ボタンの最小幅・最小高さ。 */
+private val MinButtonWidth = 64.dp
+private val MinButtonHeight = 32.dp
+
+/** ボタンがこれより広く・高くなると間延びして見えるとみなす、1ボタンの最大幅・最大高さ。 */
+private val MaxButtonWidth = 160.dp
+private val MaxButtonHeight = 56.dp
+
+/** ボタン間の余白。列数・行数の算出にもこの値を使う。 */
+private val ButtonSpacing = 8.dp
+
+/** ボタンの基準列数（ウィジェットのサイズがちょうどよいときに使う列数）。 */
+private const val BaseColumns = 2
 
 private const val KEY_RECENT_ACCENT_COLORS = "recent_accent_colors"
 private const val MAX_RECENT_ACCENT_COLORS = 10
@@ -87,13 +102,37 @@ private fun addRecentAccentColor(prefs: SharedPreferences, current: List<Color>,
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
  * ボタングリッドはアプリのグリッドと同様に追加・削除でき、編集モードはメイングリッドと共通。
  *
+ * 列数・行数は[BaseColumns]・スロット総数（[QUICK_ACTION_CAPACITY]、設定できる機能の総数）から
+ * 求めた基準行数を軸に、ウィジェットの実際の描画サイズに応じて自動的に決まる。ボタンが
+ * [MinButtonWidth]・[MinButtonHeight]を下回りそうなほど狭くなったときは列数・行数を減らし、
+ * 逆に[MaxButtonWidth]・[MaxButtonHeight]を超えて間延びしそうなほど広くなったときは列数・行数を
+ * 増やす。ただし列数×行数は[QUICK_ACTION_CAPACITY]を超えない（それ以上は必ず空きスロットにしか
+ * ならないため、代わりにボタン自体を大きくする）。
+ *
+ * ウィジェットが縮小されて、それまで表示されていたスロットの一部が入りきらなくなった場合、
+ * ドラッグ中はそれらを一時的に非表示にするだけに留め、実際にリサイズハンドルのドラッグを
+ * 終えた（[isResizing]がtrue→falseへ遷移した）タイミングで初めて、あふれたスロットを実際に
+ * 空きスロットとして確定させる（そこに設定されていた機能は、別の空きスロットに設定し直せる
+ * ようになる）。あふれて消えるスロットは、スロット番号の大きいものから（＝表示上は下・右側から）
+ * 優先的に選ばれる。
+ *
+ * この確定処理は、あくまで実際のリサイズドラッグの完了だけをトリガーにしている（初回表示時や、
+ * 縦画面・横画面の切り替えなど、ユーザーがドラッグしたわけではない理由でウィジェットのサイズが
+ * 変わっただけのときは確定しない）。そのため、例えば縦画面では収まりきらず一時的に隠れている
+ * スロットがあっても、横画面に切り替えただけでその設定が失われることはない。
+ *
  * @param modifier レイアウトに適用するModifier。
  * @param slots QUICK ACCESSに配置するボタンのスロット（null=空きスロット）。
  * @param isEditMode UIが編集モードかどうか（メイングリッドと共通の状態）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param isResizing ウィジェットが現在リサイズドラッグ中かどうか。falseになったタイミングで、
+ *   あふれたスロットを空きスロットとして確定する。
  * @param accentColor 現在のメインテーマ（アクセント）カラー。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
+ * @param onSlotsChanged ウィジェットのサイズが確定し、あふれたスロットを空きスロットとして
+ *   実際に確定するときのコールバック（更新後の全スロットを渡す）。呼び出し側はこれを使って
+ *   保存する想定。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick ボタンが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除バッジがクリックされたときのコールバック。
@@ -106,10 +145,12 @@ fun QuickAccessSection(
     slots: List<QuickActionId?> = emptyList(),
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
+    isResizing: Boolean = false,
     accentColor: Color = DefaultAccentColor,
     showBorder: Boolean = true,
     onThemeToggle: () -> Unit = {},
     onAccentColorChange: (Color) -> Unit = {},
+    onSlotsChanged: (List<QuickActionId?>) -> Unit = {},
     onAddClick: (Int) -> Unit = {},
     onLongClick: () -> Unit = {},
     onRemoveClick: (Int) -> Unit = {},
@@ -178,9 +219,9 @@ fun QuickAccessSection(
         shape = RoundedCornerShape(6.dp),
         color = if (showBorder) LocalCyberColors.current.panel.copy(alpha = 0.5f) else Color.Transparent,
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxSize()
     ) {
-         Column(modifier = Modifier.padding(12.dp)) {
+         Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier
                     .size(6.dp)
@@ -190,43 +231,82 @@ fun QuickAccessSection(
                 Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             }
             Spacer(modifier = Modifier.height(6.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (rowIndex in 0 until QUICK_ACTION_CAPACITY / 2) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (col in 0 until 2) {
-                            val index = rowIndex * 2 + col
-                            val action = slots.getOrNull(index)
-                            if (action != null) {
-                                Box(modifier = Modifier.weight(1f)) {
-                                    QuickButton(
-                                        text = action.label,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        isWallpaperMode = isWallpaperMode,
-                                        isEditMode = isEditMode,
-                                        onClick = {
-                                            if (isEditMode) onExitEditMode() else handleActionClick(action)
-                                        },
-                                        onLongClick = onLongClick,
-                                        onRemoveClick = { onRemoveClick(index) }
-                                    )
-                                    // ボタンの近くに縦スライダーのポップアップを表示する
-                                    if (action == QuickActionId.VOLUME && showVolumeControl) {
-                                        VolumeControlDialog(onDismiss = { showVolumeControl = false })
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val baseRows = (QUICK_ACTION_CAPACITY + BaseColumns - 1) / BaseColumns
+                val columns = adaptiveSlotCount(maxWidth, BaseColumns, MinButtonWidth, MaxButtonWidth, ButtonSpacing)
+                // 列数×行数がQUICK_ACTION_CAPACITY（設定できる機能の総数）を超えないよう、
+                // 行数の上限をここで決めておく。それ以上増やしても必ず空きスロットにしかならない
+                val maxRowsForCapacity = (QUICK_ACTION_CAPACITY / columns).coerceAtLeast(1)
+                val rows = adaptiveSlotCount(maxHeight, baseRows, MinButtonHeight, MaxButtonHeight, ButtonSpacing)
+                    .coerceAtMost(maxRowsForCapacity)
+                val effectiveCapacity = columns * rows
+
+                // ウィジェットのサイズが確定した（リサイズドラッグ中でなくなった）タイミングでだけ、
+                // 現在表示しきれないスロット（番号の大きいもの＝下・右側）を空きスロットとして確定する。
+                // ただし「isResizingがfalseになった」だけを条件にすると、縦画面・横画面の切り替えなど
+                // ユーザーがドラッグでリサイズしたわけではない理由でウィジェットのサイズが変わった
+                // 直後の初回測定でも（isResizingは変化前からfalseのままなので通常は再実行されないが、
+                // 念のため）誤ってスロットが消えてしまわないよう、「実際にリサイズドラッグが
+                // true→falseへ遷移した」ときだけ確定する。初回コンポーズ時のfalseは無視する
+                var hasHandledInitialResizingState by remember { mutableStateOf(false) }
+                LaunchedEffect(isResizing) {
+                    if (!hasHandledInitialResizingState) {
+                        hasHandledInitialResizingState = true
+                        return@LaunchedEffect
+                    }
+                    if (!isResizing) {
+                        val hasOverflow = slots.withIndex().any { (index, action) -> action != null && index >= effectiveCapacity }
+                        if (hasOverflow) {
+                            onSlotsChanged(slots.mapIndexed { index, action -> if (index < effectiveCapacity) action else null })
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(ButtonSpacing)
+                ) {
+                    for (rowIndex in 0 until rows) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(ButtonSpacing)
+                        ) {
+                            for (col in 0 until columns) {
+                                val index = rowIndex * columns + col
+                                val action = slots.getOrNull(index)
+                                if (action != null) {
+                                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                        QuickButton(
+                                            text = action.label,
+                                            modifier = Modifier.fillMaxSize(),
+                                            isWallpaperMode = isWallpaperMode,
+                                            isEditMode = isEditMode,
+                                            onClick = {
+                                                if (isEditMode) onExitEditMode() else handleActionClick(action)
+                                            },
+                                            onLongClick = onLongClick,
+                                            onRemoveClick = { onRemoveClick(index) }
+                                        )
+                                        // ボタンの近くに縦スライダーのポップアップを表示する
+                                        if (action == QuickActionId.VOLUME && showVolumeControl) {
+                                            VolumeControlDialog(onDismiss = { showVolumeControl = false })
+                                        }
+                                        if (action == QuickActionId.BRIGHTNESS && showBrightnessControl) {
+                                            BrightnessControlDialog(onDismiss = { showBrightnessControl = false })
+                                        }
                                     }
-                                    if (action == QuickActionId.BRIGHTNESS && showBrightnessControl) {
-                                        BrightnessControlDialog(onDismiss = { showBrightnessControl = false })
-                                    }
-                                }
-                            } else {
-                                Surface(
-                                    onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color.Transparent,
-                                    border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                                    modifier = Modifier.weight(1f).height(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
+                                } else {
+                                    Surface(
+                                        onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color.Transparent,
+                                        border = BorderStroke(1.dp, LocalCyberColors.current.border),
+                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
+                                        }
                                     }
                                 }
                             }
