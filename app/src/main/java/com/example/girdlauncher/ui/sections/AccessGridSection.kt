@@ -129,7 +129,6 @@ fun SharedTransitionScope.AccessGridSection(
                 .background(LocalCyberColors.current.accent))
             Spacer(modifier = Modifier.width(8.dp))
             Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-            Text(" // APP NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.weight(1f))
             // ICON ONLY切り替えボタン（オンのときは塗りつぶし、オフのときは枠線のみ）
             Text(

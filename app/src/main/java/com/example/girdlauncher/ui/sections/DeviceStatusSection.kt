@@ -129,8 +129,7 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
                     .background(LocalCyberColors.current.accent)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("SYSTEM", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Text(" // MONITOR", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+                Text("SYSTEM MONITOR", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             }
             Spacer(modifier = Modifier.height(4.dp))
             

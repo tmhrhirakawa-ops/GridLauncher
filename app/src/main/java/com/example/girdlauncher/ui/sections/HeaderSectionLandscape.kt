@@ -3,6 +3,7 @@ package com.example.girdlauncher.ui.sections
 import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -82,10 +83,14 @@ fun HeaderSectionLandscape(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text(timeString, fontFamily = CyberFont, fontSize = 48.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
-            Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+            Text(timeString, fontFamily = CyberFont, fontSize = 42.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(6.dp).background(LocalCyberColors.current.accent))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+            }
         }
-        
+
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("SYSTEM ONLINE", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
             Text("MAIN TERMINAL", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
@@ -119,7 +124,7 @@ fun HeaderSectionLandscape(
                         contentDescription = "Menu",
                         tint = LocalCyberColors.current.core,
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(30.dp)
                             .clickable { showCoreMenu = true }
                     )
                     if (showCoreMenu) {

@@ -82,13 +82,12 @@ fun HeaderSectionPortrait(
     // 真ん中に来ないため、Box+align(Alignment.Center)で画面幅全体の中央に配置する。
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.align(Alignment.TopStart)) {
-            Text(timeString, fontFamily = CyberFont, fontSize = 56.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
-            Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(timeString, fontFamily = CyberFont, fontSize = 48.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(6.dp).background(LocalCyberColors.current.accent))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("22° // TOKYO", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text, fontWeight = FontWeight.Bold)
+                Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
@@ -123,7 +122,7 @@ fun HeaderSectionPortrait(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(48.dp)) {
                     CircularProgressIndicator(
                         progress = { batteryLevel / 100f },
                         color = LocalCyberColors.current.accent,
@@ -138,7 +137,7 @@ fun HeaderSectionPortrait(
                             contentDescription = "Menu",
                             tint = LocalCyberColors.current.core,
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(30.dp)
                                 .clickable { showCoreMenu = true }
                         )
                         if (showCoreMenu) {

@@ -166,7 +166,7 @@ fun QuickAccessSection(
     fun handleActionClick(action: QuickActionId) {
         when (action) {
             QuickActionId.WIFI -> {
-                val intent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).apply {
+                val intent = Intent(android.    provider.Settings.ACTION_WIFI_SETTINGS).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 context.startActivity(intent)
@@ -227,8 +227,7 @@ fun QuickAccessSection(
                     .size(6.dp)
                     .background(LocalCyberColors.current.accent))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("QUICK", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Text(" // ACCESS", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+                Text("QUICK ACCESS", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             }
             Spacer(modifier = Modifier.height(6.dp))
 
