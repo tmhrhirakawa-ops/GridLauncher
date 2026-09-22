@@ -1,5 +1,7 @@
 package com.example.girdlauncher.ui.sections
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -32,14 +34,17 @@ import androidx.compose.ui.text.font.FontWeight
  * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
+ * @param openFolderId 現在ポップアップで開いているフォルダのID。該当するフォルダのカードは、
+ *   ポップアップへ拡大するアニメーション（共有要素）のため見た目を隠す。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
  * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
  * @param onExitEditMode 編集モード中に削除アイコン以外の部分がタップされたときのコールバック。
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun AccessGridSection(
+fun SharedTransitionScope.AccessGridSection(
     items: List<GridItem?>,
     columns: Int,
     rows: Int,
@@ -47,6 +52,7 @@ fun AccessGridSection(
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
+    openFolderId: String? = null,
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -131,7 +137,13 @@ fun AccessGridSection(
                                 is GridItem.FolderItem -> {
                                     FolderCard(
                                         name = item.folder.name,
-                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .sharedElementWithCallerManagedVisibility(
+                                                rememberSharedContentState(key = item.folder.id),
+                                                visible = item.folder.id != openFolderId
+                                            ),
                                         isEditMode = isEditMode,
                                         isWallpaperMode = isWallpaperMode,
                                         onClick = {

@@ -6,6 +6,11 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -25,6 +30,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.girdlauncher.model.FolderInfo
 import com.example.girdlauncher.model.GridItem
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
@@ -70,6 +76,7 @@ private fun HeaderDivider() {
  * ランチャーのメイン画面。デバイスの向きや画面サイズに基づいて、
  * すべてのセクションのレイアウトを調整します。
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun CyberLauncherScreen() {
     val context = LocalContext.current
@@ -132,8 +139,20 @@ fun CyberLauncherScreen() {
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
     var addSlotChoiceIndex by remember { mutableStateOf<Int?>(null) } // グリッドの空きスロットタップ時（アプリ/フォルダ選択待ち）
     var openFolderId by remember { mutableStateOf<String?>(null) } // 中身を表示中のフォルダ
+    // ポップアップを閉じるアニメーション中もフォルダの中身を表示し続けるため、openFolderIdが
+    // nullになった後も直前に表示していたフォルダの情報を保持しておく
+    var displayedFolder by remember { mutableStateOf<FolderInfo?>(null) }
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
+
+    // openFolderIdが指すフォルダの最新情報をdisplayedFolderに反映する。openFolderIdがnullに
+    // なった後（閉じるアニメーション中）はこのeffectが再実行されないため、直前の内容がそのまま残る。
+    LaunchedEffect(openFolderId, folders) {
+        val id = openFolderId
+        if (id != null) {
+            displayedFolder = folders[id]
+        }
+    }
 
     // グリッドのスロット（アプリ or フォルダ）を削除する。フォルダはアンインストールの概念が
     // ないため、確認ダイアログなしでスロットとフォルダ自体を即座に削除する。
@@ -316,50 +335,11 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // フォルダの中身を表示・編集するポップアップ
-    openFolderId?.let { folderId ->
-        val folder = folders[folderId]
-        if (folder != null) {
-            CompositionLocalProvider(LocalCyberColors provides colors) {
-                FolderContentsDialog(
-                    folder = folder,
-                    allApps = allApps,
-                    isWallpaperMode = isWallpaperMode,
-                    onDismiss = { openFolderId = null },
-                    onRename = { newName ->
-                        val updated = folder.copy(name = newName)
-                        folders = folders + (updated.id to updated)
-                        saveFolder(prefs, updated)
-                    },
-                    onAddApp = { index, packageName ->
-                        val newPackages = folder.packageNames.toMutableList()
-                        while (newPackages.size <= index) {
-                            newPackages.add("")
-                        }
-                        newPackages[index] = packageName
-                        val updated = folder.copy(packageNames = newPackages)
-                        folders = folders + (updated.id to updated)
-                        saveFolder(prefs, updated)
-                    },
-                    onRemoveApp = { index ->
-                        val newPackages = folder.packageNames.toMutableList()
-                        if (index < newPackages.size) {
-                            newPackages[index] = ""
-                            val updated = folder.copy(packageNames = newPackages)
-                            folders = folders + (updated.id to updated)
-                            saveFolder(prefs, updated)
-                        }
-                    },
-                    onLaunchApp = { packageName ->
-                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
-                        launchIntent?.let { context.startActivity(it) }
-                    }
-                )
-            }
-        }
-    }
-
     CompositionLocalProvider(LocalCyberColors provides colors) {
+        // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
+        // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
+        // グリッドとフォルダポップアップを同じSharedTransitionLayout内に配置する。
+        SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
@@ -407,6 +387,7 @@ fun CyberLauncherScreen() {
                             isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             activeNotifications = activeNotifications, // 追加
+                            openFolderId = openFolderId,
                             onAddClick = { index -> addSlotChoiceIndex = index },
                             onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                             onLongClick = { isEditMode = true },
@@ -454,6 +435,7 @@ fun CyberLauncherScreen() {
                             isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             activeNotifications = activeNotifications, // 追加
+                            openFolderId = openFolderId,
                             onAddClick = { index -> addSlotChoiceIndex = index },
                             onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                             onLongClick = { isEditMode = true },
@@ -504,6 +486,7 @@ fun CyberLauncherScreen() {
                                 isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications, // 追加
+                                openFolderId = openFolderId,
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                                 onLongClick = { isEditMode = true },
@@ -564,6 +547,53 @@ fun CyberLauncherScreen() {
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
                 Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
             }
+        }
+
+        // フォルダの中身を表示・編集するポップアップ。メイングリッドと同じ
+        // SharedTransitionLayout内に配置し、フォルダアイコンからの拡大アニメーションを実現する。
+        AnimatedVisibility(
+            visible = openFolderId != null,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            displayedFolder?.let { folder ->
+                FolderContentsDialog(
+                    folder = folder,
+                    allApps = allApps,
+                    isWallpaperMode = isWallpaperMode,
+                    animatedVisibilityScope = this,
+                    onDismiss = { openFolderId = null },
+                    onRename = { newName ->
+                        val updated = folder.copy(name = newName)
+                        folders = folders + (updated.id to updated)
+                        saveFolder(prefs, updated)
+                    },
+                    onAddApp = { index, packageName ->
+                        val newPackages = folder.packageNames.toMutableList()
+                        while (newPackages.size <= index) {
+                            newPackages.add("")
+                        }
+                        newPackages[index] = packageName
+                        val updated = folder.copy(packageNames = newPackages)
+                        folders = folders + (updated.id to updated)
+                        saveFolder(prefs, updated)
+                    },
+                    onRemoveApp = { index ->
+                        val newPackages = folder.packageNames.toMutableList()
+                        if (index < newPackages.size) {
+                            newPackages[index] = ""
+                            val updated = folder.copy(packageNames = newPackages)
+                            folders = folders + (updated.id to updated)
+                            saveFolder(prefs, updated)
+                        }
+                    },
+                    onLaunchApp = { packageName ->
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                        launchIntent?.let { context.startActivity(it) }
+                    }
+                )
+            }
+        }
         }
     }
 }
