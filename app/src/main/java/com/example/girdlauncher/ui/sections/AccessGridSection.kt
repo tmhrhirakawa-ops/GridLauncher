@@ -4,6 +4,8 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -17,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.girdlauncher.model.AccessGridSlotSize
 import com.example.girdlauncher.model.GridItem
 import com.example.girdlauncher.ui.components.AppCard
 import com.example.girdlauncher.ui.components.FolderCard
@@ -36,6 +39,8 @@ import androidx.compose.ui.text.font.FontWeight
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param openFolderId 現在ポップアップで開いているフォルダのID。該当するフォルダのカードは、
  *   ポップアップへ拡大するアニメーション（共有要素）のため見た目を隠す。
+ * @param slotSize 現在のスロットサイズ（S/M/L）。ヘッダー右端のボタンに表示する。
+ * @param onSlotSizeClick スロットサイズのボタンがクリックされたときのコールバック（S→M→Lの順で切り替える）。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
  * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
@@ -54,6 +59,8 @@ fun SharedTransitionScope.AccessGridSection(
     activeNotifications: Map<String, Int> = emptyMap(),
     openFolderId: String? = null,
     showBorder: Boolean = true,
+    slotSize: AccessGridSlotSize = AccessGridSlotSize.L,
+    onSlotSizeClick: () -> Unit = {},
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -76,6 +83,19 @@ fun SharedTransitionScope.AccessGridSection(
             Spacer(modifier = Modifier.width(8.dp))
             Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             Text(" // APP NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Normal, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.weight(1f))
+            // スロットサイズ切り替えボタン（現在のS/M/Lを表示し、タップで循環させる）
+            Text(
+                text = slotSize.label,
+                fontFamily = CyberFont,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = LocalCyberColors.current.accent,
+                modifier = Modifier
+                    .border(1.dp, LocalCyberColors.current.accent.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                    .clickable { onSlotSizeClick() }
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
         }
         Spacer(modifier = Modifier.height(6.dp))
 

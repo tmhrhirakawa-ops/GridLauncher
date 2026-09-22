@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,14 +67,19 @@ import kotlin.math.roundToInt
  * @param rows グリッドの行数。
  * @param placedWidgets 現在配置されているウィジェットの一覧。
  * @param isWidgetEditMode ウィジェット編集モードかどうか。
+ * @param iconCellSizes ウィジェットの種類ごとの、アイコン1個分のサイズ（キャンバスのセル単位、小数可）。
+ *   指定された種類は、リサイズ時にキャンバスの粗いセル単位ではなく、このアイコン1個分の固定サイズを
+ *   単位として1行・1列ずつスナップする（指定がない種類は従来通りセル単位でスナップ）。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
  * @param onWidgetLongClick ウィジェットのヘッダーなど（個々のスロット以外）が長押しされたときの
  *   コールバック（ウィジェット編集モードに入る）。
  * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップされたときの
  *   コールバック。
- * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類とサイズ確定済みの
- *   [Modifier]を受け取り、既存の`AccessGridSection`等を呼び出す）。
+ * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、現在表示中の
+ *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、サイズ確定済みの
+ *   [Modifier]を受け取り、既存の`AccessGridSection`等を呼び出す）。呼び出し側はこのcolSpan・
+ *   rowSpanを使って、内部のスロット数などをリサイズ中もリアルタイムに追従させられる。
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -82,12 +88,13 @@ fun SharedTransitionScope.WidgetCanvas(
     rows: Int,
     placedWidgets: List<PlacedWidget>,
     isWidgetEditMode: Boolean,
+    iconCellSizes: Map<WidgetPanel, Pair<Float, Float>> = emptyMap(),
     onLayoutChange: (List<PlacedWidget>) -> Unit,
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
     modifier: Modifier = Modifier,
-    content: @Composable SharedTransitionScope.(WidgetPanel, Modifier) -> Unit
+    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Modifier) -> Unit
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val cellWidth = maxWidth / columns
@@ -104,6 +111,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     cellHeight = cellHeight,
                     isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
+                    iconCellSize = iconCellSizes[widget.type],
                     onMoved = { newCol, newRow ->
                         onLayoutChange(placedWidgets.map { if (it.type == widget.type) it.copy(col = newCol, row = newRow) else it })
                     },
@@ -115,8 +123,8 @@ fun SharedTransitionScope.WidgetCanvas(
                     },
                     onWidgetLongClick = onWidgetLongClick,
                     onExitWidgetEditMode = onExitWidgetEditMode
-                ) { boxModifier ->
-                    content(widget.type, boxModifier)
+                ) { liveColSpan, liveRowSpan, boxModifier ->
+                    content(widget.type, liveColSpan, liveRowSpan, boxModifier)
                 }
             }
         }
@@ -148,36 +156,51 @@ private fun WidgetSlot(
     cellHeight: Dp,
     isWidgetEditMode: Boolean,
     otherWidgets: List<PlacedWidget>,
+    iconCellSize: Pair<Float, Float>?,
     onMoved: (col: Int, row: Int) -> Unit,
-    onResized: (colSpan: Int, rowSpan: Int) -> Unit,
+    onResized: (colSpan: Float, rowSpan: Float) -> Unit,
     onRemove: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
-    content: @Composable (Modifier) -> Unit
+    content: @Composable (colSpan: Float, rowSpan: Float, modifier: Modifier) -> Unit
 ) {
     val colors = LocalCyberColors.current
     val density = LocalDensity.current
 
-    // ドラッグ中（確定前）のライブプレビュー用オフセット
+    // ドラッグ中（確定前）のライブプレビュー用オフセット（生のドラッグ量。指の動きをそのまま積算する）
     var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
     var resizeDeltaPx by remember { mutableStateOf(Offset.Zero) }
 
-    val baseX = cellWidth * widget.col
-    val baseY = cellHeight * widget.row
-    val baseWidth = cellWidth * widget.colSpan
-    val baseHeight = cellHeight * widget.rowSpan
+    val cellWidthPx = with(density) { cellWidth.toPx() }
+    val cellHeightPx = with(density) { cellHeight.toPx() }
+    val baseWidthPx = cellWidthPx * widget.colSpan
+    val baseHeightPx = cellHeightPx * widget.rowSpan
 
-    val dragOffsetXDp = with(density) { dragOffsetPx.x.toDp() }
-    val dragOffsetYDp = with(density) { dragOffsetPx.y.toDp() }
-    val resizeDeltaXDp = with(density) { resizeDeltaPx.x.toDp() }
-    val resizeDeltaYDp = with(density) { resizeDeltaPx.y.toDp() }
+    // 移動ドラッグ中、現在の生ドラッグ量がスナップする先の列・行（グリッド範囲内にクランプ済み）
+    val maxCol = kotlin.math.floor(columns - widget.colSpan).toInt().coerceAtLeast(0)
+    val maxRow = kotlin.math.floor(rows - widget.rowSpan).toInt().coerceAtLeast(0)
+    val snappedCol = (widget.col + (dragOffsetPx.x / cellWidthPx).roundToInt()).coerceIn(0, maxCol)
+    val snappedRow = (widget.row + (dragOffsetPx.y / cellHeightPx).roundToInt()).coerceIn(0, maxRow)
+
+    // リサイズドラッグ中、現在の生ドラッグ量がスナップする先のサイズ。アイコン1個分の固定サイズが
+    // 指定されている種類はそのサイズを単位に、未指定の種類はキャンバスのセル1つを単位にスナップする
+    // （固定サイズを使うことで、現在のwidget.colSpanに依存せず常に「アイコン1個分」ぴったりで
+    // 増減できる＝アイコン数が1行・1列ずつ変わる）
+    val iconWidthPx = (iconCellSize?.first ?: 1f) * cellWidthPx
+    val iconHeightPx = (iconCellSize?.second ?: 1f) * cellHeightPx
+    val maxColSpan = (columns - widget.col).toFloat()
+    val maxRowSpan = (rows - widget.row).toFloat()
+    val snappedColSpan = (((baseWidthPx + resizeDeltaPx.x) / iconWidthPx).roundToInt().coerceAtLeast(1) * (iconWidthPx / cellWidthPx))
+        .coerceIn(iconWidthPx / cellWidthPx, maxColSpan)
+    val snappedRowSpan = (((baseHeightPx + resizeDeltaPx.y) / iconHeightPx).roundToInt().coerceAtLeast(1) * (iconHeightPx / cellHeightPx))
+        .coerceIn(iconHeightPx / cellHeightPx, maxRowSpan)
 
     Box(
         modifier = Modifier
-            .offset(x = baseX + dragOffsetXDp, y = baseY + dragOffsetYDp)
+            .offset(x = cellWidth * snappedCol, y = cellHeight * snappedRow)
             .size(
-                width = (baseWidth + resizeDeltaXDp).coerceAtLeast(cellWidth),
-                height = (baseHeight + resizeDeltaYDp).coerceAtLeast(cellHeight)
+                width = cellWidth * snappedColSpan,
+                height = cellHeight * snappedRowSpan
             )
             .padding(4.dp)
             // ウィジェットのヘッダーなど、個々のスロット（アプリアイコン・ボタンなど）が
@@ -190,7 +213,7 @@ private fun WidgetSlot(
                 )
             }
     ) {
-        content(Modifier.fillMaxSize())
+        content(snappedColSpan, snappedRowSpan, Modifier.fillMaxSize())
 
         if (isWidgetEditMode) {
             // 移動ハンドル（左上）
@@ -205,13 +228,10 @@ private fun WidgetSlot(
                     contentDescription = "Move Widget",
                     onDrag = { amount -> dragOffsetPx += amount },
                     onDragEnd = {
-                        val deltaCol = (dragOffsetPx.x / with(density) { cellWidth.toPx() }).roundToInt()
-                        val deltaRow = (dragOffsetPx.y / with(density) { cellHeight.toPx() }).roundToInt()
-                        val newCol = (widget.col + deltaCol).coerceIn(0, (columns - widget.colSpan).coerceAtLeast(0))
-                        val newRow = (widget.row + deltaRow).coerceIn(0, (rows - widget.rowSpan).coerceAtLeast(0))
-                        val candidate = widget.copy(col = newCol, row = newRow)
+                        // ライブプレビューと同じスナップ先（snappedCol/snappedRow）をそのまま確定させる
+                        val candidate = widget.copy(col = snappedCol, row = snappedRow)
                         if (otherWidgets.none { it.overlaps(candidate) }) {
-                            onMoved(newCol, newRow)
+                            onMoved(snappedCol, snappedRow)
                         }
                         dragOffsetPx = Offset.Zero
                     },
@@ -241,13 +261,10 @@ private fun WidgetSlot(
                     contentDescription = "Resize Widget",
                     onDrag = { amount -> resizeDeltaPx += amount },
                     onDragEnd = {
-                        val deltaColSpan = (resizeDeltaPx.x / with(density) { cellWidth.toPx() }).roundToInt()
-                        val deltaRowSpan = (resizeDeltaPx.y / with(density) { cellHeight.toPx() }).roundToInt()
-                        val newColSpan = (widget.colSpan + deltaColSpan).coerceIn(1, columns - widget.col)
-                        val newRowSpan = (widget.rowSpan + deltaRowSpan).coerceIn(1, rows - widget.row)
-                        val candidate = widget.copy(colSpan = newColSpan, rowSpan = newRowSpan)
+                        // ライブプレビューと同じスナップ先（snappedColSpan/snappedRowSpan）をそのまま確定させる
+                        val candidate = widget.copy(colSpan = snappedColSpan, rowSpan = snappedRowSpan)
                         if (otherWidgets.none { it.overlaps(candidate) }) {
-                            onResized(newColSpan, newRowSpan)
+                            onResized(snappedColSpan, snappedRowSpan)
                         }
                         resizeDeltaPx = Offset.Zero
                     },
@@ -267,6 +284,14 @@ private fun EditHandle(
     onDragCancel: () -> Unit
 ) {
     val colors = LocalCyberColors.current
+    // pointerInput(Unit)のジェスチャー検出コルーチンは初回のみ起動し、以降のwidget編集モード中の
+    // 再コンポジションでは再起動しない。そのため、onDrag/onDragEnd/onDragCancelを直接渡すと初回の
+    // 古いクロージャ（＝リサイズ前のwidgetサイズなど）に固定されてしまい、2回目以降のドラッグ確定時に
+    // 古い値を基準に計算されて元のサイズへ戻ってしまう。rememberUpdatedStateで常に最新のラムダを
+    // 参照するようにする
+    val currentOnDrag = rememberUpdatedState(onDrag)
+    val currentOnDragEnd = rememberUpdatedState(onDragEnd)
+    val currentOnDragCancel = rememberUpdatedState(onDragCancel)
     Box(
         modifier = Modifier
             .size(22.dp)
@@ -275,11 +300,11 @@ private fun EditHandle(
             .border(1.dp, colors.accent, CircleShape)
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragEnd = onDragEnd,
-                    onDragCancel = onDragCancel
+                    onDragEnd = { currentOnDragEnd.value() },
+                    onDragCancel = { currentOnDragCancel.value() }
                 ) { change, dragAmount ->
                     change.consume()
-                    onDrag(dragAmount)
+                    currentOnDrag.value(dragAmount)
                 }
             },
         contentAlignment = Alignment.Center

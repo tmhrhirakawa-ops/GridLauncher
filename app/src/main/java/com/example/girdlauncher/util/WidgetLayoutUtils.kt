@@ -17,29 +17,29 @@ enum class WidgetLayoutMode(val columns: Int, val rows: Int, val defaultWidgets:
         columns = 2,
         rows = 6,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2, rowSpan = 3),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 0, row = 3, colSpan = 1, rowSpan = 3),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 1, row = 3, colSpan = 1, rowSpan = 3)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2f, rowSpan = 3f),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 0, row = 3, colSpan = 1f, rowSpan = 3f),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 1, row = 3, colSpan = 1f, rowSpan = 3f)
         )
     ),
     LARGE_PORTRAIT(
         columns = 4,
         rows = 7,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 4, rowSpan = 3),
-            PlacedWidget(WidgetPanel.CALENDAR, col = 0, row = 3, colSpan = 2, rowSpan = 4),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 3, colSpan = 2, rowSpan = 2),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 2, row = 5, colSpan = 2, rowSpan = 2)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 4f, rowSpan = 3f),
+            PlacedWidget(WidgetPanel.CALENDAR, col = 0, row = 3, colSpan = 2f, rowSpan = 4f),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 3, colSpan = 2f, rowSpan = 2f),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 2, row = 5, colSpan = 2f, rowSpan = 2f)
         )
     ),
     LANDSCAPE(
         columns = 4,
         rows = 4,
         defaultWidgets = listOf(
-            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2, rowSpan = 4),
-            PlacedWidget(WidgetPanel.CALENDAR, col = 2, row = 0, colSpan = 2, rowSpan = 2),
-            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 2, colSpan = 1, rowSpan = 2),
-            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 3, row = 2, colSpan = 1, rowSpan = 2)
+            PlacedWidget(WidgetPanel.ACCESS_GRID, col = 0, row = 0, colSpan = 2f, rowSpan = 4f),
+            PlacedWidget(WidgetPanel.CALENDAR, col = 2, row = 0, colSpan = 2f, rowSpan = 2f),
+            PlacedWidget(WidgetPanel.DEVICE_STATUS, col = 2, row = 2, colSpan = 1f, rowSpan = 2f),
+            PlacedWidget(WidgetPanel.QUICK_ACCESS, col = 3, row = 2, colSpan = 1f, rowSpan = 2f)
         )
     )
 }
@@ -59,8 +59,8 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
         val col = parts[1].toIntOrNull() ?: return@mapNotNull null
         val row = parts[2].toIntOrNull() ?: return@mapNotNull null
-        val colSpan = parts[3].toIntOrNull() ?: return@mapNotNull null
-        val rowSpan = parts[4].toIntOrNull() ?: return@mapNotNull null
+        val colSpan = parts[3].toFloatOrNull() ?: return@mapNotNull null
+        val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
         PlacedWidget(type, col, row, colSpan, rowSpan)
     }
 }
