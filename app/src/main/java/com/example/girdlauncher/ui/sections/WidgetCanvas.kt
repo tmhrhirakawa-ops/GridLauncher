@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -16,9 +17,12 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,16 +35,21 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.model.PlacedWidget
 import com.example.girdlauncher.model.WidgetPanel
-import com.example.girdlauncher.ui.components.RemoveBadge
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
 import com.example.girdlauncher.util.findFreeGridSlot
@@ -55,11 +64,18 @@ import kotlin.math.roundToInt
  * 編集モードには2種類あり、それぞれ独立している：
  * - **ウィジェット編集モード**（[isWidgetEditMode]）: ウィジェットのヘッダーなど、個々のスロット
  *   （アプリアイコン・ボタンなど）ではない部分を長押しすると入る。入ると全ウィジェットに枠線が
- *   表示され、四隅につまむと太くなるリサイズハンドルが出る。ヘッダーなどを長押ししたまま
- *   ドラッグすると移動する。
+ *   表示され、四隅につまむと太くなるリサイズハンドルと、上部に移動用のバーが出る。
+ *   誤って移動してしまわないよう、移動は上部のバーをドラッグしたときだけ、リサイズは四隅の
+ *   ハンドルをドラッグしたときだけ行われる（ウィジェット本体のドラッグでは移動もリサイズも
+ *   起きない）。削除は、移動ドラッグ中にDock付近へ浮かぶ削除ゾーンにドロップして行う
+ *   （ウィジェット自体には削除ボタンを表示しない）。
  * - **スロット編集モード**: 個々のアプリアイコン・ボタン自体を長押しすると入る、既存の編集モード
  *   （`AccessGridSection`/`QuickAccessSection`が内部で管理する✗バッジの表示・非表示）。
- * ドラッグ確定時に他のウィジェットと重なる場合は、元の位置・サイズへスナップバックする。
+ *
+ * 移動・リサイズ中は、指の動きにそのまま滑らかに追従する（グリッドへのスナップはしない）。
+ * 代わりに、指を離したときに実際にスナップする位置・サイズを、破線枠のガイドとして
+ * リアルタイムに表示する。ドラッグ確定時にガイドの位置が他のウィジェットと重なる場合は、
+ * 元の位置・サイズへスナップバックする。
  *
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
@@ -70,12 +86,22 @@ import kotlin.math.roundToInt
  *   キャンバスの粗いセル単位ではなく、このアイコン1個分の固定サイズを単位として1行・1列ずつ
  *   スナップする（指定がない種類は従来通りセル単位でスナップ）。呼び出し側がセルサイズ算出のために
  *   別途`BoxWithConstraints`で画面を測り直さずに済むよう、ここで測定済みの値をそのまま渡す。
+ * @param deleteZoneBoundsInRoot 「ここにドラッグして削除」ゾーンのルート座標系での範囲。
+ *   移動ドラッグ中の指の位置がこの範囲に入ると、指を離したときに移動を確定する代わりに
+ *   [onRequestDeleteConfirm]を呼ぶ。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
- * @param onWidgetLongClick ウィジェットのヘッダーなど（個々のスロット以外）が長押しされたときの
- *   コールバック（ウィジェット編集モードに入る。指を離さず続けてドラッグすれば、そのまま移動できる）。
- * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップ（長押しの閾値に
- *   達する前に指を離す）されたときのコールバック。
+ * @param onWidgetLongClick ウィジェット本体（個々のスロット以外）が長押しされたときのコールバック
+ *   （ウィジェット編集モードに入る）。
+ * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップされたときの
+ *   コールバック。
+ * @param onWidgetDragStateChanged ウィジェットの移動ドラッグの状態が変わるたびに呼ばれるコール
+ *   バック（種類、ドラッグ中かどうか、現在[deleteZoneBoundsInRoot]の上にいるかどうか）。呼び出し
+ *   側はこれを使って「ここにドラッグして削除」ゾーンの表示・非表示や、ホバー中のハイライトを
+ *   切り替えられる。
+ * @param onRequestDeleteConfirm 移動ドラッグの指を[deleteZoneBoundsInRoot]内で離したときの
+ *   コールバック（種類）。呼び出し側はここで削除確認ダイアログを表示する想定で、実際の削除は
+ *   呼び出し側が[onLayoutChange]で行う。
  * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、現在表示中の
  *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、[iconCellSizes]が
  *   このウィジェットの種類に対して返したアイコン1個分のサイズ（未指定なら`null`）、サイズ確定済みの
@@ -90,10 +116,13 @@ fun SharedTransitionScope.WidgetCanvas(
     placedWidgets: List<PlacedWidget>,
     isWidgetEditMode: Boolean,
     iconCellSizes: (cellWidth: Dp, cellHeight: Dp) -> Map<WidgetPanel, Pair<Float, Float>> = { _, _ -> emptyMap() },
+    deleteZoneBoundsInRoot: Rect? = null,
     onLayoutChange: (List<PlacedWidget>) -> Unit,
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
+    onWidgetDragStateChanged: (type: WidgetPanel, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
+    onRequestDeleteConfirm: (WidgetPanel) -> Unit = {},
     modifier: Modifier = Modifier,
     content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Pair<Float, Float>?, Modifier) -> Unit
 ) {
@@ -114,6 +143,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
                     iconCellSize = resolvedIconCellSizes[widget.type],
+                    deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onMoved = { newCol, newRow ->
                         onLayoutChange(placedWidgets.map { if (it.type == widget.type) it.copy(col = newCol, row = newRow) else it })
                     },
@@ -126,11 +156,10 @@ fun SharedTransitionScope.WidgetCanvas(
                             }
                         )
                     },
-                    onRemove = {
-                        onLayoutChange(placedWidgets.filter { it.type != widget.type })
-                    },
                     onWidgetLongClick = onWidgetLongClick,
-                    onExitWidgetEditMode = onExitWidgetEditMode
+                    onExitWidgetEditMode = onExitWidgetEditMode,
+                    onDragStateChanged = { dragging, overDeleteZone -> onWidgetDragStateChanged(widget.type, dragging, overDeleteZone) },
+                    onRequestDeleteConfirm = { onRequestDeleteConfirm(widget.type) }
                 ) { liveColSpan, liveRowSpan, boxModifier ->
                     content(widget.type, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier)
                 }
@@ -160,6 +189,23 @@ private enum class ResizeCorner {
     TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT
 }
 
+/**
+ * リサイズハンドルのタッチ領域の一辺のサイズ。実機での検証で44dpでも指の当たり判定としては
+ * シビアすぎた（ドラッグ開始位置が数px当たり判定の外にずれるだけで一切反応しなくなる）ため、
+ * 見た目のブラケット（[ResizeHandleVisualSize]）よりかなり広めに取っている。
+ */
+private val ResizeHandleTouchSize = 56.dp
+
+/** リサイズハンドルの見た目のブラケットのサイズ。[ResizeHandleTouchSize]とは独立して見た目を保つ。 */
+private val ResizeHandleVisualSize = 40.dp
+
+/**
+ * 移動・リサイズ先が他のウィジェットと重なっていて確定できないことを示すガイドの警告色。
+ * このテーマ自体がアクセントカラーとして赤系統を使っているため、赤系統だと通常のガイドと
+ * 見分けがつかない。黄色（アンバー）にすることでテーマ内で唯一無二の「警告色」として機能させる
+ */
+private val WidgetInvalidColor = Color(0xFFFFC400)
+
 @Composable
 private fun WidgetSlot(
     widget: PlacedWidget,
@@ -170,11 +216,13 @@ private fun WidgetSlot(
     isWidgetEditMode: Boolean,
     otherWidgets: List<PlacedWidget>,
     iconCellSize: Pair<Float, Float>?,
+    deleteZoneBoundsInRoot: Rect?,
     onMoved: (col: Float, row: Float) -> Unit,
     onResized: (col: Float, row: Float, colSpan: Float, rowSpan: Float) -> Unit,
-    onRemove: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
+    onDragStateChanged: (dragging: Boolean, overDeleteZone: Boolean) -> Unit,
+    onRequestDeleteConfirm: () -> Unit,
     content: @Composable (colSpan: Float, rowSpan: Float, modifier: Modifier) -> Unit
 ) {
     val colors = LocalCyberColors.current
@@ -185,22 +233,34 @@ private fun WidgetSlot(
     var resizeDeltaPx by remember { mutableStateOf(Offset.Zero) }
     // 現在ドラッグ中のリサイズコーナー（nullならリサイズドラッグ中ではない）
     var activeCorner by remember { mutableStateOf<ResizeCorner?>(null) }
+    // 移動ドラッグ中、指が「ここにドラッグして削除」ゾーンの上にあるかどうか
+    var isOverDeleteZone by remember { mutableStateOf(false) }
+    // 移動ハンドルバーのルート座標系での位置（指のルート座標を求めるために使う）
+    var barCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // 四隅のリサイズハンドルそれぞれのルート座標系での位置
+    var cornerCoordinates by remember { mutableStateOf<Map<ResizeCorner, LayoutCoordinates>>(emptyMap()) }
+    // ウィジェット本体Box自身のルート座標系での位置（本体側のpointerInputでの当たり判定に使う）
+    var widgetBoxCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     val cellWidthPx = with(density) { cellWidth.toPx() }
     val cellHeightPx = with(density) { cellHeight.toPx() }
     val baseWidthPx = cellWidthPx * widget.colSpan
     val baseHeightPx = cellHeightPx * widget.rowSpan
 
-    // 移動ドラッグ中、現在の生ドラッグ量がスナップする先の列・行（グリッド範囲内にクランプ済み）
+    // 移動：グリッドへスナップしない連続値（指に滑らかに追従させる表示用）と、
+    // 確定時・ガイド表示用のスナップ値の両方を求める
     val maxCol = floor(columns - widget.colSpan).coerceAtLeast(0f)
     val maxRow = floor(rows - widget.rowSpan).coerceAtLeast(0f)
-    val snappedCol = (widget.col + (dragOffsetPx.x / cellWidthPx).roundToInt()).coerceIn(0f, maxCol)
-    val snappedRow = (widget.row + (dragOffsetPx.y / cellHeightPx).roundToInt()).coerceIn(0f, maxRow)
+    val rawDeltaCol = dragOffsetPx.x / cellWidthPx
+    val rawDeltaRow = dragOffsetPx.y / cellHeightPx
+    val rawMoveCol = (widget.col + rawDeltaCol).coerceIn(0f, maxCol)
+    val rawMoveRow = (widget.row + rawDeltaRow).coerceIn(0f, maxRow)
+    val snappedCol = (widget.col + rawDeltaCol.roundToInt()).coerceIn(0f, maxCol)
+    val snappedRow = (widget.row + rawDeltaRow.roundToInt()).coerceIn(0f, maxRow)
 
-    // リサイズドラッグ中、現在の生ドラッグ量がスナップする先の位置・サイズ。アイコン1個分の固定
-    // サイズが指定されている種類はそのサイズを単位に、未指定の種類はキャンバスのセル1つを単位に
-    // スナップする（固定サイズを使うことで、現在のwidget.colSpanに依存せず常に「アイコン1個分」
-    // ぴったりで増減できる＝アイコン数が1行・1列ずつ変わる）。
+    // リサイズ：アイコン1個分の固定サイズが指定されている種類はそのサイズを単位に、未指定の種類は
+    // キャンバスのセル1つを単位にスナップする（固定サイズを使うことで、現在のwidget.colSpanに
+    // 依存せず常に「アイコン1個分」ぴったりで増減できる＝アイコン数が1行・1列ずつ変わる）。
     // ドラッグ中のコーナーが左端・上端の場合は、その辺を動かし反対側の辺（右端・下端）を固定点にする
     val iconWidthPx = (iconCellSize?.first ?: 1f) * cellWidthPx
     val iconHeightPx = (iconCellSize?.second ?: 1f) * cellHeightPx
@@ -214,6 +274,14 @@ private fun WidgetSlot(
     val bottomEdge = widget.row + widget.rowSpan
     val maxColSpan = if (leftEdgeMoves) rightEdge else (columns - widget.col)
     val maxRowSpan = if (topEdgeMoves) bottomEdge else (rows - widget.row)
+
+    // 表示用の連続値（スナップしない、滑らかに追従するサイズ）
+    val rawColSpan = ((baseWidthPx + widthDeltaPx) / cellWidthPx).coerceIn(minColSpan, maxColSpan)
+    val rawRowSpan = ((baseHeightPx + heightDeltaPx) / cellHeightPx).coerceIn(minRowSpan, maxRowSpan)
+    val rawResizeCol = if (leftEdgeMoves) (rightEdge - rawColSpan) else widget.col
+    val rawResizeRow = if (topEdgeMoves) (bottomEdge - rawRowSpan) else widget.row
+
+    // 確定時・ガイド表示用のスナップ値
     val snappedColSpan = (((baseWidthPx + widthDeltaPx) / iconWidthPx).roundToInt().coerceAtLeast(1) * (iconWidthPx / cellWidthPx))
         .coerceIn(minColSpan, maxColSpan)
     val snappedRowSpan = (((baseHeightPx + heightDeltaPx) / iconHeightPx).roundToInt().coerceAtLeast(1) * (iconHeightPx / cellHeightPx))
@@ -221,24 +289,61 @@ private fun WidgetSlot(
     val snappedResizeCol = if (leftEdgeMoves) (rightEdge - snappedColSpan) else widget.col
     val snappedResizeRow = if (topEdgeMoves) (bottomEdge - snappedRowSpan) else widget.row
 
-    // 表示中の位置・サイズ：リサイズドラッグ中はそのライブプレビュー、移動ドラッグ中は移動の
-    // ライブプレビュー、どちらでもなければ確定済みの値
-    val displayCol = if (activeCorner != null) snappedResizeCol else snappedCol
-    val displayRow = if (activeCorner != null) snappedResizeRow else snappedRow
-    val displayColSpan = if (activeCorner != null) snappedColSpan else widget.colSpan
-    val displayRowSpan = if (activeCorner != null) snappedRowSpan else widget.rowSpan
+    val isResizing = activeCorner != null
+    val isMoving = dragOffsetPx != Offset.Zero && !isResizing
+    val isDragging = isResizing || isMoving
+
+    // 実際に表示する位置・サイズ：指の動きに滑らかに追従する連続値。どちらでもなければ確定済みの値
+    // （どちらも非ドラッグ時はwidget.col等とほぼ一致するので、常にこの式で問題ない）
+    val displayCol = if (isResizing) rawResizeCol else rawMoveCol
+    val displayRow = if (isResizing) rawResizeRow else rawMoveRow
+    val displayColSpan = if (isResizing) rawColSpan else widget.colSpan
+    val displayRowSpan = if (isResizing) rawRowSpan else widget.rowSpan
+
+    // スナップ先ガイドの位置・サイズ（指を離したときに実際にスナップする場所のプレビュー）
+    val guideCol = if (isResizing) snappedResizeCol else snappedCol
+    val guideRow = if (isResizing) snappedResizeRow else snappedRow
+    val guideColSpan = if (isResizing) snappedColSpan else widget.colSpan
+    val guideRowSpan = if (isResizing) snappedRowSpan else widget.rowSpan
+
+    // ガイドの位置に指を離した場合、実際に確定できるかどうか（他のウィジェットと重ならないか）。
+    // 重なっている間は、ガイドを警告色にして「ここには置けない」ことを視覚的に伝える
+    // （重なっている場合は無言でスナップバックするだけなので、これがないと一見動いていない
+    // ように見えてしまう）
+    val guideCandidate = widget.copy(col = guideCol, row = guideRow, colSpan = guideColSpan, rowSpan = guideRowSpan)
+    val isGuideValid = otherWidgets.none { it.overlaps(guideCandidate) }
 
     val onMoveDragEnd: () -> Unit = {
-        val candidate = widget.copy(col = snappedCol, row = snappedRow)
-        if (otherWidgets.none { it.overlaps(candidate) }) {
-            onMoved(snappedCol, snappedRow)
+        if (isOverDeleteZone) {
+            onRequestDeleteConfirm()
+        } else {
+            val candidate = widget.copy(col = snappedCol, row = snappedRow)
+            if (otherWidgets.none { it.overlaps(candidate) }) {
+                onMoved(snappedCol, snappedRow)
+            }
         }
         dragOffsetPx = Offset.Zero
+        isOverDeleteZone = false
+        onDragStateChanged(false, false)
     }
     val currentOnMoveDragEnd = rememberUpdatedState(onMoveDragEnd)
     val currentIsWidgetEditMode = rememberUpdatedState(isWidgetEditMode)
     val currentOnWidgetLongClick = rememberUpdatedState(onWidgetLongClick)
     val currentOnExitWidgetEditMode = rememberUpdatedState(onExitWidgetEditMode)
+
+    // スナップ先ガイド（破線枠。ドラッグ中のみ表示。削除ゾーンの上にいる間は移動先の意味が
+    // なくなるため隠す）。他のウィジェットと重なっていて確定できない位置にいる間は警告色にする
+    if (isDragging && !isOverDeleteZone) {
+        val guideColor = if (isGuideValid) colors.accent else WidgetInvalidColor
+        Box(
+            modifier = Modifier
+                .offset(x = cellWidth * guideCol, y = cellHeight * guideRow)
+                .size(width = cellWidth * guideColSpan, height = cellHeight * guideRowSpan)
+                .padding(4.dp)
+                .border(2.dp, guideColor.copy(alpha = 0.9f), RoundedCornerShape(6.dp))
+                .background(guideColor.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -251,69 +356,65 @@ private fun WidgetSlot(
             .then(
                 if (isWidgetEditMode) Modifier.border(1.dp, colors.accent.copy(alpha = 0.5f), RoundedCornerShape(6.dp)) else Modifier
             )
+            .then(if (isOverDeleteZone) Modifier.alpha(0.35f) else Modifier)
+            .onGloballyPositioned { widgetBoxCoordinates = it }
             // ウィジェットのヘッダーなど、個々のスロット（アプリアイコン・ボタンなど）が
             // 独自にタップ/長押しを処理していない「余白」部分でのみ、この検出が働く
             // （子のクリック領域が先に消費するため、ここには落ちてこない）。
-            // タップ（短押し）と長押し→ドラッグを、1つのジェスチャーループで自前判定する
-            // （detectTapGesturesとdetectDragGesturesAfterLongPressを別々のpointerInput
-            // ブロックとして重ねると、同じジェスチャーを2つの検出器が競合して処理してしまい、
-            // 「長押しで編集モードに入った直後、指を離すとタップとも判定されて即座に編集モードが
-            // 解除される」不具合が出たため、1つの検出器だけで完結させている）
-            .pointerInput(widget.type) {
+            // ここでは「タップで編集モード終了」「長押しで編集モードに入る」のみを扱う。移動は
+            // 上部のバー、リサイズは四隅のハンドルにジェスチャーを分離してあるため、本体では
+            // ドラッグを一切扱わない。ただし、動きの有無にかかわらず必ずイベントを消費する必要が
+            // ある：消費せずにいると、本体を長押ししたままドラッグしてしまったとき（＝リサイズ
+            // しようとして誤って動かしてしまったとき）に、その未消費のドラッグが祖先のSurfaceに
+            // ある背景ドラッグ検出（detectDragGestures）にまで届いてしまい、編集モードが
+            // 意図せず解除されてしまう不具合があったため
+            //
+            // 移動バー・リサイズハンドルの範囲内から始まったジェスチャーは、それぞれが持つ
+            // 独自のpointerInputに完全に委ねる。当初は「子が先にconsumeしたかどうか」で
+            // 本体側が身を引く（wasHijackedByChild）方式だったが、これは子と本体のどちらが
+            // 先にイベントを消費するかという実装依存の競合に頼っており、実機によってはこの
+            // 競合の決着が安定せず、本体側が先にすべて消費してしまってハンドルが完全に無反応に
+            // なる不具合があった。そのため、ここでは競合に頼らず、ダウン位置が事前に計測して
+            // ある各ハンドルの範囲内かどうかを最初に判定し、範囲内であれば本体側は一切手を出さず
+            // （consumeもせず）即座に手を引くようにしている
+            .pointerInput(widget.type, isWidgetEditMode) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
+
+                    if (currentIsWidgetEditMode.value) {
+                        val downRoot = widgetBoxCoordinates?.localToRoot(down.position)
+                        val isOnHandle = downRoot != null && (
+                            barCoordinates?.boundsInRoot()?.contains(downRoot) == true ||
+                                cornerCoordinates.values.any { it.boundsInRoot().contains(downRoot) }
+                            )
+                        if (isOnHandle) return@awaitEachGesture
+                    }
+
+                    val downTime = down.uptimeMillis
                     val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
+                    val touchSlop = viewConfiguration.touchSlop
+                    var totalDistance = 0f
                     var isLongPress = false
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         if (change.isConsumed) break
-                        // このジェスチャーは自分たちで最後まで判定・処理するので、祖先の
-                        // Surfaceにある背景タップ用のclickable/detectDragGesturesに同じ
-                        // ジェスチャーを二重処理させないよう、動きの有無にかかわらず必ず消費する
-                        // （消費しないと、指を動かさない長押しの場合にdrag()のonDragが一度も
-                        // 呼ばれず、そのタップが祖先のclickableにも届いて編集モードが直後に
-                        // 解除されてしまっていた）
                         change.consume()
-                        // 経過時間のチェックを先に行う：指を静止したまま押し続けている間は
-                        // 中間イベントが来ず、離した瞬間のUPイベントしか観測できないことがある。
-                        // pressedのチェックを先にしてしまうと、長押しの閾値を超えていても
-                        // 「離された＝タップ」と誤判定してしまうため、必ず経過時間を先に見る
-                        if (change.uptimeMillis - down.uptimeMillis >= longPressTimeoutMillis) {
+                        totalDistance += (change.position - change.previousPosition).getDistance()
+                        if (!currentIsWidgetEditMode.value && change.uptimeMillis - downTime >= longPressTimeoutMillis) {
                             isLongPress = true
                             break
                         }
                         if (!change.pressed) break
                     }
-
-                    if (isLongPress) {
-                        // 長押しが成立。編集モードでなければここで入り、指を離さず
-                        // ドラッグを続ければそのまま移動できる
-                        if (!currentIsWidgetEditMode.value) {
-                            currentOnWidgetLongClick.value()
-                        }
-                        var moved = false
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            change.consume()
-                            if (!change.pressed) break
-                            val delta = change.position - change.previousPosition
-                            if (delta != Offset.Zero) {
-                                dragOffsetPx += delta
-                                moved = true
-                            }
-                        }
-                        if (moved) {
-                            currentOnMoveDragEnd.value()
-                        } else {
-                            dragOffsetPx = Offset.Zero
-                        }
-                    } else {
-                        // 長押しタイムアウトより前に指が離れた＝タップ
-                        if (currentIsWidgetEditMode.value) {
+                    if (currentIsWidgetEditMode.value) {
+                        // 編集モード中：指がほぼ動かなかった場合だけタップとみなして終了する
+                        // （大きく動いた場合は本体の誤ドラッグとみなし、何もしない）
+                        if (totalDistance < touchSlop) {
                             currentOnExitWidgetEditMode.value()
                         }
+                    } else if (isLongPress) {
+                        currentOnWidgetLongClick.value()
                     }
                 }
             }
@@ -321,15 +422,29 @@ private fun WidgetSlot(
         content(displayColSpan, displayRowSpan, Modifier.fillMaxSize())
 
         if (isWidgetEditMode) {
-            // 削除バッジ（右上。四隅のリサイズハンドルと被らないよう少し内側に寄せる）
-            AnimatedVisibility(
-                visible = true,
-                enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-                exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 26.dp, end = 26.dp)
-            ) {
-                RemoveBadge(onClick = onRemove)
-            }
+            // 移動ハンドルバー（上部中央。四隅のリサイズハンドルと被らないよう左右に余白を取る）
+            MoveHandleBar(
+                onDragStart = { onDragStateChanged(true, false) },
+                onDrag = { localPosition, amount ->
+                    dragOffsetPx += amount
+                    val rootPosition = barCoordinates?.localToRoot(localPosition)
+                    isOverDeleteZone = deleteZoneBoundsInRoot != null && rootPosition != null &&
+                        deleteZoneBoundsInRoot.contains(rootPosition)
+                    onDragStateChanged(true, isOverDeleteZone)
+                },
+                onDragEnd = { currentOnMoveDragEnd.value() },
+                onDragCancel = {
+                    dragOffsetPx = Offset.Zero
+                    isOverDeleteZone = false
+                    onDragStateChanged(false, false)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 4.dp)
+                    .padding(horizontal = ResizeHandleTouchSize + 4.dp)
+                    .fillMaxWidth()
+                    .onGloballyPositioned { barCoordinates = it }
+            )
 
             // 四隅のリサイズハンドル。どこをつまんでも、その角を固定点として反対側の辺が伸縮する
             for (corner in ResizeCorner.entries) {
@@ -343,7 +458,9 @@ private fun WidgetSlot(
                     visible = true,
                     enter = scaleIn(initialScale = 0.4f) + fadeIn(),
                     exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                    modifier = Modifier.align(alignment)
+                    modifier = Modifier
+                        .align(alignment)
+                        .onGloballyPositioned { cornerCoordinates = cornerCoordinates + (corner to it) }
                 ) {
                     CornerResizeHandle(
                         corner = corner,
@@ -376,8 +493,63 @@ private fun WidgetSlot(
 }
 
 /**
+ * ウィジェットの移動用ハンドルバー。ここを指で押して動かすとドラッグを検出し、それ以外
+ * （リサイズハンドルや本体のドラッグなど）では移動が始まらないようにするための専用の当たり判定。
+ * 中央に小さなグリップ（つまみ）を表示して、ここが動かせる場所であることを示す。
+ *
+ * 当初は誤操作防止のため長押し（[detectDragGesturesAfterLongPress]）を要求していたが、実機の
+ * 指では長押し中のわずかな震え（touch slop超え）で長押し自体が頻繁にキャンセルされてしまい、
+ * ほとんど反応しなかった。バー自体が専用の小さな当たり判定として独立しているため、長押しを
+ * 要求しなくても誤って移動してしまう心配はなく、四隅のリサイズハンドルと同様に即座にドラッグを
+ * 検出する方式に変更した。
+ */
+@Composable
+private fun MoveHandleBar(
+    onDragStart: () -> Unit,
+    onDrag: (localPosition: Offset, amount: Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalCyberColors.current
+    // isWidgetEditModeがtrueの間だけ生成される（このコンポーザブル自体が編集モードに入るたびに
+    // 新しくマウントされる）ため、pointerInput(Unit)が古いクロージャに固定される問題は
+    // 通常は起きないが、念のため他のドラッグハンドルと同様にrememberUpdatedStateで保護する
+    val currentOnDragStart = rememberUpdatedState(onDragStart)
+    val currentOnDrag = rememberUpdatedState(onDrag)
+    val currentOnDragEnd = rememberUpdatedState(onDragEnd)
+    val currentOnDragCancel = rememberUpdatedState(onDragCancel)
+    Box(
+        modifier = modifier
+            .height(28.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.accent.copy(alpha = 0.16f))
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { currentOnDragStart.value() },
+                    onDragEnd = { currentOnDragEnd.value() },
+                    onDragCancel = { currentOnDragCancel.value() }
+                ) { change, amount ->
+                    change.consume()
+                    currentOnDrag.value(change.position, amount)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(28.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(colors.accent.copy(alpha = 0.8f))
+        )
+    }
+}
+
+/**
  * ウィジェットの角につまめる、太い枠線のブラケット形のリサイズハンドル。
- * タッチ領域は見た目より大きめに取り、角のブラケット自体は[CornerBracket]で描画する。
+ * タッチ領域は見た目より大きめ（[ResizeHandleTouchSize]）に取り、角のブラケット自体は
+ * [CornerBracket]で描画する。
  */
 @Composable
 private fun CornerResizeHandle(
@@ -391,9 +563,15 @@ private fun CornerResizeHandle(
     val currentOnDrag = rememberUpdatedState(onDrag)
     val currentOnDragEnd = rememberUpdatedState(onDragEnd)
     val currentOnDragCancel = rememberUpdatedState(onDragCancel)
+    val bracketAlignment = when (corner) {
+        ResizeCorner.TOP_LEFT -> Alignment.TopStart
+        ResizeCorner.TOP_RIGHT -> Alignment.TopEnd
+        ResizeCorner.BOTTOM_LEFT -> Alignment.BottomStart
+        ResizeCorner.BOTTOM_RIGHT -> Alignment.BottomEnd
+    }
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(ResizeHandleTouchSize)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragEnd = { currentOnDragEnd.value() },
@@ -404,7 +582,10 @@ private fun CornerResizeHandle(
                 }
             }
     ) {
-        CornerBracket(corner = corner, modifier = Modifier.size(28.dp))
+        CornerBracket(
+            corner = corner,
+            modifier = Modifier.align(bracketAlignment).size(ResizeHandleVisualSize)
+        )
     }
 }
 
@@ -414,7 +595,7 @@ private fun CornerBracket(corner: ResizeCorner, modifier: Modifier = Modifier) {
     val accent = LocalCyberColors.current.accent
     Canvas(modifier = modifier) {
         val strokeWidthPx = 3.dp.toPx()
-        val armLength = size.minDimension * 0.6f
+        val armLength = size.minDimension * 0.45f
         val half = strokeWidthPx / 2f
         when (corner) {
             ResizeCorner.TOP_LEFT -> {

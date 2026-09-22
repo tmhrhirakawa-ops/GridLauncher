@@ -12,20 +12,32 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
@@ -41,6 +53,7 @@ import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.PermissionRationaleDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
+import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
 import com.example.girdlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
@@ -294,6 +307,16 @@ fun CyberLauncherScreen() {
         isWidgetEditMode = true
         isEditMode = false
     }
+
+    // ウィジェットを移動ドラッグ中にDock付近へ表示する「ここにドラッグして削除」ゾーン関連の状態。
+    // draggingWidgetTypeは現在移動ドラッグ中のウィジェット（非ドラッグ中はnull）で、これに応じて
+    // ゾーンの表示・非表示を切り替える。deleteZoneBoundsInRootはそのゾーンのルート座標系での
+    // 範囲（当たり判定に使う）。pendingDeleteWidgetTypeはゾーンにドロップされ、削除確認
+    // ダイアログを表示中のウィジェット。
+    var draggingWidgetType by remember { mutableStateOf<WidgetPanel?>(null) }
+    var isDraggedWidgetOverDeleteZone by remember { mutableStateOf(false) }
+    var deleteZoneBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    var pendingDeleteWidgetType by remember { mutableStateOf<WidgetPanel?>(null) }
 
     // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
     // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
@@ -634,10 +657,16 @@ fun CyberLauncherScreen() {
                         }
                         mapOf(WidgetPanel.ACCESS_GRID to (iconWidthUnits to iconHeightUnits))
                     },
+                    deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onLayoutChange = { updatePlacedWidgets(it) },
                     onRequestAddWidget = { showWidgetTypeSelector = true },
                     onWidgetLongClick = { enterWidgetEditMode() },
                     onExitWidgetEditMode = { isWidgetEditMode = false },
+                    onWidgetDragStateChanged = { type, dragging, overDeleteZone ->
+                        draggingWidgetType = if (dragging) type else null
+                        isDraggedWidgetOverDeleteZone = overDeleteZone
+                    },
+                    onRequestDeleteConfirm = { type -> pendingDeleteWidgetType = type },
                     modifier = Modifier.weight(1f)
                 ) { type, liveColSpan, liveRowSpan, iconCellSize, boxModifier ->
                     // 列数・行数は現在表示中のcolSpan・rowSpan（リサイズドラッグ中はそのライブ
@@ -767,6 +796,69 @@ fun CyberLauncherScreen() {
                 )
             }
         }
+
+        // ウィジェットの移動ドラッグ中にDock付近へ浮かせる「ここにドラッグして削除」ゾーン。
+        // Dockより後ろ（Column外）に配置しているため、Dockの上にも重なって表示される。
+        Box(modifier = Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = draggingWidgetType != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isPortrait) 90.dp else 70.dp)
+                    .onGloballyPositioned { coordinates -> deleteZoneBoundsInRoot = coordinates.boundsInRoot() }
+            ) {
+                DeleteWidgetDropZone(isActive = isDraggedWidgetOverDeleteZone)
+            }
+        }
+        }
+    }
+
+    // 「ここにドラッグして削除」ゾーンにドロップされたウィジェットの削除確認
+    pendingDeleteWidgetType?.let { widgetType ->
+        WidgetDeleteConfirmDialog(
+            widgetLabel = widgetType.label,
+            onConfirm = {
+                updatePlacedWidgets(placedWidgets.filter { it.type != widgetType })
+                pendingDeleteWidgetType = null
+            },
+            onDismiss = { pendingDeleteWidgetType = null }
+        )
+    }
+}
+
+/**
+ * ウィジェットの移動ドラッグ中にDock付近へ表示する、「ここにドラッグして削除」ゾーン。
+ * ドラッグ中の指がこの範囲に入っている間は[isActive]がtrueになり、危険色で強調表示する。
+ */
+@Composable
+private fun DeleteWidgetDropZone(isActive: Boolean) {
+    val colors = LocalCyberColors.current
+    val dangerColor = Color(0xFFFF3B4E)
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (isActive) dangerColor.copy(alpha = 0.3f) else colors.bg.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, dangerColor.copy(alpha = if (isActive) 1f else 0.6f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = null,
+                tint = dangerColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (isActive) "指を離すと削除します" else "ここにドラッグして削除",
+                fontFamily = CyberFont,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = dangerColor
+            )
         }
     }
 }
