@@ -1,6 +1,7 @@
 package com.example.girdlauncher.util
 
 import android.content.ComponentName
+import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -10,8 +11,16 @@ import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * 通知アクセス（[NotificationListenerService]へのバインド許可）が現在有効かどうかを判定する。
+ * 通知バッジ・再生中メディアの取得や、QUICK ACCESSのミュート操作に必要。
+ */
+fun isNotificationListenerEnabled(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
 
 /**
  * デバイスの通知状態・再生中メディアを監視するサービス。

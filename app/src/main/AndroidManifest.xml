@@ -16,6 +16,10 @@
     <!-- PackageInstaller.uninstall() APIでアプリをアンインストールするための権限 -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
+    <!-- QUICK ACCESSの明るさ調整を端末全体に恒久的に反映するための権限（設定画面で手動許可） -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"

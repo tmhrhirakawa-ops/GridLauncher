@@ -46,9 +46,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.girdlauncher.model.QuickActionId
+import com.example.girdlauncher.ui.components.BrightnessControlDialog
+import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
 import com.example.girdlauncher.ui.components.QuickButton
+import com.example.girdlauncher.ui.components.VolumeControlDialog
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import com.example.girdlauncher.util.QUICK_ACTION_CAPACITY
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
@@ -62,25 +67,81 @@ private val DefaultAccentColor = Color(0xFFFF5722)
 
 /**
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
+ * ボタングリッドはアプリのグリッドと同様に追加・削除でき、編集モードはメイングリッドと共通。
  *
  * @param modifier レイアウトに適用するModifier。
+ * @param slots QUICK ACCESSに配置するボタンのスロット（null=空きスロット）。
+ * @param isEditMode UIが編集モードかどうか（メイングリッドと共通の状態）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param accentColor 現在のメインテーマ（アクセント）カラー。
  * @param onWallpaperToggle 壁紙透過切り替えボタンがクリックされたときのコールバック。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
+ * @param onAddClick 空きスロットがクリックされたときのコールバック。
+ * @param onLongClick ボタンが長押しされたときのコールバック。
+ * @param onRemoveClick 編集モードで削除バッジがクリックされたときのコールバック。
+ * @param onExitEditMode 編集モード中に削除バッジ以外の部分がタップされたときのコールバック。
  */
 @Composable
 fun QuickAccessSection(
     modifier: Modifier = Modifier,
+    slots: List<QuickActionId?> = emptyList(),
+    isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     accentColor: Color = DefaultAccentColor,
     onWallpaperToggle: () -> Unit = {},
     onThemeToggle: () -> Unit = {},
-    onAccentColorChange: (Color) -> Unit = {}
+    onAccentColorChange: (Color) -> Unit = {},
+    onAddClick: (Int) -> Unit = {},
+    onLongClick: () -> Unit = {},
+    onRemoveClick: (Int) -> Unit = {},
+    onExitEditMode: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showColorPicker by remember { mutableStateOf(false) }
+    var showVolumeControl by remember { mutableStateOf(false) }
+    var showBrightnessControl by remember { mutableStateOf(false) }
+
+    fun handleActionClick(action: QuickActionId) {
+        when (action) {
+            QuickActionId.WIFI -> {
+                val intent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            }
+            QuickActionId.DISPLAY -> {
+                val intent = Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            }
+            QuickActionId.BLUETOOTH -> {
+                val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(intent)
+            }
+            QuickActionId.DEVELOP -> {
+                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                try {
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val fallbackIntent = Intent(android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(fallbackIntent)
+                }
+            }
+            QuickActionId.COLOR -> showColorPicker = true
+            QuickActionId.THEME -> onThemeToggle()
+            QuickActionId.VOLUME -> showVolumeControl = true
+            QuickActionId.BRIGHTNESS -> showBrightnessControl = true
+        }
+    }
+
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = LocalCyberColors.current.panel.copy(alpha = 0.5f),
@@ -145,77 +206,47 @@ fun QuickAccessSection(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 1段目
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickButton(
-                        text = "WI-FI",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = {
-                            val intent = Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
-                    QuickButton(
-                        text = "DISPLAY",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = {
-                            val intent = Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
-                }
-                // 2段目
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickButton(
-                        text = "BLUETOOTH",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = {
-                            val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
-                    QuickButton(
-                        text = "DEVELOP",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = {
-                            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            try {
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                val fallbackIntent = Intent(android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS).apply {
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                for (rowIndex in 0 until QUICK_ACTION_CAPACITY / 2) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (col in 0 until 2) {
+                            val index = rowIndex * 2 + col
+                            val action = slots.getOrNull(index)
+                            if (action != null) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    QuickButton(
+                                        text = action.label,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        isWallpaperMode = isWallpaperMode,
+                                        isEditMode = isEditMode,
+                                        onClick = {
+                                            if (isEditMode) onExitEditMode() else handleActionClick(action)
+                                        },
+                                        onLongClick = onLongClick,
+                                        onRemoveClick = { onRemoveClick(index) }
+                                    )
+                                    // ボタンの近くに縦スライダーのポップアップを表示する
+                                    if (action == QuickActionId.VOLUME && showVolumeControl) {
+                                        VolumeControlDialog(onDismiss = { showVolumeControl = false })
+                                    }
+                                    if (action == QuickActionId.BRIGHTNESS && showBrightnessControl) {
+                                        BrightnessControlDialog(onDismiss = { showBrightnessControl = false })
+                                    }
                                 }
-                                context.startActivity(fallbackIntent)
+                            } else {
+                                Surface(
+                                    onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color.Transparent,
+                                    border = BorderStroke(1.dp, LocalCyberColors.current.border),
+                                    modifier = Modifier.weight(1f).height(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
+                                    }
+                                }
                             }
                         }
-                    )
-                }
-                // 3段目
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QuickButton(
-                        text = "COLOR",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = { showColorPicker = true }
-                    )
-                    QuickButton(
-                        text = "THEME",
-                        modifier = Modifier.weight(1f),
-                        isWallpaperMode = isWallpaperMode,
-                        onClick = onThemeToggle
-                    )
+                    }
                 }
             }
          }

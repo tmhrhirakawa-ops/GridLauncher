@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -32,8 +33,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.girdlauncher.model.FolderInfo
 import com.example.girdlauncher.model.GridItem
+import com.example.girdlauncher.model.QuickActionId
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
+import com.example.girdlauncher.ui.components.PermissionRationaleDialog
+import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.createFolder
@@ -42,9 +46,12 @@ import com.example.girdlauncher.util.folderIdFromSlotValue
 import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
 import com.example.girdlauncher.util.isFolderSlotValue
+import com.example.girdlauncher.util.isNotificationListenerEnabled
 import com.example.girdlauncher.util.loadFolders
+import com.example.girdlauncher.util.loadQuickActionSlots
 import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.saveFolder
+import com.example.girdlauncher.util.saveQuickActionSlots
 import com.example.girdlauncher.util.CyberNotificationListener
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -83,6 +90,17 @@ fun CyberLauncherScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
     var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
+
+    // 通知アクセス権限（通知バッジ・再生中メディア・QUICK ACCESSのミュート操作に必要）が
+    // 未許可の場合、初回起動時に一度だけ権限付与画面へ案内する（案内前に理由を説明するダイアログを挟む）
+    var showNotificationAccessRationale by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val alreadyPrompted = prefs.getBoolean("notification_access_prompted", false)
+        if (!alreadyPrompted && !isNotificationListenerEnabled(context)) {
+            prefs.edit { putBoolean("notification_access_prompted", true) }
+            showNotificationAccessRationale = true
+        }
+    }
 
     // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
     // 一覧をその場で更新する。
@@ -128,6 +146,10 @@ fun CyberLauncherScreen() {
     // フォルダ: SharedPreferencesから保存されたフォルダ（ID→FolderInfo）を読み込む
     // （ドックはフォルダに対応しないため、グリッドのみで使う）
     var folders by remember { mutableStateOf(loadFolders(prefs)) }
+
+    // QUICK ACCESSのボタン構成: SharedPreferencesから読み込む（アプリグリッドと同様に追加・削除可能）
+    var quickActionSlots by remember { mutableStateOf(loadQuickActionSlots(prefs)) }
+    var quickActionAddIndex by remember { mutableStateOf<Int?>(null) } // QUICK ACCESSの空きスロットタップ時（ボタン種類選択待ち）
 
     val gridItems: List<GridItem?> = gridPackages.map { pkg ->
         when {
@@ -175,6 +197,16 @@ fun CyberLauncherScreen() {
                 pendingRemoval = PendingRemoval("grid", index, item.appInfo.packageName, item.appInfo.label)
             }
             null -> Unit
+        }
+    }
+
+    // QUICK ACCESSのスロットを空にする
+    fun removeQuickAction(index: Int) {
+        val newSlots = quickActionSlots.toMutableList()
+        if (index < newSlots.size) {
+            newSlots[index] = null
+            quickActionSlots = newSlots
+            saveQuickActionSlots(prefs, newSlots)
         }
     }
 
@@ -248,6 +280,23 @@ fun CyberLauncherScreen() {
     val windowInfo = LocalWindowInfo.current
     val density = LocalDensity.current
     val screenWidthDp = with(density) { windowInfo.containerSize.width.toDp().value.toInt() }
+
+    // 初回起動時、通知アクセス権限が未許可なら理由を説明してから権限付与画面へ案内する
+    if (showNotificationAccessRationale) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            PermissionRationaleDialog(
+                message = "通知バッジや再生中メディアの表示、QUICK ACCESSのミュート操作を使うには、GridLauncherへの通知へのアクセスを許可してください。",
+                onConfirm = {
+                    showNotificationAccessRationale = false
+                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                },
+                onDismiss = { showNotificationAccessRationale = false }
+            )
+        }
+    }
 
     if (showAllAppsDrawer) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -338,6 +387,28 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // QUICK ACCESSの空きスロットタップ時、追加するボタンの種類を選ばせる
+    quickActionAddIndex?.let { index ->
+        val usedActions = quickActionSlots.filterNotNull().toSet()
+        val availableActions = QuickActionId.entries.filter { it !in usedActions }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            QuickActionSelectorDialog(
+                availableActions = availableActions,
+                onDismiss = { quickActionAddIndex = null },
+                onSelect = { actionId ->
+                    val newSlots = quickActionSlots.toMutableList()
+                    while (newSlots.size <= index) {
+                        newSlots.add(null)
+                    }
+                    newSlots[index] = actionId
+                    quickActionSlots = newSlots
+                    saveQuickActionSlots(prefs, newSlots)
+                    quickActionAddIndex = null
+                }
+            )
+        }
+    }
+
     CompositionLocalProvider(LocalCyberColors provides colors) {
         // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
         // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
@@ -408,6 +479,8 @@ fun CyberLauncherScreen() {
                         // 横画面と同じ2列×3行のQUICK ACCESSを使用する
                         QuickAccessSection(
                             modifier = Modifier.weight(1f),
+                            slots = quickActionSlots,
+                            isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             accentColor = accentColor,
                             onWallpaperToggle = {
@@ -422,7 +495,11 @@ fun CyberLauncherScreen() {
                             onAccentColorChange = { color ->
                                 accentColor = color
                                 prefs.edit { putInt("accent_color", color.toArgb()) }
-                            }
+                            },
+                            onAddClick = { index -> quickActionAddIndex = index },
+                            onLongClick = { isEditMode = true },
+                            onRemoveClick = { index -> removeQuickAction(index) },
+                            onExitEditMode = { isEditMode = false }
                         )
                     }
                 } else if (isPortrait) {
@@ -463,6 +540,8 @@ fun CyberLauncherScreen() {
                             Spacer(modifier = Modifier.height(12.dp))
                             QuickAccessSection(
                                 modifier = Modifier.weight(1f),
+                                slots = quickActionSlots,
+                                isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 accentColor = accentColor,
                                 onWallpaperToggle = {
@@ -477,7 +556,11 @@ fun CyberLauncherScreen() {
                                 onAccentColorChange = { color ->
                                     accentColor = color
                                     prefs.edit { putInt("accent_color", color.toArgb()) }
-                                }
+                                },
+                                onAddClick = { index -> quickActionAddIndex = index },
+                                onLongClick = { isEditMode = true },
+                                onRemoveClick = { index -> removeQuickAction(index) },
+                                onExitEditMode = { isEditMode = false }
                             )
                         }
                     }
@@ -521,6 +604,8 @@ fun CyberLauncherScreen() {
                                 // QUICK ACCESS は横幅を戻す
                                 QuickAccessSection(
                                     modifier = Modifier.weight(1f),
+                                    slots = quickActionSlots,
+                                    isEditMode = isEditMode,
                                     isWallpaperMode = isWallpaperMode,
                                     accentColor = accentColor,
                                     onWallpaperToggle = {
@@ -535,7 +620,11 @@ fun CyberLauncherScreen() {
                                     onAccentColorChange = { color ->
                                         accentColor = color
                                         prefs.edit { putInt("accent_color", color.toArgb()) }
-                                    }
+                                    },
+                                    onAddClick = { index -> quickActionAddIndex = index },
+                                    onLongClick = { isEditMode = true },
+                                    onRemoveClick = { index -> removeQuickAction(index) },
+                                    onExitEditMode = { isEditMode = false }
                                 )
                             }
                         }
