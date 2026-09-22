@@ -43,7 +43,6 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.example.girdlauncher.model.AccessGridSlotSize
 import com.example.girdlauncher.model.FolderInfo
 import com.example.girdlauncher.model.GridItem
 import com.example.girdlauncher.model.PlacedWidget
@@ -78,7 +77,6 @@ import com.example.girdlauncher.util.CyberNotificationListener
 import com.example.girdlauncher.util.WidgetLayoutMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import kotlin.math.roundToInt
 
 /**
  * 編集モードで削除操作が要求されたスロットの情報。
@@ -156,18 +154,6 @@ fun CyberLauncherScreen() {
     } else {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
     }).copy(accent = accentColor)
-
-    // APP LISTウィジェット内のアプリ一覧の表示密度（S/M/L）。ヘッダーのボタンで切り替える。
-    var accessGridSlotSize by remember {
-        mutableStateOf(
-            runCatching { AccessGridSlotSize.valueOf(prefs.getString("access_grid_slot_size", null) ?: "") }
-                .getOrDefault(AccessGridSlotSize.L)
-        )
-    }
-    fun cycleAccessGridSlotSize() {
-        accessGridSlotSize = accessGridSlotSize.next()
-        prefs.edit { putString("access_grid_slot_size", accessGridSlotSize.name) }
-    }
 
     // 各ウィジェットパネルの枠線表示設定（非表示にしているものだけを保持する）
     var hiddenWidgetPanels by remember { mutableStateOf(loadHiddenWidgetPanels(prefs)) }
@@ -597,8 +583,10 @@ fun CyberLauncherScreen() {
                 HeaderDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // ACCESS GRID内部のアプリ一覧のMサイズ（基準列数・行数）は、画面モードごとに
-                // 従来と同じ値を使う。
+                // ACCESS GRID内部のアプリ一覧の基準列数・行数。画面モードごとに従来の
+                // 「Mサイズ」と同じ値を使う。ウィジェット自体がリサイズされた場合は、
+                // AccessGridSection側が実際の描画サイズを見て、スロットが窮屈になりすぎなければ
+                // 減らし、間延びしすぎるようなら増やす形でこの基準値から調整する
                 val accessGridMColumns: Int
                 val accessGridMRows: Int
                 when (widgetLayoutMode) {
@@ -612,51 +600,14 @@ fun CyberLauncherScreen() {
                         accessGridMColumns = 3; accessGridMRows = 5
                     }
                 }
-                val accessGridDefaultWidget = remember(widgetLayoutMode) {
-                    widgetLayoutMode.defaultWidgets.first { it.type == WidgetPanel.ACCESS_GRID }
-                }
 
                 // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSを、追加・削除・リサイズ・
                 // 移動できるウィジェットとして配置するキャンバス。
-                // アイコン1個分の固定サイズ（S/M/L）の算出にはキャンバスのセル実寸（dp）が必要だが、
-                // WidgetCanvas自身が内部でBoxWithConstraintsによりそれを測定済みのため、二重に
-                // 測定し直さずに済むよう、その値をこのラムダで受け取る
                 WidgetCanvas(
                     columns = widgetLayoutMode.columns,
                     rows = widgetLayoutMode.rows,
                     placedWidgets = placedWidgets,
                     isWidgetEditMode = isWidgetEditMode,
-                    // APP LISTはリサイズ時、アイコン1個分の固定サイズを単位に1行・1列ずつスナップする
-                    iconCellSizes = { canvasCellWidth, canvasCellHeight ->
-                        // Mサイズ：アイコン1個分の固定サイズ（キャンバスセル単位）を、
-                        // 「デフォルトの外枠サイズにMColumns×MRows個のアイコンが入る」ことから求める
-                        val mIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridMColumns
-                        val mIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridMRows
-
-                        // Lサイズ：Mと同じ外枠サイズに、列・行をそれぞれ1つ減らした数しか入らない
-                        // 大きさ（アイコンが一回り大きくなる）
-                        val accessGridLColumns = (accessGridMColumns - 1).coerceAtLeast(1)
-                        val accessGridLRows = (accessGridMRows - 1).coerceAtLeast(1)
-                        val lIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridLColumns
-                        val lIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridLRows
-
-                        // Sサイズ：アイコンが正方形になるサイズ。Mのアイコンの短辺の長さを1辺として、
-                        // デフォルトの外枠サイズに敷き詰められるだけ敷き詰める
-                        val mIconWidthDp = canvasCellWidth * mIconWidthUnits
-                        val mIconHeightDp = canvasCellHeight * mIconHeightUnits
-                        val squareSideDp = minOf(mIconWidthDp, mIconHeightDp)
-                        val accessGridSColumns = ((canvasCellWidth * accessGridDefaultWidget.colSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
-                        val accessGridSRows = ((canvasCellHeight * accessGridDefaultWidget.rowSpan) / squareSideDp).roundToInt().coerceAtLeast(1)
-                        val sIconWidthUnits = accessGridDefaultWidget.colSpan / accessGridSColumns
-                        val sIconHeightUnits = accessGridDefaultWidget.rowSpan / accessGridSRows
-
-                        val (iconWidthUnits, iconHeightUnits) = when (accessGridSlotSize) {
-                            AccessGridSlotSize.S -> sIconWidthUnits to sIconHeightUnits
-                            AccessGridSlotSize.M -> mIconWidthUnits to mIconHeightUnits
-                            AccessGridSlotSize.L -> lIconWidthUnits to lIconHeightUnits
-                        }
-                        mapOf(WidgetPanel.ACCESS_GRID to (iconWidthUnits to iconHeightUnits))
-                    },
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onLayoutChange = { updatePlacedWidgets(it) },
                     onRequestAddWidget = { showWidgetTypeSelector = true },
@@ -668,23 +619,18 @@ fun CyberLauncherScreen() {
                     },
                     onRequestDeleteConfirm = { type -> pendingDeleteWidgetType = type },
                     modifier = Modifier.weight(1f)
-                ) { type, liveColSpan, liveRowSpan, iconCellSize, boxModifier ->
-                    // 列数・行数は現在表示中のcolSpan・rowSpan（リサイズドラッグ中はそのライブ
-                    // プレビュー値）から毎回求めるため、ドラッグ中もリアルタイムに追従する
+                ) { type, _, _, _, boxModifier ->
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
-                            val (iconWidthUnits, iconHeightUnits) = iconCellSize ?: (1f to 1f)
                             AccessGridSection(
                                 items = gridItems,
-                                columns = (liveColSpan / iconWidthUnits).roundToInt().coerceAtLeast(1),
-                                rows = (liveRowSpan / iconHeightUnits).roundToInt().coerceAtLeast(1),
+                                baseColumns = accessGridMColumns,
+                                baseRows = accessGridMRows,
                                 isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications,
                                 openFolderId = openFolderId,
                                 showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
-                                slotSize = accessGridSlotSize,
-                                onSlotSizeClick = { cycleAccessGridSlotSize() },
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                                 onLongClick = { enterSlotEditMode() },

@@ -40,9 +40,6 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
  * @param isEditMode UIが編集モードかどうか。
  * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
- * @param isCompact trueの場合、アプリ名は表示せずアイコンのみを中央に表示する
- *   （APP LISTのSサイズなど、正方形に近い小さなセル向け）。falseの場合は従来通り、
- *   アイコンと名前を横に並べる。
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
@@ -58,7 +55,6 @@ fun AppCard(
     isEditMode: Boolean = false,
     notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
-    isCompact: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: () -> Unit = {}
@@ -77,38 +73,27 @@ fun AppCard(
             val accent = LocalCyberColors.current.accent
             val bitmap = remember(packageName, icon, isMonochrome, accent) { toDuotoneImageBitmap(icon, isMonochrome, accent) }
 
-            if (isCompact) {
-                // アイコンのみを中央に表示する（アプリ名は表示しない）
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .align(Alignment.CenterStart),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Image(
                     bitmap = bitmap,
                     contentDescription = name,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .align(Alignment.Center)
+                    modifier = Modifier.size(28.dp)
                 )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .align(Alignment.CenterStart),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = name,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = name,
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = LocalCyberColors.current.text,
-                        maxLines = 1,
-                        modifier = Modifier.basicMarquee()
-                    )
-                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = name,
+                    fontFamily = CyberFont,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = LocalCyberColors.current.text,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee()
+                )
             }
 
             // 通知バッジ（件数表示）
