@@ -173,11 +173,22 @@ fun CyberLauncherScreen() {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
     }).copy(accent = accentColor)
 
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+
     // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。ヘッダーのボタンで切り替える。
-    var accessGridIconOnly by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only", false)) }
+    // 縦画面・横画面を切り替えても意図せず引き継がれないよう、それぞれ別に記憶する。
+    var accessGridIconOnlyPortrait by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only_portrait", false)) }
+    var accessGridIconOnlyLandscape by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only_landscape", false)) }
+    val accessGridIconOnly = if (isPortrait) accessGridIconOnlyPortrait else accessGridIconOnlyLandscape
     fun toggleAccessGridIconOnly() {
-        accessGridIconOnly = !accessGridIconOnly
-        prefs.edit { putBoolean("access_grid_icon_only", accessGridIconOnly) }
+        if (isPortrait) {
+            accessGridIconOnlyPortrait = !accessGridIconOnlyPortrait
+            prefs.edit { putBoolean("access_grid_icon_only_portrait", accessGridIconOnlyPortrait) }
+        } else {
+            accessGridIconOnlyLandscape = !accessGridIconOnlyLandscape
+            prefs.edit { putBoolean("access_grid_icon_only_landscape", accessGridIconOnlyLandscape) }
+        }
     }
 
     // アプリアイコンをアクセントカラーのデュオトーン加工をせず、本来の色のまま表示するかどうか。
@@ -365,8 +376,6 @@ fun CyberLauncherScreen() {
     // 再生中メディアの監視
     val nowPlaying by CyberNotificationListener.nowPlaying.collectAsState()
 
-    val configuration = LocalConfiguration.current
-    val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     // 画面の幅（dp）を取得
     val windowInfo = LocalWindowInfo.current
     val density = LocalDensity.current
