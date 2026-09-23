@@ -63,19 +63,22 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
     if (stored.isEmpty()) return emptyList()
     return stored.split(";").mapNotNull { entry ->
         val parts = entry.split(":")
-        if (parts.size != 5) return@mapNotNull null
+        // 6フィールド目（appWidgetId）はAPPWIDGET対応で後から追加したもの。
+        // 5フィールドの旧形式もそのまま読めるようにし、既存の配置がリセットされないようにする
+        if (parts.size != 5 && parts.size != 6) return@mapNotNull null
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
         val col = parts[1].toFloatOrNull() ?: return@mapNotNull null
         val row = parts[2].toFloatOrNull() ?: return@mapNotNull null
         val colSpan = parts[3].toFloatOrNull() ?: return@mapNotNull null
         val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
-        PlacedWidget(type, col, row, colSpan, rowSpan)
+        val appWidgetId = if (parts.size == 6) (parts[5].toIntOrNull() ?: -1) else -1
+        PlacedWidget(type = type, appWidgetId = appWidgetId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
     }
 }
 
 /** 指定した画面モードのウィジェット配置をSharedPreferencesに保存する。 */
 fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets: List<PlacedWidget>) {
-    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}" }
+    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}" }
     prefs.edit { putString(widgetLayoutKey(mode), serialized) }
 }
 

@@ -1,5 +1,8 @@
 package com.example.girdlauncher.ui.screens
 
+import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -7,6 +10,8 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
@@ -50,12 +55,14 @@ import com.example.girdlauncher.model.QuickActionId
 import com.example.girdlauncher.model.WidgetPanel
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
+import com.example.girdlauncher.ui.components.AppWidgetHostSection
 import com.example.girdlauncher.ui.components.PermissionRationaleDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
 import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
 import com.example.girdlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
+import com.example.girdlauncher.util.AppWidgetHostManager
 import com.example.girdlauncher.util.createFolder
 import com.example.girdlauncher.util.deleteFolder
 import com.example.girdlauncher.util.findFreeGridSlot
@@ -113,6 +120,7 @@ fun CyberLauncherScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
     var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
+    AppWidgetHostManager.ensureInitialized(context)
 
     // 通知アクセス権限（通知バッジ・再生中メディア・QUICK ACCESSのミュート操作に必要）が
     // 未許可の場合、初回起動時に一度だけ権限付与画面へ案内する（案内前に理由を説明するダイアログを挟む）
@@ -339,14 +347,16 @@ fun CyberLauncherScreen() {
     }
 
     // ウィジェットを移動ドラッグ中にDock付近へ表示する「ここにドラッグして削除」ゾーン関連の状態。
-    // draggingWidgetTypeは現在移動ドラッグ中のウィジェット（非ドラッグ中はnull）で、これに応じて
+    // draggingWidgetは現在移動ドラッグ中のウィジェット（非ドラッグ中はnull）で、これに応じて
     // ゾーンの表示・非表示を切り替える。deleteZoneBoundsInRootはそのゾーンのルート座標系での
-    // 範囲（当たり判定に使う）。pendingDeleteWidgetTypeはゾーンにドロップされ、削除確認
+    // 範囲（当たり判定に使う）。pendingDeleteWidgetはゾーンにドロップされ、削除確認
     // ダイアログを表示中のウィジェット。
-    var draggingWidgetType by remember { mutableStateOf<WidgetPanel?>(null) }
+    // （WidgetPanelではなくPlacedWidget自体を保持するのは、APPWIDGET（外部ウィジェット）が
+    // 同じ種類を複数配置できるため、種類だけでは対象を一意に特定できないため）
+    var draggingWidget by remember { mutableStateOf<PlacedWidget?>(null) }
     var isDraggedWidgetOverDeleteZone by remember { mutableStateOf(false) }
     var deleteZoneBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
-    var pendingDeleteWidgetType by remember { mutableStateOf<WidgetPanel?>(null) }
+    var pendingDeleteWidget by remember { mutableStateOf<PlacedWidget?>(null) }
 
     // アプリ起動などでランチャーがバックグラウンドに回ったら編集モードを自動解除する
     // （編集モードのままアプリを開いてしまい、戻ってきても編集モードが残る問題への対処）
@@ -360,6 +370,22 @@ fun CyberLauncherScreen() {
             if (event == Lifecycle.Event.ON_RESUME) {
                 isEditMode = false
                 isWidgetEditMode = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // 他アプリのAppWidget（外部ウィジェット）のRemoteViews更新を受け取れるよう、
+    // ランチャーが表示されている間だけAppWidgetHostをlisten状態にする
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> AppWidgetHostManager.host.startListening()
+                Lifecycle.Event.ON_STOP -> AppWidgetHostManager.host.stopListening()
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -394,6 +420,96 @@ fun CyberLauncherScreen() {
         savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
     }
     var showWidgetTypeSelector by remember { mutableStateOf(false) } // 「+ ADD WIDGET」タップ時（種類選択待ち）
+    var showAppWidgetPicker by remember { mutableStateOf(false) } // 「＋ 外部ウィジェットを追加」タップ時（プレビュー付き一覧表示中）
+
+    // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
+    // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、
+    // の間ずっと覚えておく必要があるため、ここに保持する
+    var pendingAppWidgetId by remember { mutableIntStateOf(-1) }
+
+    fun placeNewAppWidget(appWidgetId: Int) {
+        val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
+        if (slot != null) {
+            val (col, row, colSpan, rowSpan) = slot
+            updatePlacedWidgets(
+                placedWidgets + PlacedWidget(
+                    type = WidgetPanel.APPWIDGET,
+                    appWidgetId = appWidgetId,
+                    col = col.toFloat(),
+                    row = row.toFloat(),
+                    colSpan = colSpan.toFloat(),
+                    rowSpan = rowSpan.toFloat()
+                )
+            )
+        } else {
+            // 空きスペースがなければ確保したIDを破棄する
+            AppWidgetHostManager.host.deleteAppWidgetId(appWidgetId)
+        }
+    }
+
+    // 設定画面（configure）を持つウィジェットの場合、選択直後にこちらを起動する
+    val appWidgetConfigureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val id = pendingAppWidgetId
+        pendingAppWidgetId = -1
+        if (id == -1) return@rememberLauncherForActivityResult
+        if (result.resultCode == Activity.RESULT_OK) {
+            placeNewAppWidget(id)
+        } else {
+            AppWidgetHostManager.host.deleteAppWidgetId(id)
+        }
+    }
+
+    // バインド許可が下りた（＝appWidgetIdが実際に使える状態になった）直後の共通処理。
+    // 設定画面（configure）を持つウィジェットならそちらを起動し、なければそのまま配置を確定する
+    fun proceedAfterBind(appWidgetId: Int) {
+        val configureComponent = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)?.configure
+        if (configureComponent != null) {
+            pendingAppWidgetId = appWidgetId
+            appWidgetConfigureLauncher.launch(
+                Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                    component = configureComponent
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                }
+            )
+        } else {
+            placeNewAppWidget(appWidgetId)
+        }
+    }
+
+    // このアプリはBIND_APPWIDGET権限を持たない（サードパーティのランチャーは通常持てない）ため、
+    // bindAppWidgetIdIfAllowedは基本的にfalseを返す。その場合はACTION_APPWIDGET_BINDで
+    // システムのバインド確認ダイアログを挟む、というのが非特権ランチャーの標準的な実装方法
+    val appWidgetBindLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val id = pendingAppWidgetId
+        pendingAppWidgetId = -1
+        if (id == -1) return@rememberLauncherForActivityResult
+        if (result.resultCode == Activity.RESULT_OK) {
+            proceedAfterBind(id)
+        } else {
+            AppWidgetHostManager.host.deleteAppWidgetId(id)
+        }
+    }
+
+    // 自作の一覧（AppWidgetPickerDialog）でウィジェットが選択されたときの、バインド開始処理
+    fun startBindFlow(info: AppWidgetProviderInfo) {
+        val id = AppWidgetHostManager.host.allocateAppWidgetId()
+        val alreadyBound = AppWidgetManager.getInstance(context).bindAppWidgetIdIfAllowed(id, info.provider)
+        if (alreadyBound) {
+            proceedAfterBind(id)
+        } else {
+            pendingAppWidgetId = id
+            appWidgetBindLauncher.launch(
+                Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                }
+            )
+        }
+    }
 
     // 初回起動時、通知アクセス権限が未許可なら理由を説明してから権限付与画面へ案内する
     if (showNotificationAccessRationale) {
@@ -526,7 +642,9 @@ fun CyberLauncherScreen() {
     // 「+ ADD WIDGET」タップ時、追加するウィジェットの種類を選ばせる
     if (showWidgetTypeSelector) {
         val placedTypes = placedWidgets.map { it.type }.toSet()
-        val availableWidgets = WidgetPanel.entries.filterNot { it in placedTypes }
+        // APPWIDGET（外部ウィジェット）は複数配置が前提で「未配置」の一覧には馴染まないため、
+        // ここには出さず「＋ 外部ウィジェットを追加」という別の導線（onSelectExternal）にする
+        val availableWidgets = WidgetPanel.entries.filterNot { it in placedTypes || it == WidgetPanel.APPWIDGET }
         CompositionLocalProvider(LocalCyberColors provides colors) {
             WidgetTypeSelectorDialog(
                 availableWidgets = availableWidgets,
@@ -535,9 +653,28 @@ fun CyberLauncherScreen() {
                     val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
                     if (slot != null) {
                         val (col, row, colSpan, rowSpan) = slot
-                        updatePlacedWidgets(placedWidgets + PlacedWidget(type, col.toFloat(), row.toFloat(), colSpan.toFloat(), rowSpan.toFloat()))
+                        updatePlacedWidgets(placedWidgets + PlacedWidget(type = type, col = col.toFloat(), row = row.toFloat(), colSpan = colSpan.toFloat(), rowSpan = rowSpan.toFloat()))
                     }
                     showWidgetTypeSelector = false
+                },
+                onSelectExternal = {
+                    showWidgetTypeSelector = false
+                    showAppWidgetPicker = true
+                }
+            )
+        }
+    }
+
+    // 「＋ 外部ウィジェットを追加」で開く、プレビュー画像つきの自作ウィジェット選択一覧。
+    // 他のダイアログ同様、CompositionLocalProviderのスコープ外で呼ぶとLocalCyberColorsの
+    // デフォルト値（ライトテーマ固定）にフォールバックしてしまうため、明示的にテーマを渡す
+    if (showAppWidgetPicker) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppWidgetPickerDialog(
+                onDismiss = { showAppWidgetPicker = false },
+                onSelect = { info ->
+                    showAppWidgetPicker = false
+                    startBindFlow(info)
                 }
             )
         }
@@ -655,13 +792,13 @@ fun CyberLauncherScreen() {
                     onRequestAddWidget = { showWidgetTypeSelector = true },
                     onWidgetLongClick = { enterWidgetEditMode() },
                     onExitWidgetEditMode = { isWidgetEditMode = false },
-                    onWidgetDragStateChanged = { type, dragging, overDeleteZone ->
-                        draggingWidgetType = if (dragging) type else null
+                    onWidgetDragStateChanged = { widget, dragging, overDeleteZone ->
+                        draggingWidget = if (dragging) widget else null
                         isDraggedWidgetOverDeleteZone = overDeleteZone
                     },
-                    onRequestDeleteConfirm = { type -> pendingDeleteWidgetType = type },
+                    onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
                     modifier = Modifier.weight(1f)
-                ) { type, _, _, _, boxModifier, isResizing ->
+                ) { type, appWidgetId, _, _, _, boxModifier, isResizing ->
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -718,6 +855,12 @@ fun CyberLauncherScreen() {
                             onLongClick = { enterSlotEditMode() },
                             onRemoveClick = { index -> removeQuickAction(index) },
                             onExitEditMode = { isEditMode = false }
+                        )
+                        WidgetPanel.APPWIDGET -> AppWidgetHostSection(
+                            appWidgetId = appWidgetId,
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.APPWIDGET !in hiddenWidgetPanels,
+                            isResizing = isResizing
                         )
                     }
                 }
@@ -801,7 +944,7 @@ fun CyberLauncherScreen() {
         // Dockより後ろ（Column外）に配置しているため、Dockの上にも重なって表示される。
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
-                visible = draggingWidgetType != null,
+                visible = draggingWidget != null,
                 enter = fadeIn(),
                 exit = fadeOut(),
                 modifier = Modifier
@@ -819,15 +962,25 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
-    pendingDeleteWidgetType?.let { widgetType ->
+    pendingDeleteWidget?.let { widget ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
+            val widgetLabel = if (widget.type == WidgetPanel.APPWIDGET) {
+                AppWidgetManager.getInstance(context).getAppWidgetInfo(widget.appWidgetId)
+                    ?.loadLabel(context.packageManager)
+                    ?: widget.type.label
+            } else {
+                widget.type.label
+            }
             WidgetDeleteConfirmDialog(
-                widgetLabel = widgetType.label,
+                widgetLabel = widgetLabel,
                 onConfirm = {
-                    updatePlacedWidgets(placedWidgets.filter { it.type != widgetType })
-                    pendingDeleteWidgetType = null
+                    if (widget.type == WidgetPanel.APPWIDGET) {
+                        AppWidgetHostManager.host.deleteAppWidgetId(widget.appWidgetId)
+                    }
+                    updatePlacedWidgets(placedWidgets.filter { it.instanceKey != widget.instanceKey })
+                    pendingDeleteWidget = null
                 },
-                onDismiss = { pendingDeleteWidgetType = null }
+                onDismiss = { pendingDeleteWidget = null }
             )
         }
     }

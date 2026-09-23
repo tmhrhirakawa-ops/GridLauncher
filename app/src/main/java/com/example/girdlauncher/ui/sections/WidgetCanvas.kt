@@ -97,13 +97,14 @@ import kotlin.math.roundToInt
  * @param onExitWidgetEditMode ウィジェット編集モード中にウィジェット本体がタップされたときの
  *   コールバック。
  * @param onWidgetDragStateChanged ウィジェットの移動ドラッグの状態が変わるたびに呼ばれるコール
- *   バック（種類、ドラッグ中かどうか、現在[deleteZoneBoundsInRoot]の上にいるかどうか）。呼び出し
- *   側はこれを使って「ここにドラッグして削除」ゾーンの表示・非表示や、ホバー中のハイライトを
- *   切り替えられる。
+ *   バック（対象の[PlacedWidget]、ドラッグ中かどうか、現在[deleteZoneBoundsInRoot]の上にいるか
+ *   どうか）。呼び出し側はこれを使って「ここにドラッグして削除」ゾーンの表示・非表示や、
+ *   ホバー中のハイライトを切り替えられる。
  * @param onRequestDeleteConfirm 移動ドラッグの指を[deleteZoneBoundsInRoot]内で離したときの
- *   コールバック（種類）。呼び出し側はここで削除確認ダイアログを表示する想定で、実際の削除は
- *   呼び出し側が[onLayoutChange]で行う。
- * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、現在表示中の
+ *   コールバック（対象の[PlacedWidget]）。呼び出し側はここで削除確認ダイアログを表示する想定で、
+ *   実際の削除は呼び出し側が[onLayoutChange]で行う。
+ * @param content 実際のウィジェットの中身を描画するスロット（[WidgetPanel]の種類、
+ *   [WidgetPanel.APPWIDGET]の場合のみ意味を持つ`appWidgetId`（それ以外は-1）、現在表示中の
  *   （ドラッグでリサイズ中はそのライブプレビュー値を含む）colSpan・rowSpan、[iconCellSizes]が
  *   このウィジェットの種類に対して返したアイコン1個分のサイズ（未指定なら`null`）、サイズ確定済みの
  *   [Modifier]、現在リサイズドラッグ中かどうかを受け取り、既存の`AccessGridSection`等を呼び出す）。
@@ -126,10 +127,10 @@ fun SharedTransitionScope.WidgetCanvas(
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
-    onWidgetDragStateChanged: (type: WidgetPanel, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
-    onRequestDeleteConfirm: (WidgetPanel) -> Unit = {},
+    onWidgetDragStateChanged: (widget: PlacedWidget, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
+    onRequestDeleteConfirm: (PlacedWidget) -> Unit = {},
     modifier: Modifier = Modifier,
-    content: @Composable SharedTransitionScope.(WidgetPanel, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
+    content: @Composable SharedTransitionScope.(WidgetPanel, Int, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val cellWidth = maxWidth / columns
@@ -137,8 +138,8 @@ fun SharedTransitionScope.WidgetCanvas(
         val resolvedIconCellSizes = iconCellSizes(cellWidth, cellHeight)
 
         placedWidgets.forEach { widget ->
-            key(widget.type) {
-                val otherWidgets = remember(placedWidgets) { placedWidgets.filter { it.type != widget.type } }
+            key(widget.instanceKey) {
+                val otherWidgets = remember(placedWidgets) { placedWidgets.filter { it.instanceKey != widget.instanceKey } }
                 WidgetSlot(
                     widget = widget,
                     columns = columns,
@@ -150,12 +151,12 @@ fun SharedTransitionScope.WidgetCanvas(
                     iconCellSize = resolvedIconCellSizes[widget.type],
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onMoved = { newCol, newRow ->
-                        onLayoutChange(placedWidgets.map { if (it.type == widget.type) it.copy(col = newCol, row = newRow) else it })
+                        onLayoutChange(placedWidgets.map { if (it.instanceKey == widget.instanceKey) it.copy(col = newCol, row = newRow) else it })
                     },
                     onResized = { newCol, newRow, newColSpan, newRowSpan ->
                         onLayoutChange(
                             placedWidgets.map {
-                                if (it.type == widget.type) {
+                                if (it.instanceKey == widget.instanceKey) {
                                     it.copy(col = newCol, row = newRow, colSpan = newColSpan, rowSpan = newRowSpan)
                                 } else it
                             }
@@ -163,27 +164,25 @@ fun SharedTransitionScope.WidgetCanvas(
                     },
                     onWidgetLongClick = onWidgetLongClick,
                     onExitWidgetEditMode = onExitWidgetEditMode,
-                    onDragStateChanged = { dragging, overDeleteZone -> onWidgetDragStateChanged(widget.type, dragging, overDeleteZone) },
-                    onRequestDeleteConfirm = { onRequestDeleteConfirm(widget.type) }
+                    onDragStateChanged = { dragging, overDeleteZone -> onWidgetDragStateChanged(widget, dragging, overDeleteZone) },
+                    onRequestDeleteConfirm = { onRequestDeleteConfirm(widget) }
                 ) { liveColSpan, liveRowSpan, boxModifier, isResizing ->
-                    content(widget.type, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier, isResizing)
+                    content(widget.type, widget.appWidgetId, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier, isResizing)
                 }
             }
         }
 
-        // 未配置のウィジェットがあれば、空いている領域に追加導線を表示する
-        val unplacedTypes = WidgetPanel.entries.filterNot { type -> placedWidgets.any { it.type == type } }
-        if (unplacedTypes.isNotEmpty()) {
-            val freeSlot = remember(placedWidgets, columns, rows) { findFreeGridSlot(placedWidgets, columns, rows) }
-            freeSlot?.let { (freeCol, freeRow, freeColSpan, freeRowSpan) ->
-                Box(
-                    modifier = Modifier
-                        .offset(x = cellWidth * freeCol, y = cellHeight * freeRow)
-                        .size(cellWidth * freeColSpan, cellHeight * freeRowSpan)
-                        .padding(4.dp)
-                ) {
-                    AddWidgetTile(onClick = onRequestAddWidget)
-                }
+        // 空いている領域があれば常に追加導線を表示する（外部ウィジェット＝APPWIDGETは複数配置が
+        // 前提で「未配置の種類がない」状態にはならないため、既存4種の空き状況にかかわらず表示する）
+        val freeSlot = remember(placedWidgets, columns, rows) { findFreeGridSlot(placedWidgets, columns, rows) }
+        freeSlot?.let { (freeCol, freeRow, freeColSpan, freeRowSpan) ->
+            Box(
+                modifier = Modifier
+                    .offset(x = cellWidth * freeCol, y = cellHeight * freeRow)
+                    .size(cellWidth * freeColSpan, cellHeight * freeRowSpan)
+                    .padding(4.dp)
+            ) {
+                AddWidgetTile(onClick = onRequestAddWidget)
             }
         }
     }
@@ -392,7 +391,7 @@ private fun WidgetSlot(
             // なる不具合があった。そのため、ここでは競合に頼らず、ダウン位置が事前に計測して
             // ある各ハンドルの範囲内かどうかを最初に判定し、範囲内であれば本体側は一切手を出さず
             // （consumeもせず）即座に手を引くようにしている
-            .pointerInput(widget.type, isWidgetEditMode) {
+            .pointerInput(widget.instanceKey, isWidgetEditMode) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
 
