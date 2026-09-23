@@ -78,6 +78,12 @@ class CyberNotificationListener : NotificationListenerService() {
             dismissedToken = activeController?.sessionToken
             _nowPlaying.value = null
         }
+
+        // 何か再生中/追跡中のセッションがある間のポーリング間隔
+        private const val ActivePollIntervalMs = 3000L
+
+        // 何も追跡していない（一番多い）状態でのポーリング間隔。バッテリー消費を抑えるため長めに空ける
+        private const val IdlePollIntervalMs = 20000L
     }
 
     private var currentController: MediaController? = null
@@ -99,12 +105,17 @@ class CyberNotificationListener : NotificationListenerService() {
         }
 
     // OEM（省電力機能など）によってはセッション変更イベントが確実に届かないことがあるため、
-    // 保険として定期的にセッション一覧を再取得する
+    // 保険として定期的にセッション一覧を再取得する。
+    // 何か再生中/追跡中のセッションがある間だけ短い間隔でポーリングし、
+    // 何もない（一番多い）状態では間隔を大きく空けてバッテリー消費を抑える
+    // （検出自体はOnActiveSessionsChangedListenerがリアルタイムに拾うので、
+    // このポーリングはあくまでOEM対策の保険）
     private val pollHandler = Handler(Looper.getMainLooper())
     private val pollRunnable = object : Runnable {
         override fun run() {
             pollActiveSessions()
-            pollHandler.postDelayed(this, 3000)
+            val nextDelayMs = if (currentController != null) ActivePollIntervalMs else IdlePollIntervalMs
+            pollHandler.postDelayed(this, nextDelayMs)
         }
     }
 
@@ -131,7 +142,7 @@ class CyberNotificationListener : NotificationListenerService() {
             e.printStackTrace()
         }
         pollActiveSessions()
-        pollHandler.postDelayed(pollRunnable, 3000)
+        pollHandler.postDelayed(pollRunnable, if (currentController != null) ActivePollIntervalMs else IdlePollIntervalMs)
     }
 
     override fun onListenerDisconnected() {

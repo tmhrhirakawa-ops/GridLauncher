@@ -269,6 +269,34 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
 }
 
 /**
+ * 単一パッケージだけを対象に [AppInfo] を解決します。
+ *
+ * アプリの追加・更新を知らせる `ACTION_PACKAGE_ADDED`/`ACTION_PACKAGE_REPLACED`
+ * ブロードキャストを受けた際、[getInstalledApps] でインストール済み全アプリを再取得・
+ * 再加工するのは、変更のない大多数のアプリのアイコンまで毎回処理し直すことになり
+ * 無駄が大きい。この関数で変更対象の1パッケージだけを解決し、呼び出し側で
+ * 既存の一覧に差し替える。
+ *
+ * @param packageManager 照会する [PackageManager] のインスタンス。
+ * @param packageName 解決対象のパッケージ名。
+ * @return 起動可能なアクティビティが見つかった場合は [AppInfo]、見つからない場合は null。
+ */
+fun resolveInstalledApp(packageManager: PackageManager, packageName: String): AppInfo? {
+    val intent = Intent(Intent.ACTION_MAIN, null).apply {
+        addCategory(Intent.CATEGORY_LAUNCHER)
+        setPackage(packageName)
+    }
+    val resolveInfo = packageManager.queryIntentActivities(intent, 0).firstOrNull() ?: return null
+    val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
+    return AppInfo(
+        label = resolveInfo.loadLabel(packageManager).toString(),
+        packageName = resolveInfo.activityInfo.packageName,
+        icon = icon,
+        iconIsMonochrome = isMonochrome
+    )
+}
+
+/**
  * 指定したパッケージのアンインストール確認画面（システム標準ダイアログ）を起動します。
  * 実際のアンインストール処理はシステム側で行われるため、ここでは要求を投げるのみです。
  *

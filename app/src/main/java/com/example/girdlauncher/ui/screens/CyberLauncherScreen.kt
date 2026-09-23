@@ -68,6 +68,7 @@ import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.loadHiddenWidgetPanels
 import com.example.girdlauncher.util.loadPlacedWidgets
 import com.example.girdlauncher.util.loadQuickActionSlots
+import com.example.girdlauncher.util.resolveInstalledApp
 import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.saveFolder
 import com.example.girdlauncher.util.saveHiddenWidgetPanels
@@ -135,7 +136,24 @@ fun CyberLauncherScreen() {
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context, intent: Intent) {
-                allApps = getInstalledApps(context.packageManager)
+                // 変更があったのは1パッケージだけなので、インストール済み全アプリを再取得・
+                // 再加工するのではなく、その1件だけを差し替える（他アプリのアイコン処理を
+                // 無駄に繰り返さないため）
+                val packageName = intent.data?.schemeSpecificPart ?: return
+                when (intent.action) {
+                    Intent.ACTION_PACKAGE_REMOVED -> {
+                        // アップデートに伴う一時的なREMOVEDは無視する（続けてADDEDが届く）
+                        if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                            allApps = allApps.filterNot { it.packageName == packageName }
+                        }
+                    }
+                    Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REPLACED -> {
+                        val updated = resolveInstalledApp(context.packageManager, packageName)
+                        if (updated != null) {
+                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedBy { it.label }
+                        }
+                    }
+                }
             }
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
