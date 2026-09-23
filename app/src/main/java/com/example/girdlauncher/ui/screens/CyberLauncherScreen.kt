@@ -162,6 +162,14 @@ fun CyberLauncherScreen() {
         prefs.edit { putBoolean("access_grid_icon_only", accessGridIconOnly) }
     }
 
+    // アプリアイコンをアクセントカラーのデュオトーン加工をせず、本来の色のまま表示するかどうか。
+    // カラーパレット下部のチェックボックスで切り替える。
+    var useOriginalIconColors by remember { mutableStateOf(prefs.getBoolean("use_original_icon_colors", false)) }
+    fun toggleUseOriginalIconColors() {
+        useOriginalIconColors = !useOriginalIconColors
+        prefs.edit { putBoolean("use_original_icon_colors", useOriginalIconColors) }
+    }
+
     // 各ウィジェットパネルの枠線表示設定（非表示にしているものだけを保持する）
     var hiddenWidgetPanels by remember { mutableStateOf(loadHiddenWidgetPanels(prefs)) }
     fun toggleAllWidgetBorders() {
@@ -640,6 +648,7 @@ fun CyberLauncherScreen() {
                                 showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
                                 isIconOnly = accessGridIconOnly,
                                 onIconOnlyClick = { toggleAccessGridIconOnly() },
+                                useOriginalIconColors = useOriginalIconColors,
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
                                 onLongClick = { enterSlotEditMode() },
@@ -662,6 +671,7 @@ fun CyberLauncherScreen() {
                             isWallpaperMode = isWallpaperMode,
                             isResizing = isResizing,
                             accentColor = accentColor,
+                            useOriginalIconColors = useOriginalIconColors,
                             showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
                             onSlotsChanged = { newSlots ->
                                 quickActionSlots = newSlots
@@ -676,6 +686,7 @@ fun CyberLauncherScreen() {
                                 accentColor = color
                                 prefs.edit { putInt("accent_color", color.toArgb()) }
                             },
+                            onUseOriginalIconColorsChange = { toggleUseOriginalIconColors() },
                             onAddClick = { index -> quickActionAddIndex = index },
                             onLongClick = { enterSlotEditMode() },
                             onRemoveClick = { index -> removeQuickAction(index) },
@@ -693,6 +704,7 @@ fun CyberLauncherScreen() {
                     isEditMode = isEditMode,
                     isWallpaperMode = isWallpaperMode,
                     activeNotifications = activeNotifications, // 追加
+                    useOriginalIconColors = useOriginalIconColors,
                     onAddClick = { index ->
                         appSelectorTarget = "dock"
                         targetIndex = index
@@ -723,6 +735,7 @@ fun CyberLauncherScreen() {
                     folder = folder,
                     allApps = allApps,
                     isWallpaperMode = isWallpaperMode,
+                    useOriginalIconColors = useOriginalIconColors,
                     animatedVisibilityScope = this,
                     onDismiss = { openFolderId = null },
                     onRename = { newName ->

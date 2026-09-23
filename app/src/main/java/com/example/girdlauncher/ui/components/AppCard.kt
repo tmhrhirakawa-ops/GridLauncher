@@ -22,11 +22,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.ui.theme.CyberFont
 import com.example.girdlauncher.ui.theme.LocalCyberColors
+import com.example.girdlauncher.util.loadOriginalIconBitmap
 import com.example.girdlauncher.util.toDuotoneImageBitmap
 
 /**
@@ -43,6 +45,8 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
  * @param isCompact trueの場合、アプリ名は表示せずアイコンのみを中央に表示する
  *   （APP LISTのICON ONLYモードなど、正方形のスロット向け）。falseの場合は従来通り、
  *   アイコンと名前を横に並べる。
+ * @param useOriginalIconColors trueの場合、アクセントカラーのデュオトーン加工をせず、
+ *   アプリ本来の色のアイコンをそのまま表示する。
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
@@ -59,6 +63,7 @@ fun AppCard(
     notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
     isCompact: Boolean = false,
+    useOriginalIconColors: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: () -> Unit = {}
@@ -73,9 +78,17 @@ fun AppCard(
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示
+            // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示する
+            // （useOriginalIconColorsがtrueのときは加工せず本来の色のまま表示する）
             val accent = LocalCyberColors.current.accent
-            val bitmap = remember(packageName, icon, isMonochrome, accent) { toDuotoneImageBitmap(icon, isMonochrome, accent) }
+            val context = LocalContext.current
+            val bitmap = remember(packageName, icon, isMonochrome, accent, useOriginalIconColors) {
+                if (useOriginalIconColors) {
+                    loadOriginalIconBitmap(context, packageName) ?: toDuotoneImageBitmap(icon, isMonochrome, accent)
+                } else {
+                    toDuotoneImageBitmap(icon, isMonochrome, accent)
+                }
+            }
 
             if (isCompact) {
                 // アイコンのみを中央に表示する（アプリ名は表示しない）

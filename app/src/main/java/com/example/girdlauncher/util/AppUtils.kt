@@ -225,6 +225,28 @@ private fun cropToContent(pixels: IntArray, width: Int, height: Int): Triple<Int
 }
 
 /**
+ * [packageName]の、デュオトーン加工をしていない「そのまま」のアプリアイコンを取得します。
+ * 「アプリアイコンはオリジナルカラーを使用」設定が有効なときに使います。
+ *
+ * [AppInfo.icon]はデュオトーン加工用に単色レイヤー（モノクロレイヤー、または前景レイヤーのみ）を
+ * あらかじめ抽出したものであり、特にモノクロレイヤーはそもそも色情報を持たないシルエットなので、
+ * 元の色を再現できません。そのため、ここでは改めて[PackageManager]から加工前のアイコンを取得します。
+ *
+ * @param context アイコンの取得に使用する [Context]。
+ * @param packageName 対象アプリのパッケージ名。
+ * @return 取得できた場合はダウンサンプリング済みの[ImageBitmap]、パッケージが見つからない場合はnull。
+ */
+fun loadOriginalIconBitmap(context: Context, packageName: String): ImageBitmap? {
+    val drawable = try {
+        context.packageManager.getApplicationIcon(packageName)
+    } catch (e: PackageManager.NameNotFoundException) {
+        return null
+    }
+    val (width, height) = resolveProcessingSize(drawable)
+    return drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+/**
  * 起動可能なすべてのインストール済みアプリのリストを取得します。
  *
  * @param packageManager 照会する [PackageManager] のインスタンス。
