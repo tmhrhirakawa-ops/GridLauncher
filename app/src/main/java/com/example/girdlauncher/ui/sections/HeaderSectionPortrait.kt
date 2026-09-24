@@ -3,6 +3,8 @@ package com.example.girdlauncher.ui.sections
 import android.content.Context
 import android.content.Intent
 import android.os.BatteryManager
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,7 +62,33 @@ fun HeaderSectionPortrait(
     var showCoreMenu by remember { mutableStateOf(false) }
     var showBorderSettings by remember { mutableStateOf(false) }
     var showPowerPermissionRationale by remember { mutableStateOf(false) }
-    
+
+    // NowPlayingの消滅アニメーション中も直前の内容を表示し続けるため、nullになった後も
+    // 直前の非nullの値を保持しておく（フォルダを閉じるときのdisplayedFolderと同じパターン）
+    var displayedNowPlaying by remember { mutableStateOf(nowPlaying) }
+    LaunchedEffect(nowPlaying) {
+        if (nowPlaying != null) {
+            displayedNowPlaying = nowPlaying
+        }
+    }
+
+    // NowPlayingの表示/非表示は、AnimatedVisibilityのshrink/expand（レイアウト幅そのものを
+    // 変える方式）ではなく、graphicsLayerのscaleXで描画だけを縮める方式にしている。
+    // 幅を変える方式だと、右隣のバッテリー表示に合わせてRow全体が右詰めで再配置されるため、
+    // 右端が固定されたまま左端だけが動く「右への一方通行」に見えてしまう。scaleXなら
+    // レイアウト上のサイズは変えず見た目だけを縮めるので、周りの表示位置を動かさずに
+    // その場（中心）から左右へ均等に縮んで消える
+    var keepNowPlayingInLayout by remember { mutableStateOf(nowPlaying != null) }
+    LaunchedEffect(nowPlaying != null) {
+        if (nowPlaying != null) keepNowPlayingInLayout = true
+    }
+    val nowPlayingScale by animateFloatAsState(
+        targetValue = if (nowPlaying != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "nowPlayingScale",
+        finishedListener = { value -> if (value == 0f) keepNowPlayingInLayout = false }
+    )
+
     // リアルタイム時計とバッテリーの状態管理
     var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var batteryLevel by remember { mutableIntStateOf(100) }
@@ -94,7 +123,7 @@ fun HeaderSectionPortrait(
         // 縦画面（大）のみ、中央に「MAIN TERMINAL」の表記を追加する
         // NowPlaying表示中は右側の表示と被らないよう、中央より少し左に寄せる
         if (isLarge) {
-            val terminalAlignment = if (nowPlaying != null) BiasAlignment(-0.4f, 0f) else Alignment.Center
+            val terminalAlignment = if (keepNowPlayingInLayout) BiasAlignment(-0.4f, 0f) else Alignment.Center
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.align(terminalAlignment)
@@ -109,13 +138,21 @@ fun HeaderSectionPortrait(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.align(Alignment.TopEnd)
         ) {
-            // 再生中のメディアがあれば、バッテリー表示の左側に表示する
-            if (nowPlaying != null) {
-                NowPlayingWidget(
-                    info = nowPlaying,
-                    compact = true,
-                    modifier = Modifier.padding(end = 8.dp)
-                )
+            // 再生中のメディアがあれば、バッテリー表示の左側に表示する。
+            // 消えるときはその場で左右から中央へ縮むように消滅させる
+            if (keepNowPlayingInLayout) {
+                displayedNowPlaying?.let { info ->
+                    NowPlayingWidget(
+                        info = info,
+                        compact = true,
+                        modifier = Modifier
+                            .graphicsLayer {
+                                scaleX = nowPlayingScale
+                                alpha = nowPlayingScale
+                            }
+                            .padding(end = 8.dp)
+                    )
+                }
             }
 
             // 縦画面は右上に青いコア（Core）とバッテリーを配置
