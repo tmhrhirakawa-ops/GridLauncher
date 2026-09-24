@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,9 +27,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -66,6 +70,7 @@ import com.example.girdlauncher.util.AppWidgetHostManager
 import com.example.girdlauncher.util.createFolder
 import com.example.girdlauncher.util.deleteFolder
 import com.example.girdlauncher.util.findFreeGridSlot
+import com.example.girdlauncher.util.findFreeGridSlotForSize
 import com.example.girdlauncher.util.folderIdFromSlotValue
 import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
@@ -85,6 +90,25 @@ import com.example.girdlauncher.util.CyberNotificationListener
 import com.example.girdlauncher.util.WidgetLayoutMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+
+/**
+ * 他アプリのAppWidgetが申告する最小サイズ（[AppWidgetProviderInfo.minResizeWidth]等）を
+ * 何倍まで許容するか。1.0だと申告値を厳密に守るが、大きめの最小値を申告しているウィジェットが
+ * 他のランチャーに比べてかなり大きく見えてしまうため、画質が粗くなるリスクと引き換えに
+ * 半分まではリサイズできるようにする。
+ */
+private const val MinSizeRelaxFactor = 0.5f
+
+/**
+ * ウィジェットが実際に許容する最小サイズ（[MinSizeRelaxFactor]適用後、dp単位）を求める。
+ * [com.example.girdlauncher.ui.screens.appWidgetResizeConstraints]（リサイズの下限）と
+ * 新規追加時の「画面に入り切るか」判定の両方で同じ基準を使うための共通関数。
+ */
+private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
+    val declaredMinWidth = if (info.minResizeWidth > 0) info.minResizeWidth else info.minWidth
+    val declaredMinHeight = if (info.minResizeHeight > 0) info.minResizeHeight else info.minHeight
+    return DpSize((declaredMinWidth * MinSizeRelaxFactor).dp, (declaredMinHeight * MinSizeRelaxFactor).dp)
+}
 
 /**
  * 編集モードで削除操作が要求されたスロットの情報。
@@ -422,28 +446,56 @@ fun CyberLauncherScreen() {
     var showWidgetTypeSelector by remember { mutableStateOf(false) } // 「+ ADD WIDGET」タップ時（種類選択待ち）
     var showAppWidgetPicker by remember { mutableStateOf(false) } // 「＋ 外部ウィジェットを追加」タップ時（プレビュー付き一覧表示中）
 
+    // WidgetCanvasが測定したセル1つ分の実サイズ（dp）。新規追加する外部ウィジェットを、
+    // 種類ごとの固定サイズではなく実際の推奨サイズ（dp）に応じたセル数で配置するために使う
+    // （画面モードが変わるとグリッド寸法自体が変わるため、モードごとに保持し直す）
+    var canvasCellSize by remember(widgetLayoutMode) { mutableStateOf<DpSize?>(null) }
+    // 外部ウィジェットが、許容する最小サイズでもこの画面のグリッドに入り切らなかった
+    // （または配置しようとした時点で空きがなかった）ことを知らせるエラーダイアログの表示状態
+    var appWidgetTooLargeError by remember { mutableStateOf(false) }
+
     // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
     // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、
     // の間ずっと覚えておく必要があるため、ここに保持する
     var pendingAppWidgetId by remember { mutableIntStateOf(-1) }
 
     fun placeNewAppWidget(appWidgetId: Int) {
-        val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
+        // 種類問わず同じ標準サイズで配置していたのを、外部ウィジェットについては実際の
+        // 推奨サイズ（AppWidgetProviderInfo.minWidth/minHeight）に応じたセル数で配置するようにし、
+        // 「常に大きめの決め打ちサイズで追加される」問題を解消する。推奨サイズで空きがなければ、
+        // 許容する最小サイズ（緩和後）まで縮めて再挑戦する
+        val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
+        val cellSize = canvasCellSize
+        val slot = if (info != null && cellSize != null) {
+            val preferredColSpan = info.minWidth.dp / cellSize.width
+            val preferredRowSpan = info.minHeight.dp / cellSize.height
+            val relaxedMinSize = relaxedMinSizeDp(info)
+            val minColSpan = relaxedMinSize.width / cellSize.width
+            val minRowSpan = relaxedMinSize.height / cellSize.height
+            findFreeGridSlotForSize(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows, preferredColSpan, preferredRowSpan)
+                ?: findFreeGridSlotForSize(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows, minColSpan, minRowSpan)
+        } else {
+            findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)?.let {
+                floatArrayOf(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
+            }
+        }
         if (slot != null) {
             val (col, row, colSpan, rowSpan) = slot
             updatePlacedWidgets(
                 placedWidgets + PlacedWidget(
                     type = WidgetPanel.APPWIDGET,
                     appWidgetId = appWidgetId,
-                    col = col.toFloat(),
-                    row = row.toFloat(),
-                    colSpan = colSpan.toFloat(),
-                    rowSpan = rowSpan.toFloat()
+                    col = col,
+                    row = row,
+                    colSpan = colSpan,
+                    rowSpan = rowSpan
                 )
             )
         } else {
-            // 空きスペースがなければ確保したIDを破棄する
+            // 許容する最小サイズでも入り切らない、または空きスペースがなければ確保したIDを破棄し、
+            // 追加できなかったことを知らせる
             AppWidgetHostManager.host.deleteAppWidgetId(appWidgetId)
+            appWidgetTooLargeError = true
         }
     }
 
@@ -495,7 +547,49 @@ fun CyberLauncherScreen() {
     }
 
     // 自作の一覧（AppWidgetPickerDialog）でウィジェットが選択されたときの、バインド開始処理
+    // 他アプリのAppWidgetは、種類（WidgetPanel.APPWIDGET）ではなくインスタンス（appWidgetId）ごとに
+    // 実際の最小/最大サイズ・対応するリサイズ方向が異なるため、AppWidgetProviderInfoから解決する。
+    // GirdLauncher内蔵の4種はデフォルト値（制約なし）のままでよい
+    fun appWidgetResizeConstraints(widget: PlacedWidget): ResizeConstraints {
+        if (widget.type != WidgetPanel.APPWIDGET) return ResizeConstraints()
+        val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(widget.appWidgetId)
+            ?: return ResizeConstraints()
+        // ウィジェットが申告する最小サイズを厳密に守ると、Claudeのように大きめの最小値を
+        // 申告しているウィジェットが他ランチャーに比べてかなり大きく見えてしまうため、
+        // 申告値の半分まではリサイズを許容する（画質が粗くなるリスクとのトレードオフ）
+        val minSize = relaxedMinSizeDp(info)
+        val maxSize = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            info.maxResizeWidth > 0 && info.maxResizeHeight > 0
+        ) {
+            DpSize(info.maxResizeWidth.dp, info.maxResizeHeight.dp)
+        } else {
+            null
+        }
+        val axes = when {
+            info.resizeMode and AppWidgetProviderInfo.RESIZE_BOTH == AppWidgetProviderInfo.RESIZE_BOTH -> ResizeAxes.BOTH
+            info.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0 -> ResizeAxes.HORIZONTAL
+            info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0 -> ResizeAxes.VERTICAL
+            else -> ResizeAxes.NONE
+        }
+        return ResizeConstraints(minSize = minSize, maxSize = maxSize, axes = axes)
+    }
+
+    // ウィジェットが許容する最小サイズ（相対緩和後）でも、このグリッドの列数・行数に収まらない
+    // 場合はfalse。measureSizeがまだ測定できていない場合は判断できないため許可扱いにする
+    // （実際に配置しようとするタイミング＝placeNewAppWidgetで改めてチェックする）
+    fun appWidgetFitsOnScreen(info: AppWidgetProviderInfo): Boolean {
+        val cellSize = canvasCellSize ?: return true
+        val minSize = relaxedMinSizeDp(info)
+        val minColSpan = minSize.width / cellSize.width
+        val minRowSpan = minSize.height / cellSize.height
+        return minColSpan <= widgetLayoutMode.columns && minRowSpan <= widgetLayoutMode.rows
+    }
+
     fun startBindFlow(info: AppWidgetProviderInfo) {
+        if (!appWidgetFitsOnScreen(info)) {
+            appWidgetTooLargeError = true
+            return
+        }
         val id = AppWidgetHostManager.host.allocateAppWidgetId()
         val alreadyBound = AppWidgetManager.getInstance(context).bindAppWidgetIdIfAllowed(id, info.provider)
         if (alreadyBound) {
@@ -680,6 +774,32 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // 許容する最小サイズでもこの画面のグリッドに入り切らなかった（または空きがなかった）場合の通知
+    if (appWidgetTooLargeError) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AlertDialog(
+                onDismissRequest = { appWidgetTooLargeError = false },
+                containerColor = colors.panel,
+                title = {
+                    Text("追加できません", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
+                },
+                text = {
+                    Text(
+                        "このウィジェットは、許容する最小サイズでもこの画面には入り切らないため追加できませんでした。",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        color = colors.text.copy(alpha = 0.8f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { appWidgetTooLargeError = false }) {
+                        Text("閉じる", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
+                    }
+                }
+            )
+        }
+    }
+
     CompositionLocalProvider(LocalCyberColors provides colors) {
         // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
         // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
@@ -787,7 +907,9 @@ fun CyberLauncherScreen() {
                     rows = widgetLayoutMode.rows,
                     placedWidgets = placedWidgets,
                     isWidgetEditMode = isWidgetEditMode,
+                    resizeConstraints = ::appWidgetResizeConstraints,
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
+                    onCellSizeMeasured = { w, h -> canvasCellSize = DpSize(w, h) },
                     onLayoutChange = { updatePlacedWidgets(it) },
                     onRequestAddWidget = { showWidgetTypeSelector = true },
                     onWidgetLongClick = { enterWidgetEditMode() },

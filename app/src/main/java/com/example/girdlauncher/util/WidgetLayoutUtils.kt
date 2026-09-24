@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.example.girdlauncher.model.PlacedWidget
 import com.example.girdlauncher.model.WidgetPanel
+import kotlin.math.roundToInt
 
 /**
  * ウィジェットキャンバスの画面モード。モードごとにグリッドの寸法とデフォルト配置を持つ。
@@ -101,6 +102,37 @@ fun findFreeGridSlot(placed: List<PlacedWidget>, columns: Int, rows: Int): IntAr
                 }
                 if (fits) return intArrayOf(col, row, span, span)
             }
+        }
+    }
+    return null
+}
+
+/**
+ * 指定した列数・行数（小数可、内部で丸めて使う）にちょうど収まる空き領域を、行優先で探す。
+ * [findFreeGridSlot]と違い正方形限定ではなく、任意の縦横比のサイズで探す。他アプリの
+ * AppWidgetのように、種類ごとではなくインスタンスごとに実際の推奨サイズが異なるものを、
+ * その実サイズに応じて配置したい場合に使う。
+ *
+ * @param desiredColSpan 希望する横方向のセル数。
+ * @param desiredRowSpan 希望する縦方向のセル数。
+ * @return 見つかった場合 (col, row, colSpan, rowSpan) の組（floatArrayOf）。指定サイズが
+ *   グリッドに対して大きすぎる、または空きがまったくない場合はnull。
+ */
+fun findFreeGridSlotForSize(placed: List<PlacedWidget>, columns: Int, rows: Int, desiredColSpan: Float, desiredRowSpan: Float): FloatArray? {
+    val colSpan = desiredColSpan.roundToInt().coerceAtLeast(1)
+    val rowSpan = desiredRowSpan.roundToInt().coerceAtLeast(1)
+    // グリッドに対して大きすぎる場合は、縮めて置くのではなくnullを返す
+    // （呼び出し側が「この端末には入り切らない」と判断できるようにするため）
+    if (colSpan > columns || rowSpan > rows) return null
+    for (row in 0..rows - rowSpan) {
+        for (col in 0..columns - colSpan) {
+            val fits = placed.none { existing ->
+                col < existing.col + existing.colSpan &&
+                    col + colSpan > existing.col &&
+                    row < existing.row + existing.rowSpan &&
+                    row + rowSpan > existing.row
+            }
+            if (fits) return floatArrayOf(col.toFloat(), row.toFloat(), colSpan.toFloat(), rowSpan.toFloat())
         }
     }
     return null

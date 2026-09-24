@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.model.PlacedWidget
@@ -55,6 +57,28 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
 import com.example.girdlauncher.util.findFreeGridSlot
 import kotlin.math.floor
 import kotlin.math.roundToInt
+
+/** ウィジェットがリサイズに対応している方向。[ResizeConstraints.axes]で使う。 */
+enum class ResizeAxes { BOTH, HORIZONTAL, VERTICAL, NONE }
+
+/**
+ * ウィジェットインスタンスごとのリサイズ制約。
+ *
+ * 主に他アプリのAppWidget（[WidgetPanel.APPWIDGET]）向けで、`AppWidgetProviderInfo`が持つ
+ * 実際の最小/最大サイズ・対応方向を反映するために使う。GirdLauncher内蔵の4種
+ * （ACCESS GRID等）は、これまで通りグリッド全体を自由にリサイズできるデフォルト値のままでよい。
+ *
+ * @property minSize 実際の最小サイズ（dp）。nullなら従来通り「1グリッドセル」または
+ *   （[WidgetCanvas]の`iconCellSizes`が指定されていれば）「アイコン1個分」が最小になる。
+ * @property maxSize 実際の最大サイズ（dp）。nullなら従来通りグリッドの範囲までが最大になる。
+ * @property axes 対応しているリサイズ方向。[ResizeAxes.NONE]の場合、リサイズハンドル自体を
+ *   表示しない（移動は引き続きできる）。
+ */
+data class ResizeConstraints(
+    val minSize: DpSize? = null,
+    val maxSize: DpSize? = null,
+    val axes: ResizeAxes = ResizeAxes.BOTH
+)
 
 /**
  * ACCESS GRID・CALENDAR・SYSTEM MONITOR・QUICK ACCESSを、追加・削除・リサイズ・移動できる
@@ -87,9 +111,16 @@ import kotlin.math.roundToInt
  *   キャンバスの粗いセル単位ではなく、このアイコン1個分の固定サイズを単位として1行・1列ずつ
  *   スナップする（指定がない種類は従来通りセル単位でスナップ）。呼び出し側がセルサイズ算出のために
  *   別途`BoxWithConstraints`で画面を測り直さずに済むよう、ここで測定済みの値をそのまま渡す。
+ * @param resizeConstraints ウィジェットインスタンスごとのリサイズ制約（[ResizeConstraints]）を
+ *   返す関数。他アプリのAppWidgetのように、種類だけでなくインスタンスごとに実際の最小/最大
+ *   サイズ・対応方向が異なるものに使う。指定がない種類・インスタンスはデフォルト値
+ *   （制約なし＝従来通りグリッド全体まで自由にリサイズ可能）を返せばよい。
  * @param deleteZoneBoundsInRoot 「ここにドラッグして削除」ゾーンのルート座標系での範囲。
  *   移動ドラッグ中の指の位置がこの範囲に入ると、指を離したときに移動を確定する代わりに
  *   [onRequestDeleteConfirm]を呼ぶ。
+ * @param onCellSizeMeasured グリッドのセル1つ分の実サイズ（dp）が測定・変化するたびに呼ばれる
+ *   コールバック。呼び出し側が「新規ウィジェットを実サイズ（dp）に応じたセル数で配置したい」
+ *   といった場合に、別途`BoxWithConstraints`で測り直さずに済むよう、ここで測定済みの値を渡す。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
  * @param onWidgetLongClick ウィジェット本体（個々のスロット以外）が長押しされたときのコールバック
@@ -122,7 +153,9 @@ fun SharedTransitionScope.WidgetCanvas(
     placedWidgets: List<PlacedWidget>,
     isWidgetEditMode: Boolean,
     iconCellSizes: (cellWidth: Dp, cellHeight: Dp) -> Map<WidgetPanel, Pair<Float, Float>> = { _, _ -> emptyMap() },
+    resizeConstraints: (widget: PlacedWidget) -> ResizeConstraints = { ResizeConstraints() },
     deleteZoneBoundsInRoot: Rect? = null,
+    onCellSizeMeasured: (cellWidth: Dp, cellHeight: Dp) -> Unit = { _, _ -> },
     onLayoutChange: (List<PlacedWidget>) -> Unit,
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
@@ -137,9 +170,18 @@ fun SharedTransitionScope.WidgetCanvas(
         val cellHeight = maxHeight / rows
         val resolvedIconCellSizes = iconCellSizes(cellWidth, cellHeight)
 
+        // 呼び出し側（新規ウィジェット追加時のサイズ決定など）がセル1つ分の実サイズ（dp）を
+        // 知りたい場合があるが、それを測れるのはこのBoxWithConstraintsの中だけなので、
+        // 測定結果をそのまま伝える
+        LaunchedEffect(cellWidth, cellHeight) {
+            onCellSizeMeasured(cellWidth, cellHeight)
+        }
+
         placedWidgets.forEach { widget ->
             key(widget.instanceKey) {
                 val otherWidgets = remember(placedWidgets) { placedWidgets.filter { it.instanceKey != widget.instanceKey } }
+                // AppWidgetManagerへの問い合わせを毎フレーム走らせないよう、インスタンスごとに一度だけ解決する
+                val resolvedResizeConstraints = remember(widget.instanceKey) { resizeConstraints(widget) }
                 WidgetSlot(
                     widget = widget,
                     columns = columns,
@@ -149,6 +191,7 @@ fun SharedTransitionScope.WidgetCanvas(
                     isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
                     iconCellSize = resolvedIconCellSizes[widget.type],
+                    resizeConstraints = resolvedResizeConstraints,
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onMoved = { newCol, newRow ->
                         onLayoutChange(placedWidgets.map { if (it.instanceKey == widget.instanceKey) it.copy(col = newCol, row = newRow) else it })
@@ -213,6 +256,7 @@ private fun WidgetSlot(
     isWidgetEditMode: Boolean,
     otherWidgets: List<PlacedWidget>,
     iconCellSize: Pair<Float, Float>?,
+    resizeConstraints: ResizeConstraints,
     deleteZoneBoundsInRoot: Rect?,
     onMoved: (col: Float, row: Float) -> Unit,
     onResized: (col: Float, row: Float, colSpan: Float, rowSpan: Float) -> Unit,
@@ -278,14 +322,31 @@ private fun WidgetSlot(
     val iconHeightPx = (iconCellSize?.second ?: 1f) * cellHeightPx
     val leftEdgeMoves = activeCorner == ResizeCorner.TOP_LEFT || activeCorner == ResizeCorner.BOTTOM_LEFT
     val topEdgeMoves = activeCorner == ResizeCorner.TOP_LEFT || activeCorner == ResizeCorner.TOP_RIGHT
-    val widthDeltaPx = if (leftEdgeMoves) -resizeDeltaPx.x else resizeDeltaPx.x
-    val heightDeltaPx = if (topEdgeMoves) -resizeDeltaPx.y else resizeDeltaPx.y
-    val minColSpan = iconWidthPx / cellWidthPx
-    val minRowSpan = iconHeightPx / cellHeightPx
+    // ウィジェットが対応していない方向（resizeConstraints.axes）には、そもそも辺を動かさない
+    // （AppWidgetのresizeModeがHORIZONTAL/VERTICAL/NONEの場合を反映する。4隅のハンドル自体は
+    // 残るが、対応していない方向の辺はドラッグしても動かなくなる）
+    val allowHorizontalResize = resizeConstraints.axes != ResizeAxes.NONE && resizeConstraints.axes != ResizeAxes.VERTICAL
+    val allowVerticalResize = resizeConstraints.axes != ResizeAxes.NONE && resizeConstraints.axes != ResizeAxes.HORIZONTAL
+    val widthDeltaPx = if (!allowHorizontalResize) 0f else if (leftEdgeMoves) -resizeDeltaPx.x else resizeDeltaPx.x
+    val heightDeltaPx = if (!allowVerticalResize) 0f else if (topEdgeMoves) -resizeDeltaPx.y else resizeDeltaPx.y
     val rightEdge = widget.col + widget.colSpan
     val bottomEdge = widget.row + widget.rowSpan
-    val maxColSpan = if (leftEdgeMoves) rightEdge else (columns - widget.col)
-    val maxRowSpan = if (topEdgeMoves) bottomEdge else (rows - widget.row)
+    val maxColSpanFromGrid = if (leftEdgeMoves) rightEdge else (columns - widget.col)
+    val maxRowSpanFromGrid = if (topEdgeMoves) bottomEdge else (rows - widget.row)
+    // アイコン単位/1セルの最小値と、ウィジェット固有の実際の最小サイズ（dp→セル単位）の
+    // どちらか大きい方を実際の最小値にする。ただしグリッドの空きを超える最小値にはしない
+    // （coerceIn(min, max)はmin>maxで例外を投げるため、他ウィジェットとの兼ね合いでグリッドが
+    // 狭い場合でもクラッシュしないようにする安全策）
+    val providerMinColSpan = resizeConstraints.minSize?.let { it.width / cellWidth } ?: 0f
+    val providerMinRowSpan = resizeConstraints.minSize?.let { it.height / cellHeight } ?: 0f
+    val minColSpan = maxOf(iconWidthPx / cellWidthPx, providerMinColSpan).coerceAtMost(maxColSpanFromGrid)
+    val minRowSpan = maxOf(iconHeightPx / cellHeightPx, providerMinRowSpan).coerceAtMost(maxRowSpanFromGrid)
+    // ウィジェット固有の実際の最大サイズが指定されていれば、グリッド境界までの最大値との
+    // どちらか小さい方を実際の最大値にする
+    val providerMaxColSpan = resizeConstraints.maxSize?.let { it.width / cellWidth }
+    val providerMaxRowSpan = resizeConstraints.maxSize?.let { it.height / cellHeight }
+    val maxColSpan = (providerMaxColSpan?.coerceAtMost(maxColSpanFromGrid) ?: maxColSpanFromGrid).coerceAtLeast(minColSpan)
+    val maxRowSpan = (providerMaxRowSpan?.coerceAtMost(maxRowSpanFromGrid) ?: maxRowSpanFromGrid).coerceAtLeast(minRowSpan)
 
     // 表示用の連続値（スナップしない、滑らかに追従するサイズ）
     val rawColSpan = ((baseWidthPx + widthDeltaPx) / cellWidthPx).coerceIn(minColSpan, maxColSpan)
@@ -298,10 +359,12 @@ private fun WidgetSlot(
     fun snappedResizeCandidate(corner: ResizeCorner, deltaPx: Offset): PlacedWidget {
         val cornerLeftEdgeMoves = corner == ResizeCorner.TOP_LEFT || corner == ResizeCorner.BOTTOM_LEFT
         val cornerTopEdgeMoves = corner == ResizeCorner.TOP_LEFT || corner == ResizeCorner.TOP_RIGHT
-        val cornerWidthDeltaPx = if (cornerLeftEdgeMoves) -deltaPx.x else deltaPx.x
-        val cornerHeightDeltaPx = if (cornerTopEdgeMoves) -deltaPx.y else deltaPx.y
-        val cornerMaxColSpan = if (cornerLeftEdgeMoves) rightEdge else (columns - widget.col)
-        val cornerMaxRowSpan = if (cornerTopEdgeMoves) bottomEdge else (rows - widget.row)
+        val cornerWidthDeltaPx = if (!allowHorizontalResize) 0f else if (cornerLeftEdgeMoves) -deltaPx.x else deltaPx.x
+        val cornerHeightDeltaPx = if (!allowVerticalResize) 0f else if (cornerTopEdgeMoves) -deltaPx.y else deltaPx.y
+        val cornerMaxColSpanFromGrid = if (cornerLeftEdgeMoves) rightEdge else (columns - widget.col)
+        val cornerMaxRowSpanFromGrid = if (cornerTopEdgeMoves) bottomEdge else (rows - widget.row)
+        val cornerMaxColSpan = (providerMaxColSpan?.coerceAtMost(cornerMaxColSpanFromGrid) ?: cornerMaxColSpanFromGrid).coerceAtLeast(minColSpan)
+        val cornerMaxRowSpan = (providerMaxRowSpan?.coerceAtMost(cornerMaxRowSpanFromGrid) ?: cornerMaxRowSpanFromGrid).coerceAtLeast(minRowSpan)
         val colSpan = (((baseWidthPx + cornerWidthDeltaPx) / iconWidthPx).roundToInt().coerceAtLeast(1) * (iconWidthPx / cellWidthPx))
             .coerceIn(minColSpan, cornerMaxColSpan)
         val rowSpan = (((baseHeightPx + cornerHeightDeltaPx) / iconHeightPx).roundToInt().coerceAtLeast(1) * (iconHeightPx / cellHeightPx))
@@ -469,8 +532,10 @@ private fun WidgetSlot(
                     .onGloballyPositioned { barCoordinates = it }
             )
 
-            // 四隅のリサイズハンドル。どこをつまんでも、その角を固定点として反対側の辺が伸縮する
-            for (corner in ResizeCorner.entries) {
+            // 四隅のリサイズハンドル。どこをつまんでも、その角を固定点として反対側の辺が伸縮する。
+            // リサイズに一切対応していないウィジェット（resizeConstraints.axes == NONE）では、
+            // そもそもハンドル自体を表示しない（移動ハンドルバーは引き続き使える）
+            for (corner in if (resizeConstraints.axes != ResizeAxes.NONE) ResizeCorner.entries else emptyList()) {
                 val alignment = when (corner) {
                     ResizeCorner.TOP_LEFT -> Alignment.TopStart
                     ResizeCorner.TOP_RIGHT -> Alignment.TopEnd
