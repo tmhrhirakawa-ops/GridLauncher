@@ -60,6 +60,7 @@ import com.example.girdlauncher.model.WidgetPanel
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.AppWidgetHostSection
+import com.example.girdlauncher.ui.components.MissingPermissionsSheet
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
 import com.example.girdlauncher.ui.components.StandaloneAppSlotSection
 import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
@@ -83,6 +84,7 @@ import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.loadHiddenWidgetPanels
 import com.example.girdlauncher.util.loadPlacedWidgets
 import com.example.girdlauncher.util.loadQuickActionSlots
+import com.example.girdlauncher.util.OnboardingSteps
 import com.example.girdlauncher.util.resolveInstalledApp
 import com.example.girdlauncher.util.requestUninstall
 import com.example.girdlauncher.util.saveAppSlotAssignment
@@ -127,6 +129,15 @@ private val SingleInstanceWidgetPanels = setOf(
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
 private val AppSlotIconOnlyTargetSize = DpSize(60.dp, 60.dp)
 private val AppSlotNamedTargetSize = DpSize(140.dp, 64.dp)
+
+/**
+ * 未設定の権限/設定を知らせるボトムシートを、アプリプロセスの起動につき1回だけ表示する
+ * ためのフラグ。ホーム画面に戻るたびに毎回表示されると煩わしいため、画面回転等での
+ * 再コンポジションをまたいでプロセスが生きている間は表示済みとして扱う。
+ */
+private object MissingPermissionsSheetState {
+    var shownThisProcess = false
+}
 
 private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
     val declaredMinWidth = if (info.minResizeWidth > 0) info.minResizeWidth else info.minWidth
@@ -229,6 +240,9 @@ fun CyberLauncherScreen() {
             OnboardingScreen(
                 onFinish = {
                     prefs.edit { putBoolean("onboarding_completed", true) }
+                    // オンボーディング内で案内済みの内容なので、完了直後に未設定権限の
+                    // ボトムシートを重ねて出す必要はない（次回のアプリ起動から対象にする）
+                    MissingPermissionsSheetState.shownThisProcess = true
                     showOnboarding = false
                 }
             )
@@ -459,6 +473,39 @@ fun CyberLauncherScreen() {
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // オンボーディング完了後も、未設定の権限/設定があればプロセス起動につき1回だけ
+    // ボトムシートで知らせる（ホーム画面に戻るたびに毎回出ると煩わしいため、
+    // ON_RESUMEではなくプロセス起動時のみをトリガーにする）
+    var showMissingPermissionsSheet by remember { mutableStateOf(false) }
+    var missingPermissionsResumeSignal by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        if (!MissingPermissionsSheetState.shownThisProcess) {
+            MissingPermissionsSheetState.shownThisProcess = true
+            if (OnboardingSteps.any { !it.isSatisfied(context) }) {
+                showMissingPermissionsSheet = true
+            }
+        }
+    }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                missingPermissionsResumeSignal++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+    if (showMissingPermissionsSheet) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            MissingPermissionsSheet(
+                resumeSignal = missingPermissionsResumeSignal,
+                onDismiss = { showMissingPermissionsSheet = false }
+            )
         }
     }
 
