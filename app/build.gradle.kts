@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.girdlauncher"
+    namespace = "com.example.gridlauncher"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.girdlauncher"
+        applicationId = "com.example.gridlauncher"
         minSdk = 26
         targetSdk = 37
         versionCode = 1

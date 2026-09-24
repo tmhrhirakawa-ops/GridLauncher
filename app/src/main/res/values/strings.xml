@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">GirdLauncher</string>
+    <string name="app_name">GridLauncher</string>
     <string name="power_menu_accessibility_service_description">QUICK ACCESSの電源ボタンから、端末標準の電源メニュー（電源を切る/再起動）を開くために使用します。</string>
 </resources>

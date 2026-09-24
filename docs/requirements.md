@@ -1,12 +1,12 @@
-# GirdLauncher 要件定義書
+# GridLauncher 要件定義書
 
 ## 1. 概要
 
-**GirdLauncher** は、サイバーパンク風のビジュアルデザインを持つ Android 向けホームランチャーアプリである。
+**GridLauncher** は、サイバーパンク風のビジュアルデザインを持つ Android 向けホームランチャーアプリである。
 時刻・バッテリー・ストレージ/メモリ使用量・カレンダー・通知バッジなどデバイスの状態を一画面に集約して表示しつつ、
 アプリ起動用のグリッド/ドックを備えた「ダッシュボード型ランチャー」を提供する。
 
-- パッケージ名: `com.example.girdlauncher`（**要変更**。公開前に固有のIDへ変更が必要。詳細は9章）
+- パッケージ名: `com.example.gridlauncher`（**要変更**。公開前に固有のIDへ変更が必要。詳細は9章）
 - 開発言語 / UIフレームワーク: Kotlin / Jetpack Compose (Material3)
 - 対応端末想定: スマートフォン（縦画面/横画面 両対応。横画面をメイン画面として設計）
 
@@ -78,7 +78,7 @@
 - [ ] 通知アクセス権限の使用申告（用途: 通知バッジ表示）
 - [ ] `QUERY_ALL_PACKAGES` 権限の使用申告（用途: ランチャー）
 - [ ] データセーフティフォームの入力（すべて端末内処理、外部送信なしである旨を明記）
-- [ ] `applicationId` を `com.example.girdlauncher` から固有のIDへ変更（公開後は変更不可のため必須）
+- [ ] `applicationId` を `com.example.gridlauncher` から固有のIDへ変更（公開後は変更不可のため必須）
 - [ ] `compileSdk`/`targetSdk = 37` が提出時点で正式リリース版のSDKであることの確認
 
 ## 8. 既知の技術的負債

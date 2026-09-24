@@ -1,4 +1,4 @@
-# GirdLauncher 機能一覧
+# GridLauncher 機能一覧
 
 対応する主要ソースファイルを併記する。
 
