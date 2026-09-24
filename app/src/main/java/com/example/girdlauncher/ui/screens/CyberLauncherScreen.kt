@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
@@ -67,6 +68,7 @@ import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
 import com.example.girdlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
+import com.example.girdlauncher.util.AppWidgetConfigureResultBridge
 import com.example.girdlauncher.util.AppWidgetHostManager
 import com.example.girdlauncher.util.allocateNextAppSlotInstanceId
 import com.example.girdlauncher.util.clearAppSlotAssignment
@@ -103,6 +105,17 @@ import androidx.compose.ui.graphics.toArgb
  * 半分まではリサイズできるようにする。
  */
 private const val MinSizeRelaxFactor = 0.5f
+
+/**
+ * [android.appwidget.AppWidgetHost.startAppWidgetConfigureActivityForResult]が要求する
+ * [Activity]を、Composeの[LocalContext]（`ContextWrapper`でラップされていることがある）から
+ * たどって取得する。
+ */
+private tailrec fun Context.findActivity(): Activity = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> error("Activityが見つかりませんでした: $this")
+}
 
 /**
  * ウィジェットが実際に許容する最小サイズ（[MinSizeRelaxFactor]適用後、dp単位）を求める。
@@ -157,6 +170,7 @@ private fun HeaderDivider() {
 @Composable
 fun CyberLauncherScreen() {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
     var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
     AppWidgetHostManager.ensureInitialized(context)
@@ -527,31 +541,27 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // 設定画面（configure）を持つウィジェットの場合、選択直後にこちらを起動する
-    val appWidgetConfigureLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val id = pendingAppWidgetId
-        pendingAppWidgetId = -1
-        if (id == -1) return@rememberLauncherForActivityResult
-        if (result.resultCode == Activity.RESULT_OK) {
-            placeNewAppWidget(id)
-        } else {
-            AppWidgetHostManager.host.deleteAppWidgetId(id)
-        }
-    }
-
     // バインド許可が下りた（＝appWidgetIdが実際に使える状態になった）直後の共通処理。
-    // 設定画面（configure）を持つウィジェットならそちらを起動し、なければそのまま配置を確定する
+    // 設定画面（configure）を持つウィジェットならそちらを起動し、なければそのまま配置を確定する。
+    //
+    // 設定画面の起動には、自前でIntent(ACTION_APPWIDGET_CONFIGURE)を組み立てて直接startActivityは
+    // しない。多くのOEM製ウィジェット（例: Samsung Notesの「ノートのショートカット」）は設定画面が
+    // exported="false"であり、直接起動するとSecurityExceptionでクラッシュする。
+    // AppWidgetHost.startAppWidgetConfigureActivityForResult()はシステムが発行した
+    // IntentSender経由で起動するため、exportedでない設定画面も正しく開ける
+    // （結果はAppWidgetConfigureResultBridge経由でMainActivity.onActivityResultから受け取る）
     fun proceedAfterBind(appWidgetId: Int) {
         val configureComponent = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)?.configure
         if (configureComponent != null) {
-            pendingAppWidgetId = appWidgetId
-            appWidgetConfigureLauncher.launch(
-                Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
-                    component = configureComponent
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            AppWidgetConfigureResultBridge.onResult = { resultCode ->
+                if (resultCode == Activity.RESULT_OK) {
+                    placeNewAppWidget(appWidgetId)
+                } else {
+                    AppWidgetHostManager.host.deleteAppWidgetId(appWidgetId)
                 }
+            }
+            AppWidgetHostManager.host.startAppWidgetConfigureActivityForResult(
+                activity, appWidgetId, 0, AppWidgetConfigureResultBridge.REQUEST_CODE, null
             )
         } else {
             placeNewAppWidget(appWidgetId)
