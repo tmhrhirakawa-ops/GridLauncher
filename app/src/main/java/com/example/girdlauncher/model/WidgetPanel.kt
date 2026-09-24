@@ -12,6 +12,16 @@ enum class WidgetPanel(val label: String) {
     QUICK_ACCESS("QUICK ACCESS"),
 
     /**
+     * APP LISTの1マス分（アプリショートカット1個）だけを独立したウィジェットとして配置したもの。
+     * アイコンのみ・正方形の表示スタイル。[APPWIDGET]と同様に複数配置できる
+     * （[com.example.girdlauncher.model.PlacedWidget.instanceId]でインスタンスを区別する）。
+     */
+    APP_SLOT_ICON_ONLY("APP SLOT (ICON ONLY)"),
+
+    /** [APP_SLOT_ICON_ONLY]と同じだが、アイコンに加えてアプリ名も表示するスタイル。 */
+    APP_SLOT_NAMED("APP SLOT"),
+
+    /**
      * 他アプリが提供する本物のAndroid AppWidget（[android.appwidget.AppWidgetHost]で
      * ホストするRemoteViewsベースのウィジェット）。このパネルだけは他の4種と異なり、
      * 同時に複数配置できる（[com.example.girdlauncher.model.PlacedWidget.appWidgetId]で

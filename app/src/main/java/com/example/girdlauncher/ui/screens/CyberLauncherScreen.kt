@@ -62,11 +62,14 @@ import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.AppWidgetHostSection
 import com.example.girdlauncher.ui.components.PermissionRationaleDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
+import com.example.girdlauncher.ui.components.StandaloneAppSlotSection
 import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
 import com.example.girdlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.girdlauncher.ui.sections.*
 import com.example.girdlauncher.ui.theme.*
 import com.example.girdlauncher.util.AppWidgetHostManager
+import com.example.girdlauncher.util.allocateNextAppSlotInstanceId
+import com.example.girdlauncher.util.clearAppSlotAssignment
 import com.example.girdlauncher.util.createFolder
 import com.example.girdlauncher.util.deleteFolder
 import com.example.girdlauncher.util.findFreeGridSlot
@@ -76,12 +79,14 @@ import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
 import com.example.girdlauncher.util.isFolderSlotValue
 import com.example.girdlauncher.util.isNotificationListenerEnabled
+import com.example.girdlauncher.util.loadAppSlotAssignments
 import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.loadHiddenWidgetPanels
 import com.example.girdlauncher.util.loadPlacedWidgets
 import com.example.girdlauncher.util.loadQuickActionSlots
 import com.example.girdlauncher.util.resolveInstalledApp
 import com.example.girdlauncher.util.requestUninstall
+import com.example.girdlauncher.util.saveAppSlotAssignment
 import com.example.girdlauncher.util.saveFolder
 import com.example.girdlauncher.util.saveHiddenWidgetPanels
 import com.example.girdlauncher.util.savePlacedWidgets
@@ -104,6 +109,15 @@ private const val MinSizeRelaxFactor = 0.5f
  * [com.example.girdlauncher.ui.screens.appWidgetResizeConstraints]（リサイズの下限）と
  * 新規追加時の「画面に入り切るか」判定の両方で同じ基準を使うための共通関数。
  */
+/** ウィジェット種類のうち、常に1個までしか同時配置できないもの（それ以外は複数配置できる）。 */
+private val SingleInstanceWidgetPanels = setOf(
+    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS
+)
+
+/** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
+private val AppSlotIconOnlyTargetSize = DpSize(60.dp, 60.dp)
+private val AppSlotNamedTargetSize = DpSize(140.dp, 64.dp)
+
 private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
     val declaredMinWidth = if (info.minResizeWidth > 0) info.minResizeWidth else info.minWidth
     val declaredMinHeight = if (info.minResizeHeight > 0) info.minResizeHeight else info.minHeight
@@ -115,7 +129,8 @@ private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
  * 「スロットから削除」か「アンインストール」かをダイアログで選ばせるために保持する。
  */
 private data class PendingRemoval(
-    val target: String, // "grid" または "dock"
+    val target: String, // "grid"・"dock"・"app_slot"
+    // "grid"/"dock"の場合は配列インデックス、"app_slot"の場合はAPP SLOTのinstanceId
     val index: Int,
     val packageName: String,
     val label: String
@@ -280,6 +295,10 @@ fun CyberLauncherScreen() {
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
 
+    // APP SLOT（単体ウィジェット）ごとに割り当てられているアプリ。画面モードをまたいで共有する
+    var appSlotAssignments by remember { mutableStateOf(loadAppSlotAssignments(prefs)) }
+    var appSlotPickerInstanceId by remember { mutableStateOf<Int?>(null) } // アプリ選択ダイアログ表示中のAPP SLOT
+
     // openFolderIdが指すフォルダの最新情報をdisplayedFolderに反映する。openFolderIdがnullに
     // なった後（閉じるアニメーション中）はこのeffectが再実行されないため、直前の内容がそのまま残る。
     LaunchedEffect(openFolderId, folders) {
@@ -322,19 +341,28 @@ fun CyberLauncherScreen() {
 
     // 指定したスロットを空にする（スロットからの削除。アプリ自体はアンインストールしない）
     fun clearSlot(removal: PendingRemoval) {
-        if (removal.target == "grid") {
-            val newPackages = gridPackages.toMutableList()
-            if (removal.index < newPackages.size) {
-                newPackages[removal.index] = ""
-                gridPackages = newPackages
-                prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+        when (removal.target) {
+            "grid" -> {
+                val newPackages = gridPackages.toMutableList()
+                if (removal.index < newPackages.size) {
+                    newPackages[removal.index] = ""
+                    gridPackages = newPackages
+                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                }
             }
-        } else {
-            val newPackages = dockPackages.toMutableList()
-            if (removal.index < newPackages.size) {
-                newPackages[removal.index] = ""
-                dockPackages = newPackages
-                prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+            "app_slot" -> {
+                // "app_slot"の場合はindexを配列インデックスではなくinstanceIdとして使う。
+                // ウィジェット自体（PlacedWidget）は消さず、割り当てだけ外す
+                clearAppSlotAssignment(prefs, removal.index)
+                appSlotAssignments = appSlotAssignments - removal.index
+            }
+            else -> {
+                val newPackages = dockPackages.toMutableList()
+                if (removal.index < newPackages.size) {
+                    newPackages[removal.index] = ""
+                    dockPackages = newPackages
+                    prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+                }
             }
         }
     }
@@ -685,6 +713,21 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // APP SLOT（単体ウィジェット）の空きスロットタップ時、割り当てるアプリを選ばせる
+    appSlotPickerInstanceId?.let { instanceId ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppSelectorDialog(
+                allApps = allApps,
+                onDismiss = { appSlotPickerInstanceId = null },
+                onAppSelected = { packageName ->
+                    saveAppSlotAssignment(prefs, instanceId, packageName)
+                    appSlotAssignments = appSlotAssignments + (instanceId to packageName)
+                    appSlotPickerInstanceId = null
+                }
+            )
+        }
+    }
+
     // グリッドの空きスロットタップ時、「アプリを追加」か「フォルダを作成」かを選ばせる
     addSlotChoiceIndex?.let { index ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -737,17 +780,44 @@ fun CyberLauncherScreen() {
     if (showWidgetTypeSelector) {
         val placedTypes = placedWidgets.map { it.type }.toSet()
         // APPWIDGET（外部ウィジェット）は複数配置が前提で「未配置」の一覧には馴染まないため、
-        // ここには出さず「＋ 外部ウィジェットを追加」という別の導線（onSelectExternal）にする
-        val availableWidgets = WidgetPanel.entries.filterNot { it in placedTypes || it == WidgetPanel.APPWIDGET }
+        // ここには出さず「＋ 外部ウィジェットを追加」という別の導線（onSelectExternal）にする。
+        // APP SLOT（単体ウィジェット）の2種類も同様に複数配置が前提だが、こちらは特別な追加
+        // 導線を必要としないため、一覧に常に含める（「配置済みなら除外」は単一インスタンス限定の
+        // 4種にのみ適用する）
+        val availableWidgets = WidgetPanel.entries
+            .filter { it != WidgetPanel.APPWIDGET }
+            .filterNot { it in SingleInstanceWidgetPanels && it in placedTypes }
         CompositionLocalProvider(LocalCyberColors provides colors) {
             WidgetTypeSelectorDialog(
                 availableWidgets = availableWidgets,
                 onDismiss = { showWidgetTypeSelector = false },
                 onSelect = { type ->
-                    val slot = findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)
+                    val isAppSlot = type == WidgetPanel.APP_SLOT_ICON_ONLY || type == WidgetPanel.APP_SLOT_NAMED
+                    val cellSize = canvasCellSize
+                    val slot = if (isAppSlot && cellSize != null) {
+                        val targetSize = if (type == WidgetPanel.APP_SLOT_ICON_ONLY) AppSlotIconOnlyTargetSize else AppSlotNamedTargetSize
+                        findFreeGridSlotForSize(
+                            placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows,
+                            targetSize.width / cellSize.width, targetSize.height / cellSize.height
+                        )
+                    } else {
+                        findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)?.let {
+                            floatArrayOf(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
+                        }
+                    }
                     if (slot != null) {
                         val (col, row, colSpan, rowSpan) = slot
-                        updatePlacedWidgets(placedWidgets + PlacedWidget(type = type, col = col.toFloat(), row = row.toFloat(), colSpan = colSpan.toFloat(), rowSpan = rowSpan.toFloat()))
+                        val instanceId = if (isAppSlot) allocateNextAppSlotInstanceId(prefs) else -1
+                        updatePlacedWidgets(
+                            placedWidgets + PlacedWidget(
+                                type = type,
+                                instanceId = instanceId,
+                                col = col,
+                                row = row,
+                                colSpan = colSpan,
+                                rowSpan = rowSpan
+                            )
+                        )
                     }
                     showWidgetTypeSelector = false
                 },
@@ -908,6 +978,9 @@ fun CyberLauncherScreen() {
                     placedWidgets = placedWidgets,
                     isWidgetEditMode = isWidgetEditMode,
                     resizeConstraints = ::appWidgetResizeConstraints,
+                    hideTopRightCorner = { widget ->
+                        widget.type == WidgetPanel.APP_SLOT_ICON_ONLY || widget.type == WidgetPanel.APP_SLOT_NAMED
+                    },
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onCellSizeMeasured = { w, h -> canvasCellSize = DpSize(w, h) },
                     onLayoutChange = { updatePlacedWidgets(it) },
@@ -920,7 +993,7 @@ fun CyberLauncherScreen() {
                     },
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
                     modifier = Modifier.weight(1f)
-                ) { type, appWidgetId, _, _, _, boxModifier, isResizing ->
+                ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -983,6 +1056,26 @@ fun CyberLauncherScreen() {
                             modifier = boxModifier,
                             showBorder = WidgetPanel.APPWIDGET !in hiddenWidgetPanels,
                             isResizing = isResizing
+                        )
+                        WidgetPanel.APP_SLOT_ICON_ONLY, WidgetPanel.APP_SLOT_NAMED -> StandaloneAppSlotSection(
+                            packageName = appSlotAssignments[instanceId] ?: "",
+                            allApps = allApps,
+                            isIconOnly = type == WidgetPanel.APP_SLOT_ICON_ONLY,
+                            isWidgetEditMode = isWidgetEditMode,
+                            isWallpaperMode = isWallpaperMode,
+                            activeNotifications = activeNotifications,
+                            useOriginalIconColors = useOriginalIconColors,
+                            modifier = boxModifier,
+                            onAssignClick = { appSlotPickerInstanceId = instanceId },
+                            onLongClick = { enterWidgetEditMode() },
+                            onRemoveClick = {
+                                val packageName = appSlotAssignments[instanceId]
+                                if (packageName != null) {
+                                    val label = allApps.find { it.packageName == packageName }?.label ?: packageName
+                                    pendingRemoval = PendingRemoval("app_slot", instanceId, packageName, label)
+                                }
+                            },
+                            onExitWidgetEditMode = { isWidgetEditMode = false }
                         )
                     }
                 }
@@ -1086,18 +1179,26 @@ fun CyberLauncherScreen() {
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
     pendingDeleteWidget?.let { widget ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            val widgetLabel = if (widget.type == WidgetPanel.APPWIDGET) {
-                AppWidgetManager.getInstance(context).getAppWidgetInfo(widget.appWidgetId)
+            val widgetLabel = when (widget.type) {
+                WidgetPanel.APPWIDGET -> AppWidgetManager.getInstance(context).getAppWidgetInfo(widget.appWidgetId)
                     ?.loadLabel(context.packageManager)
                     ?: widget.type.label
-            } else {
-                widget.type.label
+                WidgetPanel.APP_SLOT_ICON_ONLY, WidgetPanel.APP_SLOT_NAMED -> {
+                    val assignedLabel = appSlotAssignments[widget.instanceId]
+                        ?.let { pkg -> allApps.find { it.packageName == pkg }?.label }
+                    if (assignedLabel != null) "${widget.type.label}（$assignedLabel）" else widget.type.label
+                }
+                else -> widget.type.label
             }
             WidgetDeleteConfirmDialog(
                 widgetLabel = widgetLabel,
                 onConfirm = {
                     if (widget.type == WidgetPanel.APPWIDGET) {
                         AppWidgetHostManager.host.deleteAppWidgetId(widget.appWidgetId)
+                    }
+                    if (widget.type == WidgetPanel.APP_SLOT_ICON_ONLY || widget.type == WidgetPanel.APP_SLOT_NAMED) {
+                        clearAppSlotAssignment(prefs, widget.instanceId)
+                        appSlotAssignments = appSlotAssignments - widget.instanceId
                     }
                     updatePlacedWidgets(placedWidgets.filter { it.instanceKey != widget.instanceKey })
                     pendingDeleteWidget = null

@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.girdlauncher.ui.theme.CyberFont
@@ -50,6 +51,9 @@ import com.example.girdlauncher.util.toDuotoneImageBitmap
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
  * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
+ * @param removeBadgeInset 削除アイコン（✗バッジ）を右上の角からどれだけ内側にずらすか。
+ *   このカードがウィジェット全体を占める場合（APP SLOTなど）、標準の4dpだと右上の
+ *   リサイズハンドルの当たり判定と重なってしまうため、その場合だけ大きめの値を渡す。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -64,6 +68,7 @@ fun AppCard(
     isWallpaperMode: Boolean = false,
     isCompact: Boolean = false,
     useOriginalIconColors: Boolean = false,
+    removeBadgeInset: Dp = 4.dp,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: () -> Unit = {}
@@ -151,7 +156,7 @@ fun AppCard(
                 visible = isEditMode,
                 enter = scaleIn(initialScale = 0.4f) + fadeIn(),
                 exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                modifier = Modifier.align(Alignment.TopEnd).padding(removeBadgeInset)
             ) {
                 RemoveBadge(onClick = onRemoveClick)
             }
