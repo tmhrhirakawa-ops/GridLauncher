@@ -47,6 +47,8 @@ import com.example.girdlauncher.ui.theme.LocalCyberColors
  * @param folder 表示対象のフォルダ。
  * @param allApps インストールされているすべてのアプリのリスト（アプリ選択・アイコン解決に使用）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param useOriginalIconColors trueの場合、アプリアイコンをアクセントカラーのデュオトーン
+ *   加工をせず、本来の色のまま表示する。
  * @param animatedVisibilityScope 呼び出し元の`AnimatedVisibility`のスコープ（共有要素アニメーションに使用）。
  * @param onDismiss ポップアップが閉じられるときのコールバック。
  * @param onRename フォルダ名が変更されたときのコールバック。
@@ -60,6 +62,7 @@ fun SharedTransitionScope.FolderContentsDialog(
     folder: FolderInfo,
     allApps: List<AppInfo>,
     isWallpaperMode: Boolean = false,
+    useOriginalIconColors: Boolean = false,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
@@ -175,6 +178,7 @@ fun SharedTransitionScope.FolderContentsDialog(
                                     isMonochrome = appInfo.iconIsMonochrome,
                                     isEditMode = isEditMode,
                                     isWallpaperMode = isWallpaperMode,
+                                    useOriginalIconColors = useOriginalIconColors,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     onClick = {
                                         if (isEditMode) {

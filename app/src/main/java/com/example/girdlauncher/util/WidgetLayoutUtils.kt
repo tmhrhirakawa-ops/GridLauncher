@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.example.girdlauncher.model.PlacedWidget
 import com.example.girdlauncher.model.WidgetPanel
+import kotlin.math.roundToInt
 
 /**
  * ウィジェットキャンバスの画面モード。モードごとにグリッドの寸法とデフォルト配置を持つ。
@@ -63,19 +64,24 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
     if (stored.isEmpty()) return emptyList()
     return stored.split(";").mapNotNull { entry ->
         val parts = entry.split(":")
-        if (parts.size != 5) return@mapNotNull null
+        // 6フィールド目（appWidgetId）はAPPWIDGET対応、7フィールド目（instanceId）はAPP SLOT
+        // 対応で後から追加したもの。5/6フィールドの旧形式もそのまま読めるようにし、既存の
+        // 配置がリセットされないようにする
+        if (parts.size !in 5..7) return@mapNotNull null
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
         val col = parts[1].toFloatOrNull() ?: return@mapNotNull null
         val row = parts[2].toFloatOrNull() ?: return@mapNotNull null
         val colSpan = parts[3].toFloatOrNull() ?: return@mapNotNull null
         val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
-        PlacedWidget(type, col, row, colSpan, rowSpan)
+        val appWidgetId = if (parts.size >= 6) (parts[5].toIntOrNull() ?: -1) else -1
+        val instanceId = if (parts.size >= 7) (parts[6].toIntOrNull() ?: -1) else -1
+        PlacedWidget(type = type, appWidgetId = appWidgetId, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
     }
 }
 
 /** 指定した画面モードのウィジェット配置をSharedPreferencesに保存する。 */
 fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets: List<PlacedWidget>) {
-    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}" }
+    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}" }
     prefs.edit { putString(widgetLayoutKey(mode), serialized) }
 }
 
@@ -98,6 +104,37 @@ fun findFreeGridSlot(placed: List<PlacedWidget>, columns: Int, rows: Int): IntAr
                 }
                 if (fits) return intArrayOf(col, row, span, span)
             }
+        }
+    }
+    return null
+}
+
+/**
+ * 指定した列数・行数（小数可、内部で丸めて使う）にちょうど収まる空き領域を、行優先で探す。
+ * [findFreeGridSlot]と違い正方形限定ではなく、任意の縦横比のサイズで探す。他アプリの
+ * AppWidgetのように、種類ごとではなくインスタンスごとに実際の推奨サイズが異なるものを、
+ * その実サイズに応じて配置したい場合に使う。
+ *
+ * @param desiredColSpan 希望する横方向のセル数。
+ * @param desiredRowSpan 希望する縦方向のセル数。
+ * @return 見つかった場合 (col, row, colSpan, rowSpan) の組（floatArrayOf）。指定サイズが
+ *   グリッドに対して大きすぎる、または空きがまったくない場合はnull。
+ */
+fun findFreeGridSlotForSize(placed: List<PlacedWidget>, columns: Int, rows: Int, desiredColSpan: Float, desiredRowSpan: Float): FloatArray? {
+    val colSpan = desiredColSpan.roundToInt().coerceAtLeast(1)
+    val rowSpan = desiredRowSpan.roundToInt().coerceAtLeast(1)
+    // グリッドに対して大きすぎる場合は、縮めて置くのではなくnullを返す
+    // （呼び出し側が「この端末には入り切らない」と判断できるようにするため）
+    if (colSpan > columns || rowSpan > rows) return null
+    for (row in 0..rows - rowSpan) {
+        for (col in 0..columns - colSpan) {
+            val fits = placed.none { existing ->
+                col < existing.col + existing.colSpan &&
+                    col + colSpan > existing.col &&
+                    row < existing.row + existing.rowSpan &&
+                    row + rowSpan > existing.row
+            }
+            if (fits) return floatArrayOf(col.toFloat(), row.toFloat(), colSpan.toFloat(), rowSpan.toFloat())
         }
     }
     return null

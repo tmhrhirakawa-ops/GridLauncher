@@ -35,6 +35,8 @@ private const val SlotsPerPage = 4
  * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
+ * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーのデュオトーン加工をせず、
+ *   アプリ本来の色のまま表示する。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onLongClick アプリが長押しされたときのコールバック。
  * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
@@ -46,6 +48,7 @@ fun BottomDockSection(
     isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
+    useOriginalIconColors: Boolean = false,
     onAddClick: (Int) -> Unit,
     onLongClick: () -> Unit = {},
     onRemoveClick: (Int) -> Unit = {},
@@ -86,6 +89,7 @@ fun BottomDockSection(
                             isEditMode = isEditMode,
                             notificationCount = notifCount,
                             isWallpaperMode = isWallpaperMode,
+                            useOriginalIconColors = useOriginalIconColors,
                             onClick = {
                                 if (isEditMode) {
                                     onExitEditMode()
@@ -134,6 +138,7 @@ fun BottomDockSection(
                         isEditMode = isEditMode,
                         notificationCount = notifCount,
                         isWallpaperMode = isWallpaperMode,
+                        useOriginalIconColors = useOriginalIconColors,
                         onClick = {
                             if (isEditMode) {
                                 onExitEditMode()

@@ -85,6 +85,8 @@ private val HeaderNarrowWidthThreshold = 260.dp
  *   ポップアップへ拡大するアニメーション（共有要素）のため見た目を隠す。
  * @param isIconOnly ICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。
  * @param onIconOnlyClick ICON ONLYボタンがクリックされたとき（オン・オフを切り替える）のコールバック。
+ * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーのデュオトーン加工をせず、
+ *   アプリ本来の色のまま表示する。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
  * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
@@ -104,6 +106,7 @@ fun SharedTransitionScope.AccessGridSection(
     showBorder: Boolean = true,
     isIconOnly: Boolean = false,
     onIconOnlyClick: () -> Unit = {},
+    useOriginalIconColors: Boolean = false,
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -210,6 +213,7 @@ fun SharedTransitionScope.AccessGridSection(
                                             notificationCount = notifCount,
                                             isWallpaperMode = isWallpaperMode,
                                             isCompact = isIconOnly,
+                                            useOriginalIconColors = useOriginalIconColors,
                                             onClick = {
                                                 if (isEditMode) {
                                                     onExitEditMode()

@@ -128,8 +128,12 @@ private fun addRecentAccentColor(prefs: SharedPreferences, current: List<Color>,
  * @param isResizing ウィジェットが現在リサイズドラッグ中かどうか。falseになったタイミングで、
  *   あふれたスロットを空きスロットとして確定する。
  * @param accentColor 現在のメインテーマ（アクセント）カラー。
+ * @param useOriginalIconColors trueの場合、アプリアイコンをアクセントカラーのデュオトーン
+ *   加工をせず、本来の色のまま表示する（カラーパレット下部のチェックボックスで切り替える）。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
+ * @param onUseOriginalIconColorsChange カラーパレット下部の「アプリアイコンはオリジナルカラーを
+ *   使用」チェックボックスが切り替えられたときのコールバック。
  * @param onSlotsChanged ウィジェットのサイズが確定し、あふれたスロットを空きスロットとして
  *   実際に確定するときのコールバック（更新後の全スロットを渡す）。呼び出し側はこれを使って
  *   保存する想定。
@@ -147,9 +151,11 @@ fun QuickAccessSection(
     isWallpaperMode: Boolean = false,
     isResizing: Boolean = false,
     accentColor: Color = DefaultAccentColor,
+    useOriginalIconColors: Boolean = false,
     showBorder: Boolean = true,
     onThemeToggle: () -> Unit = {},
     onAccentColorChange: (Color) -> Unit = {},
+    onUseOriginalIconColorsChange: (Boolean) -> Unit = {},
     onSlotsChanged: (List<QuickActionId?>) -> Unit = {},
     onAddClick: (Int) -> Unit = {},
     onLongClick: () -> Unit = {},
@@ -320,7 +326,9 @@ fun QuickAccessSection(
         AccentColorPickerDialog(
             currentColor = accentColor,
             recentColors = recentAccentColors,
+            useOriginalIconColors = useOriginalIconColors,
             onColorSelected = onAccentColorChange,
+            onUseOriginalIconColorsChange = onUseOriginalIconColorsChange,
             onDismiss = {
                 recentAccentColors = addRecentAccentColor(prefs, recentAccentColors, accentColor)
                 showColorPicker = false
@@ -338,7 +346,9 @@ fun QuickAccessSection(
 private fun AccentColorPickerDialog(
     currentColor: Color,
     recentColors: List<Color>,
+    useOriginalIconColors: Boolean,
     onColorSelected: (Color) -> Unit,
+    onUseOriginalIconColorsChange: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val colors = LocalCyberColors.current
@@ -445,6 +455,33 @@ private fun AccentColorPickerDialog(
                                 }
                             }
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onUseOriginalIconColorsChange(!useOriginalIconColors) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .then(
+                                    if (useOriginalIconColors) {
+                                        Modifier.background(colors.accent, RoundedCornerShape(3.dp))
+                                    } else {
+                                        Modifier.border(1.dp, colors.text.copy(alpha = 0.5f), RoundedCornerShape(3.dp))
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "アプリアイコンはオリジナルカラーを使用",
+                            fontFamily = CyberFont,
+                            fontSize = 10.sp,
+                            color = colors.text.copy(alpha = 0.8f)
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

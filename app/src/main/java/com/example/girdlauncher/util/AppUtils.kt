@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.AppOpsManager
 import android.app.PendingIntent
 import android.app.usage.UsageStatsManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -55,17 +56,25 @@ fun toDuotoneImageBitmap(drawable: Drawable, isMonochrome: Boolean, accent: Colo
 private const val MAX_ICON_PROCESSING_SIZE = 128
 
 /**
- * [drawable] の本来の縦横比を保ったまま、[MAX_ICON_PROCESSING_SIZE] を超えないサイズを求めます。
+ * ウィジェットのプレビュー画像加工処理で扱う一辺の最大ピクセル数。
+ *
+ * プレビュー画像はアイコンよりも大きく表示する（外部ウィジェット選択一覧でカード幅いっぱいに
+ * 表示する）ため、[MAX_ICON_PROCESSING_SIZE]のままだと拡大表示時にぼやけて見えてしまう。
  */
-private fun resolveProcessingSize(drawable: Drawable): Pair<Int, Int> {
-    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
-    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: MAX_ICON_PROCESSING_SIZE
+private const val MAX_PREVIEW_PROCESSING_SIZE = 480
 
-    if (intrinsicWidth <= MAX_ICON_PROCESSING_SIZE && intrinsicHeight <= MAX_ICON_PROCESSING_SIZE) {
+/**
+ * [drawable] の本来の縦横比を保ったまま、[maxSize]を超えないサイズを求めます。
+ */
+private fun resolveProcessingSize(drawable: Drawable, maxSize: Int = MAX_ICON_PROCESSING_SIZE): Pair<Int, Int> {
+    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: maxSize
+    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: maxSize
+
+    if (intrinsicWidth <= maxSize && intrinsicHeight <= maxSize) {
         return intrinsicWidth to intrinsicHeight
     }
 
-    val scale = MAX_ICON_PROCESSING_SIZE.toFloat() / maxOf(intrinsicWidth, intrinsicHeight)
+    val scale = maxSize.toFloat() / maxOf(intrinsicWidth, intrinsicHeight)
     val width = (intrinsicWidth * scale).roundToInt().coerceAtLeast(1)
     val height = (intrinsicHeight * scale).roundToInt().coerceAtLeast(1)
     return width to height
@@ -225,6 +234,45 @@ private fun cropToContent(pixels: IntArray, width: Int, height: Int): Triple<Int
 }
 
 /**
+ * [packageName]の、デュオトーン加工をしていない「そのまま」のアプリアイコンを取得します。
+ * 「アプリアイコンはオリジナルカラーを使用」設定が有効なときに使います。
+ *
+ * [AppInfo.icon]はデュオトーン加工用に単色レイヤー（モノクロレイヤー、または前景レイヤーのみ）を
+ * あらかじめ抽出したものであり、特にモノクロレイヤーはそもそも色情報を持たないシルエットなので、
+ * 元の色を再現できません。そのため、ここでは改めて[PackageManager]から加工前のアイコンを取得します。
+ *
+ * @param context アイコンの取得に使用する [Context]。
+ * @param packageName 対象アプリのパッケージ名。
+ * @return 取得できた場合はダウンサンプリング済みの[ImageBitmap]、パッケージが見つからない場合はnull。
+ */
+fun loadOriginalIconBitmap(context: Context, packageName: String): ImageBitmap? {
+    val drawable = try {
+        context.packageManager.getApplicationIcon(packageName)
+    } catch (e: PackageManager.NameNotFoundException) {
+        return null
+    }
+    val (width, height) = resolveProcessingSize(drawable)
+    return drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+/**
+ * 外部ウィジェット選択一覧に表示する、AppWidgetのプレビュー画像を取得します。
+ *
+ * [AppWidgetProviderInfo.loadPreviewImage]が用意されていないウィジェット（古いアプリ等）も
+ * あるため、その場合はアプリアイコンにフォールバックします。デュオトーン加工はせず、
+ * 元の画像をそのまま（ダウンサンプリングのみして）返します。
+ *
+ * @param context 画像の取得に使用する [Context]。
+ * @param info プレビューを取得する対象のAppWidgetプロバイダ情報。
+ * @return 取得できた場合はダウンサンプリング済みの[ImageBitmap]、どちらも取得できない場合はnull。
+ */
+fun loadWidgetPreviewBitmap(context: Context, info: AppWidgetProviderInfo): ImageBitmap? {
+    val drawable = info.loadPreviewImage(context, 0) ?: info.loadIcon(context, 0) ?: return null
+    val (width, height) = resolveProcessingSize(drawable, maxSize = MAX_PREVIEW_PROCESSING_SIZE)
+    return drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+/**
  * 起動可能なすべてのインストール済みアプリのリストを取得します。
  *
  * @param packageManager 照会する [PackageManager] のインスタンス。
@@ -244,6 +292,34 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
             iconIsMonochrome = isMonochrome
         )
     }.sortedBy { it.label }
+}
+
+/**
+ * 単一パッケージだけを対象に [AppInfo] を解決します。
+ *
+ * アプリの追加・更新を知らせる `ACTION_PACKAGE_ADDED`/`ACTION_PACKAGE_REPLACED`
+ * ブロードキャストを受けた際、[getInstalledApps] でインストール済み全アプリを再取得・
+ * 再加工するのは、変更のない大多数のアプリのアイコンまで毎回処理し直すことになり
+ * 無駄が大きい。この関数で変更対象の1パッケージだけを解決し、呼び出し側で
+ * 既存の一覧に差し替える。
+ *
+ * @param packageManager 照会する [PackageManager] のインスタンス。
+ * @param packageName 解決対象のパッケージ名。
+ * @return 起動可能なアクティビティが見つかった場合は [AppInfo]、見つからない場合は null。
+ */
+fun resolveInstalledApp(packageManager: PackageManager, packageName: String): AppInfo? {
+    val intent = Intent(Intent.ACTION_MAIN, null).apply {
+        addCategory(Intent.CATEGORY_LAUNCHER)
+        setPackage(packageName)
+    }
+    val resolveInfo = packageManager.queryIntentActivities(intent, 0).firstOrNull() ?: return null
+    val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
+    return AppInfo(
+        label = resolveInfo.loadLabel(packageManager).toString(),
+        packageName = resolveInfo.activityInfo.packageName,
+        icon = icon,
+        iconIsMonochrome = isMonochrome
+    )
 }
 
 /**
