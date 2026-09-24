@@ -11,7 +11,6 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -61,7 +60,6 @@ import com.example.girdlauncher.model.WidgetPanel
 import com.example.girdlauncher.ui.components.AddSlotChoiceDialog
 import com.example.girdlauncher.ui.components.AppActionDialog
 import com.example.girdlauncher.ui.components.AppWidgetHostSection
-import com.example.girdlauncher.ui.components.PermissionRationaleDialog
 import com.example.girdlauncher.ui.components.QuickActionSelectorDialog
 import com.example.girdlauncher.ui.components.StandaloneAppSlotSection
 import com.example.girdlauncher.ui.components.WidgetDeleteConfirmDialog
@@ -80,7 +78,6 @@ import com.example.girdlauncher.util.folderIdFromSlotValue
 import com.example.girdlauncher.util.folderSlotValue
 import com.example.girdlauncher.util.getInstalledApps
 import com.example.girdlauncher.util.isFolderSlotValue
-import com.example.girdlauncher.util.isNotificationListenerEnabled
 import com.example.girdlauncher.util.loadAppSlotAssignments
 import com.example.girdlauncher.util.loadFolders
 import com.example.girdlauncher.util.loadHiddenWidgetPanels
@@ -175,17 +172,6 @@ fun CyberLauncherScreen() {
     var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
     AppWidgetHostManager.ensureInitialized(context)
 
-    // 通知アクセス権限（通知バッジ・再生中メディア・QUICK ACCESSのミュート操作に必要）が
-    // 未許可の場合、初回起動時に一度だけ権限付与画面へ案内する（案内前に理由を説明するダイアログを挟む）
-    var showNotificationAccessRationale by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        val alreadyPrompted = prefs.getBoolean("notification_access_prompted", false)
-        if (!alreadyPrompted && !isNotificationListenerEnabled(context)) {
-            prefs.edit { putBoolean("notification_access_prompted", true) }
-            showNotificationAccessRationale = true
-        }
-    }
-
     // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
     // 一覧をその場で更新する。
     DisposableEffect(context) {
@@ -233,6 +219,22 @@ fun CyberLauncherScreen() {
     } else {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
     }).copy(accent = accentColor)
+
+    // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
+    // 最適化除外・使用状況アクセスへの案内）。完了するまでは、それ以降のメインUI用の状態
+    // （アプリ一覧の読み込み等）を準備する必要がないため、ここで早期リターンする
+    var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_completed", false)) }
+    if (showOnboarding) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            OnboardingScreen(
+                onFinish = {
+                    prefs.edit { putBoolean("onboarding_completed", true) }
+                    showOnboarding = false
+                }
+            )
+        }
+        return
+    }
 
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -639,23 +641,6 @@ fun CyberLauncherScreen() {
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
                 }
-            )
-        }
-    }
-
-    // 初回起動時、通知アクセス権限が未許可なら理由を説明してから権限付与画面へ案内する
-    if (showNotificationAccessRationale) {
-        CompositionLocalProvider(LocalCyberColors provides colors) {
-            PermissionRationaleDialog(
-                message = "通知バッジや再生中メディアの表示、QUICK ACCESSのミュート操作を使うには、GridLauncherへの通知へのアクセスを許可してください。",
-                onConfirm = {
-                    showNotificationAccessRationale = false
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
-                },
-                onDismiss = { showNotificationAccessRationale = false }
             )
         }
     }
