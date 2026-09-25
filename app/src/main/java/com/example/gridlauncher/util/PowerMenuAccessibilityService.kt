@@ -6,7 +6,7 @@ import android.text.TextUtils
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * QUICK ACCESSの電源ボタンから、端末標準の電源メニュー（電源を切る/再起動など）を
+ * カスタマイズ画面の電源メニューボタンから、端末標準の電源メニュー（電源を切る/再起動など）を
  * 開くためだけに使う最小限のアクセシビリティサービス。
  *
  * 電源メニューを直接開く公開APIは存在しないため、[AccessibilityService.performGlobalAction]の
