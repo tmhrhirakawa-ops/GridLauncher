@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,6 +105,14 @@ fun CustomizeSheet(
         )
     }
 
+    // シートが画面の上端（ステータスバーの裏）まで届くと、ModalBottomSheetはシートの位置に
+    // 応じてステータスバー分の上余白を増減させるため、ドラッグするたびにシートの高さ＝アンカーが
+    // 変わって元の位置へ引き戻され、スワイプで閉じられなくなる（Galaxyのカバー画面など、項目が
+    // 画面に収まりきらない小さい画面で発生）。中身の高さに上限を設けてシートが上端に届かない
+    // ようにし、収まらない分は中身をスクロールさせる
+    val windowInfo = LocalWindowInfo.current
+    val maxContentHeight = with(LocalDensity.current) { windowInfo.containerSize.height.toDp() } * 0.75f
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -111,6 +121,7 @@ fun CustomizeSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = maxContentHeight)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
