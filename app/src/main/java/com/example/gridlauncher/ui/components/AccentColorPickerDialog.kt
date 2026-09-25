@@ -57,6 +57,11 @@ import kotlin.math.sqrt
  */
 val DefaultAccentColor = LightAccentColor
 
+/**
+ * アクセントカラー2のデフォルト色（アクセントカラー1のオレンジと対になるシアン）。
+ */
+val DefaultAccentColor2 = Color(0xFF00E5FF)
+
 private const val KEY_RECENT_ACCENT_COLORS = "recent_accent_colors"
 private const val MAX_RECENT_ACCENT_COLORS = 10
 
@@ -88,6 +93,8 @@ private fun addRecentAccentColor(prefs: SharedPreferences, current: List<Color>,
  * @param onColorSelected 色が選択されたときのコールバック。
  * @param onUseOriginalIconColorsChange 「アプリアイコンはオリジナルカラーを使用」チェックボックスが
  *   切り替えられたときのコールバック。
+ * @param title パレット上部に表示する見出し。
+ * @param defaultColor 「デフォルトに戻す」で設定する色。
  * @param onDismiss パレットが閉じられるときのコールバック。
  */
 @Composable
@@ -96,6 +103,8 @@ fun AccentColorPickerDialog(
     useOriginalIconColors: Boolean,
     onColorSelected: (Color) -> Unit,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
+    title: String = "ACCENT COLOR",
+    defaultColor: Color = DefaultAccentColor,
     onDismiss: () -> Unit
 ) {
     val colors = LocalCyberColors.current
@@ -129,14 +138,14 @@ fun AccentColorPickerDialog(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("ACCENT COLOR", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.text)
+                        Text(title, fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.text)
                         Spacer(modifier = Modifier.weight(1f))
                         Text(
                             "デフォルトに戻す",
                             fontFamily = CyberFont,
                             fontSize = 10.sp,
                             color = colors.accent,
-                            modifier = Modifier.clickable { onColorSelected(DefaultAccentColor) }
+                            modifier = Modifier.clickable { onColorSelected(defaultColor) }
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))

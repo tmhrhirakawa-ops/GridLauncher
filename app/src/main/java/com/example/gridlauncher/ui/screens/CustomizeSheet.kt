@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
+import com.example.gridlauncher.ui.components.DefaultAccentColor
+import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 
@@ -63,8 +65,13 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param onWallpaperModeChange 壁紙透過スイッチが切り替えられたときのコールバック。
  * @param isDarkTheme ダークテーマかどうか。
  * @param onDarkThemeChange テーマが選択されたときのコールバック（true=ダーク）。
- * @param accentColor 現在のアクセントカラー。
- * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
+ * @param accentColor 現在のアクセントカラー1。
+ * @param onAccentColorChange カラーパレットでアクセントカラー1が選択されたときのコールバック。
+ * @param accentColor2 現在のアクセントカラー2。
+ * @param onAccentColor2Change カラーパレットでアクセントカラー2が選択されたときのコールバック。
+ * @param accent2Panels アクセントカラー2を使うウィジェットの集合（それ以外は1を使う）。
+ * @param onPanelAccentChange ウィジェットごとのアクセントカラーが選択されたときのコールバック
+ *   （trueならアクセントカラー2を使う）。
  * @param useOriginalIconColors アプリアイコンをオリジナルカラーのまま表示しているかどうか。
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -82,6 +89,10 @@ fun CustomizeSheet(
     onDarkThemeChange: (Boolean) -> Unit,
     accentColor: Color,
     onAccentColorChange: (Color) -> Unit,
+    accentColor2: Color,
+    onAccentColor2Change: (Color) -> Unit,
+    accent2Panels: Set<WidgetPanel>,
+    onPanelAccentChange: (WidgetPanel, Boolean) -> Unit,
     useOriginalIconColors: Boolean,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -92,16 +103,20 @@ fun CustomizeSheet(
 ) {
     val context = LocalContext.current
     val colors = LocalCyberColors.current
-    var showColorPicker by remember { mutableStateOf(false) }
+    var colorPickerTarget by remember { mutableStateOf<Int?>(null) } // パレットで編集中のアクセントカラー（1 or 2）
+    var showPanelAccents by remember { mutableStateOf(false) }
     var showPanelBorders by remember { mutableStateOf(false) }
 
-    if (showColorPicker) {
+    colorPickerTarget?.let { target ->
+        val isAccent2 = target == 2
         AccentColorPickerDialog(
-            currentColor = accentColor,
+            currentColor = if (isAccent2) accentColor2 else accentColor,
             useOriginalIconColors = useOriginalIconColors,
-            onColorSelected = onAccentColorChange,
+            onColorSelected = if (isAccent2) onAccentColor2Change else onAccentColorChange,
             onUseOriginalIconColorsChange = onUseOriginalIconColorsChange,
-            onDismiss = { showColorPicker = false }
+            title = "ACCENT COLOR $target",
+            defaultColor = if (isAccent2) DefaultAccentColor2 else DefaultAccentColor,
+            onDismiss = { colorPickerTarget = null }
         )
     }
 
@@ -164,20 +179,43 @@ fun CustomizeSheet(
                 ThemeSegmentedToggle(isDarkTheme = isDarkTheme, onDarkThemeChange = onDarkThemeChange)
             }
 
-            // アクセントカラーの変更
-            CustomizeRow(
-                icon = Icons.Outlined.Palette,
-                title = "アクセントカラー",
-                description = "カラーパレットから色を選びます",
-                onClick = { showColorPicker = true }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(accentColor)
-                        .border(1.dp, colors.border, CircleShape)
+            // アクセントカラー1・2の変更と、ウィジェットごとにどちらを使うかの選択
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.Palette,
+                    title = "アクセントカラー",
+                    description = "1・2をタップしてパレットで色を変えます"
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        AccentSwatchButton(label = "1", color = accentColor, onClick = { colorPickerTarget = 1 })
+                        AccentSwatchButton(label = "2", color = accentColor2, onClick = { colorPickerTarget = 2 })
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                ExpandHeader(
+                    label = "ウィジェットごとに設定",
+                    expanded = showPanelAccents,
+                    onToggle = { showPanelAccents = !showPanelAccents }
                 )
+                AnimatedVisibility(visible = showPanelAccents, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column(
+                        modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // 外部ウィジェット（APP WIDGET）は他アプリが描画するため、アクセントカラーの対象外
+                        WidgetPanel.entries.filter { it != WidgetPanel.APPWIDGET }.forEach { panel ->
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Text(panel.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text, modifier = Modifier.weight(1f))
+                                AccentSlotToggle(
+                                    useAccent2 = panel in accent2Panels,
+                                    accentColor = accentColor,
+                                    accentColor2 = accentColor2,
+                                    onChange = { useAccent2 -> onPanelAccentChange(panel, useAccent2) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // アプリアイコンをオリジナルに戻す（アクセントカラーのデュオトーン加工をしない）
@@ -206,22 +244,11 @@ fun CustomizeSheet(
                     CyberSwitch(checked = allBordersVisible, onCheckedChange = onSetAllBorders)
                 }
                 Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
-                val expandRotation by animateFloatAsState(if (showPanelBorders) 180f else 0f, label = "expandRotation")
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showPanelBorders = !showPanelBorders }
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Text("ウィジェットごとに設定", fontFamily = CyberFont, fontSize = 11.sp, color = colors.text.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
-                    Icon(
-                        Icons.Outlined.ExpandMore,
-                        contentDescription = null,
-                        tint = colors.text.copy(alpha = 0.5f),
-                        modifier = Modifier.rotate(expandRotation)
-                    )
-                }
+                ExpandHeader(
+                    label = "ウィジェットごとに設定",
+                    expanded = showPanelBorders,
+                    onToggle = { showPanelBorders = !showPanelBorders }
+                )
                 AnimatedVisibility(visible = showPanelBorders, enter = expandVertically(), exit = shrinkVertically()) {
                     Column(modifier = Modifier.padding(start = 4.dp, end = 14.dp, bottom = 6.dp)) {
                         WidgetPanel.entries.forEach { panel ->
@@ -355,6 +382,82 @@ private fun CyberSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
             uncheckedBorderColor = colors.border
         )
     )
+}
+
+/** カード内の「ウィジェットごとに設定」など、タップで下の項目を開閉する見出し行。 */
+@Composable
+private fun ExpandHeader(label: String, expanded: Boolean, onToggle: () -> Unit) {
+    val colors = LocalCyberColors.current
+    val expandRotation by animateFloatAsState(if (expanded) 180f else 0f, label = "expandRotation")
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Text(label, fontFamily = CyberFont, fontSize = 11.sp, color = colors.text.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
+        Icon(
+            Icons.Outlined.ExpandMore,
+            contentDescription = null,
+            tint = colors.text.copy(alpha = 0.5f),
+            modifier = Modifier.rotate(expandRotation)
+        )
+    }
+}
+
+/** 番号（1/2）を添えたアクセントカラーの見本。タップでその色のパレットを開く。 */
+@Composable
+private fun AccentSwatchButton(label: String, color: Color, onClick: () -> Unit) {
+    val colors = LocalCyberColors.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(color)
+                .border(1.dp, colors.border, CircleShape)
+        )
+        Text(label, fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = colors.text.copy(alpha = 0.7f))
+    }
+}
+
+/** ウィジェットがアクセントカラー1と2のどちらを使うかを選ぶ2択のセグメントボタン。 */
+@Composable
+private fun AccentSlotToggle(useAccent2: Boolean, accentColor: Color, accentColor2: Color, onChange: (Boolean) -> Unit) {
+    val colors = LocalCyberColors.current
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, colors.border, RoundedCornerShape(4.dp))
+    ) {
+        listOf(false to accentColor, true to accentColor2).forEach { (isAccent2, slotColor) ->
+            val selected = useAccent2 == isAccent2
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(if (selected) slotColor.copy(alpha = 0.2f) else Color.Transparent)
+                    .clickable { onChange(isAccent2) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(slotColor))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    if (isAccent2) "2" else "1",
+                    fontFamily = CyberFont,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) colors.text else colors.text.copy(alpha = 0.4f)
+                )
+            }
+        }
+    }
 }
 
 /** DARK / LIGHT を切り替える2択のセグメントボタン。 */

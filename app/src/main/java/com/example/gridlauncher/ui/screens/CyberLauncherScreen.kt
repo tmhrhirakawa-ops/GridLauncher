@@ -59,6 +59,7 @@ import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
 import com.example.gridlauncher.ui.components.AppActionDialog
+import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
 import com.example.gridlauncher.ui.components.MissingPermissionsSheet
 import com.example.gridlauncher.ui.components.PermissionRationaleDialog
@@ -81,6 +82,7 @@ import com.example.gridlauncher.util.folderSlotValue
 import com.example.gridlauncher.util.getInstalledApps
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
+import com.example.gridlauncher.util.loadAccent2WidgetPanels
 import com.example.gridlauncher.util.loadFolders
 import com.example.gridlauncher.util.loadHiddenWidgetPanels
 import com.example.gridlauncher.util.loadPlacedWidgets
@@ -88,6 +90,7 @@ import com.example.gridlauncher.util.loadQuickActionSlots
 import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
 import com.example.gridlauncher.util.resolveInstalledApp
+import com.example.gridlauncher.util.saveAccent2WidgetPanels
 import com.example.gridlauncher.util.requestUninstall
 import com.example.gridlauncher.util.saveAppSlotAssignment
 import com.example.gridlauncher.util.saveFolder
@@ -232,6 +235,9 @@ fun CyberLauncherScreen() {
     } else {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
     }).copy(accent = accentColor)
+    // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
+    var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
+    val colors2 = colors.copy(accent = accentColor2)
 
     // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
     // 最適化除外・使用状況アクセスへの案内）。完了するまでは、それ以降のメインUI用の状態
@@ -287,6 +293,13 @@ fun CyberLauncherScreen() {
     fun toggleWidgetPanelBorder(panel: WidgetPanel) {
         hiddenWidgetPanels = if (panel in hiddenWidgetPanels) hiddenWidgetPanels - panel else hiddenWidgetPanels + panel
         saveHiddenWidgetPanels(prefs, hiddenWidgetPanels)
+    }
+
+    // アクセントカラー2を使うウィジェットパネル（それ以外はアクセントカラー1を使う）
+    var accent2WidgetPanels by remember { mutableStateOf(loadAccent2WidgetPanels(prefs)) }
+    fun setWidgetPanelAccent(panel: WidgetPanel, useAccent2: Boolean) {
+        accent2WidgetPanels = if (useAccent2) accent2WidgetPanels + panel else accent2WidgetPanels - panel
+        saveAccent2WidgetPanels(prefs, accent2WidgetPanels)
     }
 
     // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
@@ -723,6 +736,13 @@ fun CyberLauncherScreen() {
                     accentColor = color
                     prefs.edit { putInt("accent_color", color.toArgb()) }
                 },
+                accentColor2 = accentColor2,
+                onAccentColor2Change = { color ->
+                    accentColor2 = color
+                    prefs.edit { putInt("accent_color_2", color.toArgb()) }
+                },
+                accent2Panels = accent2WidgetPanels,
+                onPanelAccentChange = { panel, useAccent2 -> setWidgetPanelAccent(panel, useAccent2) },
                 useOriginalIconColors = useOriginalIconColors,
                 onUseOriginalIconColorsChange = { enabled ->
                     if (enabled != useOriginalIconColors) toggleUseOriginalIconColors()
@@ -1070,6 +1090,8 @@ fun CyberLauncherScreen() {
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
                     modifier = Modifier.weight(1f)
                 ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
+                    // アクセントカラー2に設定されたウィジェットだけ、配色のaccentを差し替えて描画する
+                    CompositionLocalProvider(LocalCyberColors provides if (type in accent2WidgetPanels) colors2 else colors) {
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -1153,6 +1175,7 @@ fun CyberLauncherScreen() {
                             },
                             onExitWidgetEditMode = { isWidgetEditMode = false }
                         )
+                    }
                     }
                 }
 
