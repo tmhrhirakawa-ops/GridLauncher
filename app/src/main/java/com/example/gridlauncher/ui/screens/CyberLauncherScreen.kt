@@ -326,14 +326,23 @@ fun CyberLauncherScreen() {
     var quickActionSlots by remember { mutableStateOf(loadQuickActionSlots(prefs)) }
     var quickActionAddIndex by remember { mutableStateOf<Int?>(null) } // QUICK ACCESSの空きスロットタップ時（ボタン種類選択待ち）
 
-    val gridItems: List<GridItem?> = gridPackages.map { pkg ->
-        when {
-            pkg.isEmpty() -> null
-            isFolderSlotValue(pkg) -> folderIdFromSlotValue(pkg)?.let { folders[it] }?.let { GridItem.FolderItem(it) }
-            else -> allApps.find { it.packageName == pkg }?.let { GridItem.AppItem(it) }
+    // パッケージ名からアプリ情報を引くための索引。スロットごとに全アプリを線形探索しないようにする
+    val appsByPackage = remember(allApps) { allApps.associateBy { it.packageName } }
+
+    // 通知バッジの更新など、スロット構成と無関係な再コンポジションのたびに作り直さないよう、
+    // 構成要素が変わったときだけ組み立て直す
+    val gridItems: List<GridItem?> = remember(gridPackages, folders, appsByPackage) {
+        gridPackages.map { pkg ->
+            when {
+                pkg.isEmpty() -> null
+                isFolderSlotValue(pkg) -> folderIdFromSlotValue(pkg)?.let { folders[it] }?.let { GridItem.FolderItem(it) }
+                else -> appsByPackage[pkg]?.let { GridItem.AppItem(it) }
+            }
         }
     }
-    val dockApps = dockPackages.map { pkg -> if (pkg.isEmpty()) null else allApps.find { it.packageName == pkg } }
+    val dockApps = remember(dockPackages, appsByPackage) {
+        dockPackages.map { pkg -> if (pkg.isEmpty()) null else appsByPackage[pkg] }
+    }
 
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
@@ -486,18 +495,26 @@ fun CyberLauncherScreen() {
     }
 
     // 他アプリのAppWidget（外部ウィジェット）のRemoteViews更新を受け取れるよう、
-    // ランチャーが表示されている間だけAppWidgetHostをlisten状態にする
+    // ランチャーが表示されている間だけAppWidgetHostをlisten状態にする。
+    // 通知サービスにも表示状態を伝え、再生中メディアの保険のポーリングを表示中だけに限定させる
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> AppWidgetHostManager.host.startListening()
-                Lifecycle.Event.ON_STOP -> AppWidgetHostManager.host.stopListening()
+                Lifecycle.Event.ON_START -> {
+                    AppWidgetHostManager.host.startListening()
+                    CyberNotificationListener.setUiVisible(true)
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    AppWidgetHostManager.host.stopListening()
+                    CyberNotificationListener.setUiVisible(false)
+                }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            CyberNotificationListener.setUiVisible(false)
         }
     }
 
@@ -1224,7 +1241,7 @@ fun CyberLauncherScreen() {
                             onRemoveClick = {
                                 val packageName = appSlotAssignments[instanceId]
                                 if (packageName != null) {
-                                    val label = allApps.find { it.packageName == packageName }?.label ?: packageName
+                                    val label = appsByPackage[packageName]?.label ?: packageName
                                     pendingRemoval = PendingRemoval("app_slot", instanceId, packageName, label)
                                 }
                             },
@@ -1361,7 +1378,7 @@ fun CyberLauncherScreen() {
                     ?: widget.type.label
                 WidgetPanel.APP_SLOT_ICON_ONLY, WidgetPanel.APP_SLOT_NAMED -> {
                     val assignedLabel = appSlotAssignments[widget.instanceId]
-                        ?.let { pkg -> allApps.find { it.packageName == pkg }?.label }
+                        ?.let { pkg -> appsByPackage[pkg]?.label }
                     if (assignedLabel != null) "${widget.type.label}（$assignedLabel）" else widget.type.label
                 }
                 else -> widget.type.label

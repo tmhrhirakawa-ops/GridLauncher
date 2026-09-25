@@ -14,6 +14,7 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.lang.ref.WeakReference
 
 /**
  * 通知アクセス（[NotificationListenerService]へのバインド許可）が現在有効かどうかを判定する。
@@ -79,11 +80,27 @@ class CyberNotificationListener : NotificationListenerService() {
             _nowPlaying.value = null
         }
 
-        // 何か再生中/追跡中のセッションがある間のポーリング間隔
+        // 再生中のセッションがある間のポーリング間隔
         private const val ActivePollIntervalMs = 3000L
 
-        // 何も追跡していない（一番多い）状態でのポーリング間隔。バッテリー消費を抑えるため長めに空ける
+        // 再生中のセッションがない（停止中・一時停止中）状態でのポーリング間隔。バッテリー消費を抑えるため長めに空ける
         private const val IdlePollIntervalMs = 20000L
+
+        // 接続中のサービス本体（ホーム画面の表示状態を伝えるため）。サービスのライフサイクルを
+        // 延命しないよう弱参照で持つ
+        private var instance: WeakReference<CyberNotificationListener>? = null
+
+        // ホーム画面（再生中メディア・通知バッジを表示する画面）が見えているかどうか
+        private var isUiVisible = false
+
+        /**
+         * ホーム画面が見えているかどうかを伝える。保険のポーリングは表示中だけ行い、
+         * 再表示されたときはその場で最新の状態に取り直す。メインスレッドから呼ぶこと。
+         */
+        fun setUiVisible(visible: Boolean) {
+            isUiVisible = visible
+            instance?.get()?.onUiVisibilityChanged(visible)
+        }
     }
 
     private var currentController: MediaController? = null
@@ -106,16 +123,30 @@ class CyberNotificationListener : NotificationListenerService() {
 
     // OEM（省電力機能など）によってはセッション変更イベントが確実に届かないことがあるため、
     // 保険として定期的にセッション一覧を再取得する。
-    // 何か再生中/追跡中のセッションがある間だけ短い間隔でポーリングし、
-    // 何もない（一番多い）状態では間隔を大きく空けてバッテリー消費を抑える
+    // 表示先のホーム画面が見えている間だけ行い（見えていない間の変化は再表示時にまとめて取り直す）、
+    // 再生中は短い間隔、それ以外は間隔を大きく空けてバッテリー消費を抑える
     // （検出自体はOnActiveSessionsChangedListenerがリアルタイムに拾うので、
     // このポーリングはあくまでOEM対策の保険）
     private val pollHandler = Handler(Looper.getMainLooper())
     private val pollRunnable = object : Runnable {
         override fun run() {
             pollActiveSessions()
-            val nextDelayMs = if (currentController != null) ActivePollIntervalMs else IdlePollIntervalMs
-            pollHandler.postDelayed(this, nextDelayMs)
+            schedulePoll()
+        }
+    }
+
+    private fun schedulePoll() {
+        pollHandler.removeCallbacks(pollRunnable)
+        if (!isUiVisible) return
+        val isPlaying = currentController?.isActivelyEngaged() == true
+        pollHandler.postDelayed(pollRunnable, if (isPlaying) ActivePollIntervalMs else IdlePollIntervalMs)
+    }
+
+    private fun onUiVisibilityChanged(visible: Boolean) {
+        pollHandler.removeCallbacks(pollRunnable)
+        if (visible) {
+            pollActiveSessions()
+            schedulePoll()
         }
     }
 
@@ -141,12 +172,14 @@ class CyberNotificationListener : NotificationListenerService() {
             // 通知アクセス権限が未許可などで取得できない場合は無視する
             e.printStackTrace()
         }
+        instance = WeakReference(this)
         pollActiveSessions()
-        pollHandler.postDelayed(pollRunnable, if (currentController != null) ActivePollIntervalMs else IdlePollIntervalMs)
+        schedulePoll()
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        instance = null
         pollHandler.removeCallbacks(pollRunnable)
         try {
             val mediaSessionManager = getSystemService(MediaSessionManager::class.java)

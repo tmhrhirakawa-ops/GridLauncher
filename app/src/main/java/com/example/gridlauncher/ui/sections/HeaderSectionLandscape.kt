@@ -1,9 +1,5 @@
 package com.example.gridlauncher.ui.sections
 
-import android.content.Context
-import android.os.BatteryManager
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,15 +12,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.ui.components.NowPlayingWidget
+import com.example.gridlauncher.ui.components.rememberNowPlayingDisplayState
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.CyberNotificationListener
-import kotlinx.coroutines.delay
+import com.example.gridlauncher.util.rememberBatteryLevel
+import com.example.gridlauncher.util.rememberCurrentTimeMillis
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -40,51 +37,16 @@ fun HeaderSectionLandscape(
     nowPlaying: CyberNotificationListener.NowPlayingInfo? = null,
     onCoreClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
+    // 再生中メディアの表示状態（消えるときのアニメーション中も直前の内容を表示し続ける）
+    val nowPlayingDisplay = rememberNowPlayingDisplayState(nowPlaying)
 
-    // NowPlayingの消滅アニメーション中も直前の内容を表示し続けるため、nullになった後も
-    // 直前の非nullの値を保持しておく（フォルダを閉じるときのdisplayedFolderと同じパターン）
-    var displayedNowPlaying by remember { mutableStateOf(nowPlaying) }
-    LaunchedEffect(nowPlaying) {
-        if (nowPlaying != null) {
-            displayedNowPlaying = nowPlaying
-        }
-    }
+    // 時刻（分単位）とバッテリー残量。ポーリングせずシステムのブロードキャストで更新し、
+    // ホーム画面が見えている間だけ受信する
+    val currentTime = rememberCurrentTimeMillis()
+    val batteryLevel = rememberBatteryLevel()
 
-    // NowPlayingの表示/非表示は、AnimatedVisibilityのshrink/expand（レイアウト幅そのものを
-    // 変える方式）ではなく、graphicsLayerのscaleXで描画だけを縮める方式にしている。
-    // 幅を変える方式だと、右隣のバッテリー表示に合わせてRow全体が右詰めで再配置されるため、
-    // 右端が固定されたまま左端だけが動く「右への一方通行」に見えてしまう。scaleXなら
-    // レイアウト上のサイズは変えず見た目だけを縮めるので、周りの表示位置を動かさずに
-    // その場（中心）から左右へ均等に縮んで消える
-    var keepNowPlayingInLayout by remember { mutableStateOf(nowPlaying != null) }
-    LaunchedEffect(nowPlaying != null) {
-        if (nowPlaying != null) keepNowPlayingInLayout = true
-    }
-    val nowPlayingScale by animateFloatAsState(
-        targetValue = if (nowPlaying != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
-        label = "nowPlayingScale",
-        finishedListener = { value -> if (value == 0f) keepNowPlayingInLayout = false }
-    )
-
-    // リアルタイム時計とバッテリーの状態管理
-    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var batteryLevel by remember { mutableIntStateOf(100) }
-    
-    // 1秒ごとに時刻とバッテリー状態を更新するコルーチン
-    LaunchedEffect(Unit) {
-        val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            delay(1000)
-        }
-    }
-
-    // 時刻と日付のフォーマット
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val dateFormat = SimpleDateFormat("MMM dd // EEE", Locale.ENGLISH) // 例: SEP 13 // SUN
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val dateFormat = remember { SimpleDateFormat("MMM dd // EEE", Locale.ENGLISH) } // 例: SEP 13 // SUN
     
     val timeString = timeFormat.format(Date(currentTime))
     val dateString = dateFormat.format(Date(currentTime)).uppercase()
@@ -112,15 +74,15 @@ fun HeaderSectionLandscape(
         // バッテリー残量とシステムステータスのUI
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 消えるときはその場で左右から中央へ縮むように消滅させる
-            if (keepNowPlayingInLayout) {
+            if (nowPlayingDisplay.keepInLayout) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.graphicsLayer {
-                        scaleX = nowPlayingScale
-                        alpha = nowPlayingScale
+                        scaleX = nowPlayingDisplay.scale
+                        alpha = nowPlayingDisplay.scale
                     }
                 ) {
-                    displayedNowPlaying?.let { info -> NowPlayingWidget(info = info) }
+                    nowPlayingDisplay.displayed?.let { info -> NowPlayingWidget(info = info) }
                     Spacer(modifier = Modifier.width(16.dp))
                 }
             }

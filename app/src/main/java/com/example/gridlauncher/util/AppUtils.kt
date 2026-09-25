@@ -402,24 +402,3 @@ fun hasUsageStatsPermission(context: Context): Boolean {
     }
     return mode == AppOpsManager.MODE_ALLOWED
 }
-
-/**
- * 通知へのアクセス権限が付与されているかどうかを確認します。
- *
- * @param context 権限の確認に使用する [Context]。
- * @return 権限が付与されている場合は true、そうでない場合は false。
- */
-fun hasNotificationAccess(context: Context): Boolean {
-    val pkgName = context.packageName
-    val flat = android.provider.Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-    if (!android.text.TextUtils.isEmpty(flat)) {
-        val names = flat.split(":")
-        for (name in names) {
-            val cn = android.content.ComponentName.unflattenFromString(name)
-            if (cn != null && android.text.TextUtils.equals(pkgName, cn.packageName)) {
-                return true
-            }
-        }
-    }
-    return false
-}

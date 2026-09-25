@@ -28,6 +28,8 @@ import com.example.gridlauncher.util.getFrequentApps
 import com.example.gridlauncher.util.hasUsageStatsPermission
 import com.example.gridlauncher.util.requestUninstall
 import android.content.res.Configuration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * インストールされているすべてのアプリと、よく使うアプリを表示するボトムシートドロワー。
@@ -39,8 +41,16 @@ import android.content.res.Configuration
 @Composable
 fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
-    val filteredApps = allApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
+    val filteredApps = remember(allApps, searchQuery) { allApps.filter { it.label.contains(searchQuery, ignoreCase = true) } }
     val context = LocalContext.current
+    // よく使うアプリは使用状況統計（過去1週間分）の集計が重いため、メインスレッドを止めないよう
+    // バックグラウンドで取得する。検索中に表示から外れても再取得しないよう、ドロワーを開いている間は保持する
+    val hasUsagePermission = remember { hasUsageStatsPermission(context) }
+    val frequentApps by produceState(initialValue = emptyList<AppInfo>(), allApps, hasUsagePermission) {
+        if (hasUsagePermission) {
+            value = withContext(Dispatchers.IO) { getFrequentApps(context, allApps) }
+        }
+    }
     var uninstallTarget by remember { mutableStateOf<AppInfo?>(null) } // 長押しでアンインストール確認中のアプリ
 
     uninstallTarget?.let { appInfo ->
@@ -77,11 +87,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
 
             // よく使うアプリ（検索していないときのみ表示）
             if (searchQuery.isEmpty()) {
-                val hasPermission = remember { hasUsageStatsPermission(context) }
-                
-                if (hasPermission) {
-                    val frequentApps = remember { getFrequentApps(context, allApps) }
-                    
+                if (hasUsagePermission) {
                     if (frequentApps.isNotEmpty()) {
                         Text("FREQUENT APPS", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.accent)
                         Spacer(modifier = Modifier.height(8.dp))

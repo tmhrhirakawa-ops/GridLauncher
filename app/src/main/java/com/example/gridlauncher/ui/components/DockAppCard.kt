@@ -19,18 +19,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
-import com.example.gridlauncher.util.loadOriginalIconBitmap
-import com.example.gridlauncher.util.toDuotoneImageBitmap
 
 /**
  * ボトムドック内でアプリアイコンとラベルを表示するためのコンポーザブル。
@@ -84,15 +80,7 @@ fun DockAppCard(
             ) {
                 // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示する
                 // （useOriginalIconColorsがtrueのときは加工せず本来の色のまま表示する）
-                val accent = LocalCyberColors.current.accent
-                val context = LocalContext.current
-                val bitmap = remember(packageName, icon, isMonochrome, accent, useOriginalIconColors) {
-                    if (useOriginalIconColors) {
-                        loadOriginalIconBitmap(context, packageName) ?: toDuotoneImageBitmap(icon, isMonochrome, accent)
-                    } else {
-                        toDuotoneImageBitmap(icon, isMonochrome, accent)
-                    }
-                }
+                val bitmap = rememberAppIconBitmap(packageName, icon, isMonochrome, useOriginalIconColors)
                 Image(
                     bitmap = bitmap,
                     contentDescription = name,

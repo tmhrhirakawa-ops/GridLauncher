@@ -31,6 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import kotlinx.coroutines.delay
@@ -48,11 +51,16 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
     
     // 定期的に状態を更新するための状態変数
     var trigger by remember { mutableIntStateOf(0) }
-    
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(5000) // 5秒ごとに更新
-            trigger++
+
+    // 5秒ごとに更新する。ホーム画面が見えている間（ライフサイクルがSTARTED以上）だけ動かし、
+    // 再表示されたときはすぐに最新の値へ更新する
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                trigger++
+                delay(5000)
+            }
         }
     }
 
@@ -100,20 +108,9 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
         }
     }
 
-    // 最適化中の演出用アニメーション
-    val infiniteTransition = rememberInfiniteTransition(label = "optimizeAnim")
-    val iconRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing)),
-        label = "iconRotation"
-    )
-    val scanProgress by infiniteTransition.animateFloat(
-        initialValue = -0.5f,
-        targetValue = 1.5f,
-        animationSpec = infiniteRepeatable(animation = tween(1100, easing = LinearEasing)),
-        label = "scanProgress"
-    )
+    // 最適化中の演出用アニメーション。無限アニメーションは毎フレーム更新が走り続けるため、
+    // 演出中（isOptimizing）だけ生成し、それ以外のときは動かさない
+    val optimizeAnimation = if (isOptimizing) rememberOptimizeAnimation() else null
 
     Surface(
         shape = RoundedCornerShape(6.dp),
@@ -194,13 +191,13 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
                     modifier = Modifier.fillMaxWidth().height(28.dp) // 高さを細くして被りを防ぐ
                 ) {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        if (isOptimizing) {
+                        if (optimizeAnimation != null) {
                             // スキャンしているような光の帯が横切るエフェクト
                             Box(
                                 modifier = Modifier
                                     .width(maxWidth * 0.4f)
                                     .fillMaxHeight()
-                                    .offset { IntOffset((maxWidth * scanProgress).roundToPx(), 0) }
+                                    .offset { IntOffset((maxWidth * optimizeAnimation.scanProgress.value).roundToPx(), 0) }
                                     .background(
                                         Brush.horizontalGradient(
                                             listOf(
@@ -223,8 +220,8 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
                                 text = if (isOptimizing) "⚙" else "⚡",
                                 fontSize = 14.sp,
                                 color = onButtonColor,
-                                modifier = if (isOptimizing) {
-                                    Modifier.graphicsLayer { rotationZ = iconRotation }
+                                modifier = if (optimizeAnimation != null) {
+                                    Modifier.graphicsLayer { rotationZ = optimizeAnimation.iconRotation.value }
                                 } else {
                                     Modifier
                                 }
@@ -257,4 +254,25 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
             }
         }
     }
+}
+
+/** 最適化中の演出用アニメーションの値。どちらも描画フェーズ（offset/graphicsLayer）でのみ読む。 */
+private class OptimizeAnimation(val iconRotation: State<Float>, val scanProgress: State<Float>)
+
+@Composable
+private fun rememberOptimizeAnimation(): OptimizeAnimation {
+    val infiniteTransition = rememberInfiniteTransition(label = "optimizeAnim")
+    val iconRotation = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing)),
+        label = "iconRotation"
+    )
+    val scanProgress = infiniteTransition.animateFloat(
+        initialValue = -0.5f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(animation = tween(1100, easing = LinearEasing)),
+        label = "scanProgress"
+    )
+    return remember(iconRotation, scanProgress) { OptimizeAnimation(iconRotation, scanProgress) }
 }
