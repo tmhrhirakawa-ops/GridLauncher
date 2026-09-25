@@ -22,6 +22,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,13 +36,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
@@ -60,6 +64,7 @@ import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
+import com.example.gridlauncher.ui.components.HomeLongPressMenu
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
 import com.example.gridlauncher.ui.components.MissingPermissionsSheet
 import com.example.gridlauncher.ui.components.PermissionRationaleDialog
@@ -184,6 +189,7 @@ private fun HeaderDivider() {
 fun CyberLauncherScreen() {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
+    val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
     var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
     AppWidgetHostManager.ensureInitialized(context)
@@ -338,6 +344,9 @@ fun CyberLauncherScreen() {
     var displayedFolder by remember { mutableStateOf<FolderInfo?>(null) }
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
     var showCustomizeSheet by remember { mutableStateOf(false) } // カスタマイズ画面の表示状態
+    var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
+    // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
+    var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
 
@@ -560,6 +569,8 @@ fun CyberLauncherScreen() {
     // 外部ウィジェットが、許容する最小サイズでもこの画面のグリッドに入り切らなかった
     // （または配置しようとした時点で空きがなかった）ことを知らせるエラーダイアログの表示状態
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
+    // 長押しメニューの「ウィジェットを追加」が押されたが、ホーム画面に空きがないことを知らせるダイアログの表示状態
+    var showNoWidgetSpaceError by remember { mutableStateOf(false) }
 
     // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
     // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、
@@ -746,6 +757,11 @@ fun CyberLauncherScreen() {
                 useOriginalIconColors = useOriginalIconColors,
                 onUseOriginalIconColorsChange = { enabled ->
                     if (enabled != useOriginalIconColors) toggleUseOriginalIconColors()
+                },
+                showAddWidgetTile = showAddWidgetTile,
+                onShowAddWidgetTileChange = { visible ->
+                    showAddWidgetTile = visible
+                    prefs.edit { putBoolean("show_add_widget_tile", visible) }
                 },
                 hiddenPanels = hiddenWidgetPanels,
                 onSetAllBorders = { visible -> setAllWidgetBorders(visible) },
@@ -987,6 +1003,32 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // 長押しメニューからウィジェットを追加しようとしたが、ホーム画面に空きがなかった場合の通知
+    if (showNoWidgetSpaceError) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AlertDialog(
+                onDismissRequest = { showNoWidgetSpaceError = false },
+                containerColor = colors.panel,
+                title = {
+                    Text("空きがありません", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
+                },
+                text = {
+                    Text(
+                        "ホーム画面にウィジェットを置く空きがありません。既存のウィジェットを縮小するか削除してから追加してください。",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        color = colors.text.copy(alpha = 0.8f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showNoWidgetSpaceError = false }) {
+                        Text("閉じる", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
+                    }
+                }
+            )
+        }
+    }
+
     CompositionLocalProvider(LocalCyberColors provides colors) {
         // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
         // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
@@ -1011,7 +1053,19 @@ fun CyberLauncherScreen() {
                         }
                     }
                 }
-                .clickable { isEditMode = false; isWidgetEditMode = false }, // 空白タップで編集モード解除
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        // 空白タップで編集モード解除
+                        onTap = { isEditMode = false; isWidgetEditMode = false },
+                        // 何もないところの長押しで、ウィジェット追加・カスタマイズのメニューを表示
+                        onLongPress = { offset ->
+                            isEditMode = false
+                            isWidgetEditMode = false
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            homeMenuOffset = offset
+                        }
+                    )
+                },
             color = if (isWallpaperMode) Color.Transparent else LocalCyberColors.current.bg
         ) {
             Column(
@@ -1080,6 +1134,7 @@ fun CyberLauncherScreen() {
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onCellSizeMeasured = { w, h -> canvasCellSize = DpSize(w, h) },
                     onLayoutChange = { updatePlacedWidgets(it) },
+                    showAddWidgetTile = showAddWidgetTile,
                     onRequestAddWidget = { showWidgetTypeSelector = true },
                     onWidgetLongClick = { enterWidgetEditMode() },
                     onExitWidgetEditMode = { isWidgetEditMode = false },
@@ -1204,6 +1259,28 @@ fun CyberLauncherScreen() {
                 
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
                 Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
+            }
+
+            // 長押しメニュー。長押し位置はこのSurface内の座標なので、Surfaceの直下に置く
+            homeMenuOffset?.let { offset ->
+                HomeLongPressMenu(
+                    pressOffset = offset,
+                    onAddWidget = {
+                        homeMenuOffset = null
+                        // 1マス分の空きもなければ、種類を選ばせても配置できないため先に知らせる
+                        // （「+ ADD WIDGET」タイルの表示条件と同じ判定）
+                        if (findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows) == null) {
+                            showNoWidgetSpaceError = true
+                        } else {
+                            showWidgetTypeSelector = true
+                        }
+                    },
+                    onOpenCustomize = {
+                        homeMenuOffset = null
+                        showCustomizeSheet = true
+                    },
+                    onDismiss = { homeMenuOffset = null }
+                )
             }
         }
 

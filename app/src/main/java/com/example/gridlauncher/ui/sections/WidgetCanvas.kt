@@ -125,6 +125,7 @@ data class ResizeConstraints(
  *   コールバック。呼び出し側が「新規ウィジェットを実サイズ（dp）に応じたセル数で配置したい」
  *   といった場合に、別途`BoxWithConstraints`で測り直さずに済むよう、ここで測定済みの値を渡す。
  * @param onLayoutChange 配置（追加・削除・移動・リサイズ）が変わったときのコールバック。
+ * @param showAddWidgetTile 空き領域に「+ ADD WIDGET」タイルを表示するかどうか。
  * @param onRequestAddWidget 「+ ADD WIDGET」タイルがタップされたときのコールバック。
  * @param onWidgetLongClick ウィジェット本体（個々のスロット以外）が長押しされたときのコールバック
  *   （ウィジェット編集モードに入る）。
@@ -163,6 +164,7 @@ fun SharedTransitionScope.WidgetCanvas(
     deleteZoneBoundsInRoot: Rect? = null,
     onCellSizeMeasured: (cellWidth: Dp, cellHeight: Dp) -> Unit = { _, _ -> },
     onLayoutChange: (List<PlacedWidget>) -> Unit,
+    showAddWidgetTile: Boolean = true,
     onRequestAddWidget: () -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
@@ -223,10 +225,11 @@ fun SharedTransitionScope.WidgetCanvas(
             }
         }
 
-        // 空いている領域があれば常に追加導線を表示する（外部ウィジェット＝APPWIDGETは複数配置が
-        // 前提で「未配置の種類がない」状態にはならないため、既存4種の空き状況にかかわらず表示する）
+        // 空いている領域があれば追加導線を表示する（外部ウィジェット＝APPWIDGETは複数配置が
+        // 前提で「未配置の種類がない」状態にはならないため、既存4種の空き状況にかかわらず表示する）。
+        // カスタマイズ画面で非表示にした場合は、ホーム画面の長押しメニューからのみ追加できる
         val freeSlot = remember(placedWidgets, columns, rows) { findFreeGridSlot(placedWidgets, columns, rows) }
-        freeSlot?.let { (freeCol, freeRow, freeColSpan, freeRowSpan) ->
+        freeSlot?.takeIf { showAddWidgetTile }?.let { (freeCol, freeRow, freeColSpan, freeRowSpan) ->
             Box(
                 modifier = Modifier
                     .offset(x = cellWidth * freeCol, y = cellHeight * freeRow)

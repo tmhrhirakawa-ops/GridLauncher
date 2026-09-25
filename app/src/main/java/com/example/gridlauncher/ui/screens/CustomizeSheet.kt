@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -74,6 +75,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  *   （trueならアクセントカラー2を使う）。
  * @param useOriginalIconColors アプリアイコンをオリジナルカラーのまま表示しているかどうか。
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
+ * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
+ * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
  * @param onSetAllBorders 全ウィジェットの枠線を一括で表示/非表示にするときのコールバック（true=表示）。
  * @param onTogglePanelBorder 個別のウィジェットの枠線が切り替えられたときのコールバック。
@@ -95,6 +98,8 @@ fun CustomizeSheet(
     onPanelAccentChange: (WidgetPanel, Boolean) -> Unit,
     useOriginalIconColors: Boolean,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
+    showAddWidgetTile: Boolean,
+    onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
     onSetAllBorders: (Boolean) -> Unit,
     onTogglePanelBorder: (WidgetPanel) -> Unit,
@@ -226,6 +231,16 @@ fun CustomizeSheet(
                 onClick = { onUseOriginalIconColorsChange(!useOriginalIconColors) }
             ) {
                 CyberSwitch(checked = useOriginalIconColors, onCheckedChange = onUseOriginalIconColorsChange)
+            }
+
+            // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）
+            CustomizeRow(
+                icon = Icons.Outlined.AddBox,
+                title = "ADD WIDGET の表示",
+                description = "非表示でも、何もないところの長押しで追加できます",
+                onClick = { onShowAddWidgetTileChange(!showAddWidgetTile) }
+            ) {
+                CyberSwitch(checked = showAddWidgetTile, onCheckedChange = onShowAddWidgetTileChange)
             }
 
             // グリッド線（ウィジェットの枠線）の編集
