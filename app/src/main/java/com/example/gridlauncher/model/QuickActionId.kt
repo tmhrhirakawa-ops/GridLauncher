@@ -7,6 +7,7 @@ package com.example.gridlauncher.model
  * @property description ボタン追加時の選択画面に表示する説明文。
  */
 enum class QuickActionId(val label: String, val description: String) {
+    SETTINGS("SETTING", "端末の設定画面を開く"),
     WIFI("WI-FI", "Wi-Fi設定画面を開く"),
     DISPLAY("DISPLAY", "画面設定画面を開く"),
     BLUETOOTH("BLUETOOTH", "Bluetooth設定画面を開く"),

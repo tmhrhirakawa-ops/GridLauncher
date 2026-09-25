@@ -1,7 +1,6 @@
 package com.example.gridlauncher.ui.sections
 
 import android.content.Context
-import android.content.Intent
 import android.os.BatteryManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -23,15 +22,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.gridlauncher.model.WidgetPanel
-import com.example.gridlauncher.ui.components.CoreMenuPopup
 import com.example.gridlauncher.ui.components.NowPlayingWidget
-import com.example.gridlauncher.ui.components.PermissionRationaleDialog
-import com.example.gridlauncher.ui.components.WidgetBorderSettingsDialog
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.CyberNotificationListener
-import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -42,26 +36,15 @@ import java.util.Locale
  *
  * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
  * @param isLarge 縦画面（大）かどうか。trueの場合、中央に「MAIN TERMINAL」の表記を追加する。
- * @param isWallpaperMode 壁紙透過モードかどうか。
- * @param onWallpaperToggle 壁紙透過切り替えボタンがクリックされたときのコールバック。
- * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
- * @param onToggleAllBorders 枠線切り替えボタンがタップされたときのコールバック（全ウィジェット一括切り替え）。
- * @param onTogglePanelBorder 枠線切り替えボタンの長押しメニューで、個別のウィジェットが切り替えられたときのコールバック。
+ * @param onCoreClick バッテリーコア（歯車アイコン）がタップされたときのコールバック（カスタマイズ画面を開く）。
  */
 @Composable
 fun HeaderSectionPortrait(
     nowPlaying: CyberNotificationListener.NowPlayingInfo? = null,
     isLarge: Boolean = false,
-    isWallpaperMode: Boolean = false,
-    onWallpaperToggle: () -> Unit = {},
-    hiddenPanels: Set<WidgetPanel> = emptySet(),
-    onToggleAllBorders: () -> Unit = {},
-    onTogglePanelBorder: (WidgetPanel) -> Unit = {}
+    onCoreClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    var showCoreMenu by remember { mutableStateOf(false) }
-    var showBorderSettings by remember { mutableStateOf(false) }
-    var showPowerPermissionRationale by remember { mutableStateOf(false) }
 
     // NowPlayingの消滅アニメーション中も直前の内容を表示し続けるため、nullになった後も
     // 直前の非nullの値を保持しておく（フォルダを閉じるときのdisplayedFolderと同じパターン）
@@ -167,7 +150,7 @@ fun HeaderSectionPortrait(
                         strokeWidth = 6.dp,
                         modifier = Modifier.fillMaxSize()
                     )
-                    // 真ん中の青い歯車（タップすると壁紙透過・枠線切り替えメニューがにゅいっと出てくる）
+                    // 真ん中の青い歯車（タップするとカスタマイズ画面がボトムシートで開く）
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Filled.Settings,
@@ -175,34 +158,8 @@ fun HeaderSectionPortrait(
                             tint = LocalCyberColors.current.core,
                             modifier = Modifier
                                 .size(30.dp)
-                                .clickable { showCoreMenu = true }
+                                .clickable(onClick = onCoreClick)
                         )
-                        if (showCoreMenu) {
-                            CoreMenuPopup(
-                                onOpenSettings = {
-                                    showCoreMenu = false
-                                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
-                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                    }
-                                    context.startActivity(intent)
-                                },
-                                isWallpaperMode = isWallpaperMode,
-                                onWallpaperToggle = onWallpaperToggle,
-                                bordersVisible = hiddenPanels.isEmpty(),
-                                onToggleAllBorders = onToggleAllBorders,
-                                onLongPressBorderToggle = {
-                                    showCoreMenu = false
-                                    showBorderSettings = true
-                                },
-                                onOpenPowerMenu = {
-                                    showCoreMenu = false
-                                    openPowerMenuOrRequestPermission(context) {
-                                        showPowerPermissionRationale = true
-                                    }
-                                },
-                                onDismiss = { showCoreMenu = false }
-                            )
-                        }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -213,26 +170,5 @@ fun HeaderSectionPortrait(
             }
         }
     }
-
-    if (showBorderSettings) {
-        WidgetBorderSettingsDialog(
-            hiddenPanels = hiddenPanels,
-            onTogglePanel = onTogglePanelBorder,
-            onDismiss = { showBorderSettings = false }
-        )
-    }
-
-    if (showPowerPermissionRationale) {
-        PermissionRationaleDialog(
-            message = "電源メニュー（電源を切る/再起動）を開くには、GridLauncherのアクセシビリティサービスを有効にしてください。",
-            onConfirm = {
-                showPowerPermissionRationale = false
-                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            },
-            onDismiss = { showPowerPermissionRationale = false }
-        )
-    }
 }
+

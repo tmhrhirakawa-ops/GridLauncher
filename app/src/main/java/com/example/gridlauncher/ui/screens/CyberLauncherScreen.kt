@@ -61,6 +61,7 @@ import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
 import com.example.gridlauncher.ui.components.MissingPermissionsSheet
+import com.example.gridlauncher.ui.components.PermissionRationaleDialog
 import com.example.gridlauncher.ui.components.QuickActionSelectorDialog
 import com.example.gridlauncher.ui.components.StandaloneAppSlotSection
 import com.example.gridlauncher.ui.components.WidgetDeleteConfirmDialog
@@ -85,6 +86,7 @@ import com.example.gridlauncher.util.loadHiddenWidgetPanels
 import com.example.gridlauncher.util.loadPlacedWidgets
 import com.example.gridlauncher.util.loadQuickActionSlots
 import com.example.gridlauncher.util.OnboardingSteps
+import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.requestUninstall
 import com.example.gridlauncher.util.saveAppSlotAssignment
@@ -278,9 +280,8 @@ fun CyberLauncherScreen() {
 
     // 各ウィジェットパネルの枠線表示設定（非表示にしているものだけを保持する）
     var hiddenWidgetPanels by remember { mutableStateOf(loadHiddenWidgetPanels(prefs)) }
-    fun toggleAllWidgetBorders() {
-        val allPanels = WidgetPanel.entries.toSet()
-        hiddenWidgetPanels = if (hiddenWidgetPanels == allPanels) emptySet() else allPanels
+    fun setAllWidgetBorders(visible: Boolean) {
+        hiddenWidgetPanels = if (visible) emptySet() else WidgetPanel.entries.toSet()
         saveHiddenWidgetPanels(prefs, hiddenWidgetPanels)
     }
     fun toggleWidgetPanelBorder(panel: WidgetPanel) {
@@ -323,6 +324,8 @@ fun CyberLauncherScreen() {
     // nullになった後も直前に表示していたフォルダの情報を保持しておく
     var displayedFolder by remember { mutableStateOf<FolderInfo?>(null) }
     var showAllAppsDrawer by remember { mutableStateOf(false) } // アプリドロワーの表示状態
+    var showCustomizeSheet by remember { mutableStateOf(false) } // カスタマイズ画面の表示状態
+    var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
 
     // APP SLOT（単体ウィジェット）ごとに割り当てられているアプリ。画面モードをまたいで共有する
@@ -701,6 +704,58 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // バッテリーコア（歯車）のタップで開くカスタマイズ画面
+    if (showCustomizeSheet) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            CustomizeSheet(
+                isWallpaperMode = isWallpaperMode,
+                onWallpaperModeChange = { enabled ->
+                    isWallpaperMode = enabled
+                    prefs.edit { putBoolean("is_wallpaper_mode", enabled) }
+                },
+                isDarkTheme = isDarkTheme,
+                onDarkThemeChange = { dark ->
+                    isDarkTheme = dark
+                    prefs.edit { putBoolean("is_dark_theme", dark) }
+                },
+                accentColor = accentColor,
+                onAccentColorChange = { color ->
+                    accentColor = color
+                    prefs.edit { putInt("accent_color", color.toArgb()) }
+                },
+                useOriginalIconColors = useOriginalIconColors,
+                onUseOriginalIconColorsChange = { enabled ->
+                    if (enabled != useOriginalIconColors) toggleUseOriginalIconColors()
+                },
+                hiddenPanels = hiddenWidgetPanels,
+                onSetAllBorders = { visible -> setAllWidgetBorders(visible) },
+                onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) },
+                onOpenPowerMenu = {
+                    openPowerMenuOrRequestPermission(context) {
+                        showPowerPermissionRationale = true
+                    }
+                },
+                onDismiss = { showCustomizeSheet = false }
+            )
+        }
+    }
+
+    if (showPowerPermissionRationale) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            PermissionRationaleDialog(
+                message = "電源メニュー（電源を切る/再起動）を開くには、GridLauncherのアクセシビリティサービスを有効にしてください。",
+                onConfirm = {
+                    showPowerPermissionRationale = false
+                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                },
+                onDismiss = { showPowerPermissionRationale = false }
+            )
+        }
+    }
+
     // 編集モードで✗ボタンが押されたときの「スロットから削除」か「アンインストール」かの選択ダイアログ
     pendingRemoval?.let { removal ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
@@ -953,41 +1008,20 @@ fun CyberLauncherScreen() {
                     // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                     HeaderSectionPortrait(
                         nowPlaying = nowPlaying,
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
-                        },
-                        hiddenPanels = hiddenWidgetPanels,
-                        onToggleAllBorders = { toggleAllWidgetBorders() },
-                        onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
+                        onCoreClick = { showCustomizeSheet = true }
                     )
                 } else if (isPortrait) {
                     // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                     HeaderSectionPortrait(
                         nowPlaying = nowPlaying,
                         isLarge = true,
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
-                        },
-                        hiddenPanels = hiddenWidgetPanels,
-                        onToggleAllBorders = { toggleAllWidgetBorders() },
-                        onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
+                        onCoreClick = { showCustomizeSheet = true }
                     )
                 } else {
                     // 横画面（ランドスケープ/メイン画面）のレイアウト
                     HeaderSectionLandscape(
                         nowPlaying = nowPlaying,
-                        isWallpaperMode = isWallpaperMode,
-                        onWallpaperToggle = {
-                            isWallpaperMode = !isWallpaperMode
-                            prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
-                        },
-                        hiddenPanels = hiddenWidgetPanels,
-                        onToggleAllBorders = { toggleAllWidgetBorders() },
-                        onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) }
+                        onCoreClick = { showCustomizeSheet = true }
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
