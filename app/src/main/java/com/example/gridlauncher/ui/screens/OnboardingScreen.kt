@@ -63,7 +63,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     }
 
     Surface(color = colors.bg, modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
+        // Edge-to-Edge 表示のため、ナビゲーションバー（3ボタン/ジェスチャー）・ステータスバー・
+        // ディスプレイカットアウトの分を避けてから余白を取る（ボタンがバーと重ならないように）
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp)) {
             // 進捗ドット（ウェルカム・完了を含めない、各ステップの数だけ表示）
             if (currentStep in 1..OnboardingSteps.size) {
                 Row(
