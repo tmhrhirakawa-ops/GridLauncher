@@ -83,6 +83,12 @@ import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.SlotGridSize
+import com.example.gridlauncher.util.DockLayout
+import com.example.gridlauncher.util.loadDockLayout
+import com.example.gridlauncher.util.dockAppsKeyFor
+import com.example.gridlauncher.util.loadShareDockAcrossOrientations
+import com.example.gridlauncher.util.saveShareDockAcrossOrientations
+import com.example.gridlauncher.util.saveDockLayout
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 import com.example.gridlauncher.util.AppWidgetHostManager
 import com.example.gridlauncher.util.allocateNextAppSlotInstanceId
@@ -347,8 +353,11 @@ fun CyberLauncherScreen() {
     }
 
     // DockApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var dockPackages by remember {
-        mutableStateOf(prefs.getString("dock_apps", "")?.split(",") ?: emptyList())
+    // 縦画面と横画面で同じ並びにするかどうか（APP LISTと同様。別々のときは横画面用の並びを使う）
+    var shareDockAcrossOrientations by remember { mutableStateOf(loadShareDockAcrossOrientations(prefs)) }
+    val dockAppsKey = dockAppsKeyFor(shareDockAcrossOrientations, isPortrait)
+    var dockPackages by remember(dockAppsKey) {
+        mutableStateOf(prefs.getString(dockAppsKey, "")?.split(",") ?: emptyList())
     }
 
     // フォルダ: SharedPreferencesから保存されたフォルダ（ID→FolderInfo）を読み込む
@@ -396,6 +405,14 @@ fun CyberLauncherScreen() {
     }
     val dockApps = remember(dockPackages, appsByPackage) {
         dockPackages.map { pkg -> if (pkg.isEmpty()) null else appsByPackage[pkg] }
+    }
+    // DOCKの並び（1ページのアイコン数・ページ数）。画面の向きごとに保存する（カスタマイズ画面で変更）
+    var dockLayout by remember(isPortrait) { mutableStateOf(loadDockLayout(prefs, isPortrait)) }
+    // アプリが入っているページ数。これより少ないページ数にはできない（設定より多ければこちらで表示する）
+    val dockMinPageCount = requiredSlotGridPages(dockPackages, dockLayout.slotsPerPage) { it.isEmpty() }
+    fun updateDockLayout(layout: DockLayout) {
+        dockLayout = layout
+        saveDockLayout(prefs, isPortrait, layout)
     }
 
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
@@ -603,7 +620,7 @@ fun CyberLauncherScreen() {
         }
         if (dock != dockPackages) {
             dockPackages = dock
-            prefs.edit { putString("dock_apps", dock.joinToString(",")) }
+            prefs.edit { putString(dockAppsKey, dock.joinToString(",")) }
         }
     }
     val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
@@ -611,11 +628,11 @@ fun CyberLauncherScreen() {
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
     // SharedPreferencesのAPP LIST・DOCKの並びを直接書き換える。ここではその変更を
     // 検知して、画面上のgridPackages/dockPackagesに反映する。
-    DisposableEffect(prefs, gridAppsKey) {
+    DisposableEffect(prefs, gridAppsKey, dockAppsKey) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
             when (key) {
                 gridAppsKey -> gridPackages = sharedPrefs.getString(gridAppsKey, "")?.split(",") ?: emptyList()
-                "dock_apps" -> dockPackages = sharedPrefs.getString("dock_apps", "")?.split(",") ?: emptyList()
+                dockAppsKey -> dockPackages = sharedPrefs.getString(dockAppsKey, "")?.split(",") ?: emptyList()
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -633,6 +650,15 @@ fun CyberLauncherScreen() {
         folders = loadFolders(prefs)
         val key = gridAppsKeyFor(share, isPortrait)
         gridPackages = prefs.getString(key, "")?.split(",") ?: emptyList()
+    }
+
+    // 縦画面と横画面でDOCKに同じ並びを使うかどうかを切り替える。同じにする場合は、
+    // 今表示している向きの並びにそろえる
+    fun setShareDockAcrossOrientations(share: Boolean) {
+        if (share == shareDockAcrossOrientations) return
+        saveShareDockAcrossOrientations(prefs, share, keepLandscape = !isPortrait)
+        shareDockAcrossOrientations = share
+        dockPackages = prefs.getString(dockAppsKeyFor(share, isPortrait), "")?.split(",") ?: emptyList()
     }
 
     // ウィジェット編集モード（ウィジェットのヘッダーなど、個々のスロット以外の長押しで入る。
@@ -1024,6 +1050,13 @@ fun CyberLauncherScreen() {
                     showDock = visible
                     prefs.edit { putBoolean("show_dock", visible) }
                 },
+                shareDockAcrossOrientations = shareDockAcrossOrientations,
+                onShareDockAcrossOrientationsChange = ::setShareDockAcrossOrientations,
+                dockSlotsPerPage = dockLayout.slotsPerPage,
+                onDockSlotsPerPageChange = { updateDockLayout(dockLayout.copy(slotsPerPage = it)) },
+                dockPageCount = maxOf(dockLayout.pageCount, dockMinPageCount),
+                dockMinPageCount = dockMinPageCount,
+                onDockPageCountChange = { updateDockLayout(dockLayout.copy(pageCount = it)) },
                 showAddWidgetTile = showAddWidgetTile,
                 onShowAddWidgetTileChange = { visible ->
                     showAddWidgetTile = visible
@@ -1105,7 +1138,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         dockPackages = newPackages
-                        prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+                        prefs.edit { putString(dockAppsKey, newPackages.joinToString(",")) }
                     }
                     appSelectorTarget = null
                     targetIndex = null
@@ -1608,6 +1641,8 @@ fun CyberLauncherScreen() {
                     Spacer(modifier = Modifier.height(16.dp))
                     BottomDockSection(
                         apps = dockApps,
+                        slotsPerPage = dockLayout.slotsPerPage,
+                        pageCount = maxOf(dockLayout.pageCount, dockMinPageCount),
                         isWallpaperMode = isWallpaperMode,
                         activeNotifications = activeNotifications,
                         useOriginalIconColors = useOriginalIconColors,

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.VerticalAlignBottom
 import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.outlined.Wallpaper
@@ -48,6 +49,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -61,6 +64,9 @@ import com.example.gridlauncher.ui.components.DefaultAccentColor
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
+import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
+import com.example.gridlauncher.util.DOCK_MIN_SLOTS_PER_PAGE
+import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
 
 /**
  * バッテリーコア（歯車アイコン）のタップで開く、ランチャーの見た目をカスタマイズするボトムシート。
@@ -86,6 +92,13 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param onShowHeaderChange ヘッダーの表示スイッチが切り替えられたときのコールバック。
  * @param showDock DOCKを表示しているかどうか。
  * @param onShowDockChange DOCKの表示スイッチが切り替えられたときのコールバック。
+ * @param shareDockAcrossOrientations 縦画面と横画面でDOCKに同じアプリの並びを使うかどうか。
+ * @param onShareDockAcrossOrientationsChange 上記のスイッチが切り替えられたときのコールバック。
+ * @param dockSlotsPerPageDOCKの1ページに並べるアイコン数（今の画面の向きのもの）。
+ * @param onDockSlotsPerPageChange 上記が変更されたときのコールバック。
+ * @param dockPageCount DOCKのページ数（今の画面の向きのもの）。
+ * @param dockMinPageCount DOCKのアプリが入っているページ数（これより少なくはできない）。
+ * @param onDockPageCountChange DOCKのページ数が変更されたときのコールバック。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -115,6 +128,13 @@ fun CustomizeSheet(
     onShowHeaderChange: (Boolean) -> Unit,
     showDock: Boolean,
     onShowDockChange: (Boolean) -> Unit,
+    shareDockAcrossOrientations: Boolean,
+    onShareDockAcrossOrientationsChange: (Boolean) -> Unit,
+    dockSlotsPerPage: Int,
+    onDockSlotsPerPageChange: (Int) -> Unit,
+    dockPageCount: Int,
+    dockMinPageCount: Int,
+    onDockPageCountChange: (Int) -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -147,6 +167,8 @@ fun CustomizeSheet(
     // 画面に収まりきらない小さい画面で発生）。中身の高さに上限を設けてシートが上端に届かない
     // ようにし、収まらない分は中身をスクロールさせる
     val windowInfo = LocalWindowInfo.current
+    // DOCKの並びは画面の向きごとの設定なので、どちらの向きの設定かを表示する
+    val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
     val maxContentHeight = with(LocalDensity.current) { windowInfo.containerSize.height.toDp() } * 0.75f
 
     ModalBottomSheet(
@@ -281,13 +303,68 @@ fun CustomizeSheet(
             ) {
                 CyberSwitch(checked = showHeader, onCheckedChange = onShowHeaderChange)
             }
-            CustomizeRow(
-                icon = Icons.Outlined.VerticalAlignBottom,
-                title = "DOCK の表示",
-                description = "非表示にすると、その分ウィジェットのエリアが広がります",
-                onClick = { onShowDockChange(!showDock) }
-            ) {
-                CyberSwitch(checked = showDock, onCheckedChange = onShowDockChange)
+            // DOCKの表示と、1ページのアイコン数・ページ数（今の画面の向きの設定。縦横で別々に保存する）
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.VerticalAlignBottom,
+                    title = "DOCK の表示",
+                    description = "非表示にすると、その分ウィジェットのエリアが広がります",
+                    modifier = Modifier.clickable { onShowDockChange(!showDock) }
+                ) {
+                    CyberSwitch(checked = showDock, onCheckedChange = onShowDockChange)
+                }
+                AnimatedVisibility(visible = showDock, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column {
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        // 縦画面と横画面で同じアプリを並べるかどうか（APP LISTと同様）
+                        CustomizeRowContent(
+                            icon = Icons.Outlined.ScreenRotation,
+                            title = "縦画面・横画面で同じ並びにする",
+                            description = if (shareDockAcrossOrientations) {
+                                "縦画面と横画面で同じアプリを並べます"
+                            } else {
+                                "縦画面と横画面で別々に並べます（オンにすると今の向きの並びにそろえます）"
+                            },
+                            modifier = Modifier.clickable { onShareDockAcrossOrientationsChange(!shareDockAcrossOrientations) }
+                        ) {
+                            CyberSwitch(checked = shareDockAcrossOrientations, onCheckedChange = onShareDockAcrossOrientationsChange)
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        Column(
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "今の画面の向き（${if (isPortrait) "縦画面" else "横画面"}）の設定です",
+                                fontFamily = CyberFont,
+                                fontSize = 10.sp,
+                                color = colors.text.copy(alpha = 0.5f)
+                            )
+                            StepperRow(
+                                label = "1ページのアイコン数",
+                                value = dockSlotsPerPage,
+                                min = DOCK_MIN_SLOTS_PER_PAGE,
+                                max = DOCK_MAX_SLOTS_PER_PAGE,
+                                onChange = onDockSlotsPerPageChange
+                            )
+                            StepperRow(
+                                label = "ページ数",
+                                value = dockPageCount,
+                                min = dockMinPageCount,
+                                max = SLOT_GRID_MAX_PAGES,
+                                onChange = onDockPageCountChange
+                            )
+                            if (dockMinPageCount > 1) {
+                                Text(
+                                    "アプリが入っている${dockMinPageCount}ページより少なくはできません",
+                                    fontFamily = CyberFont,
+                                    fontSize = 10.sp,
+                                    color = colors.text.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）

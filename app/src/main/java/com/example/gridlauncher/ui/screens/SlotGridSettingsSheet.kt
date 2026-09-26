@@ -240,7 +240,7 @@ fun SlotGridSettingsSheet(
 
 /** ラベルと、−/＋で値を増減するステッパーを並べた行。 */
 @Composable
-private fun StepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+internal fun StepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
     val colors = LocalCyberColors.current
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text, modifier = Modifier.weight(1f))
@@ -274,7 +274,7 @@ private fun StyleOption(label: String, selected: Boolean, onClick: () -> Unit, m
 
 /** −/＋で値を[min]〜[max]の範囲で増減するステッパー。 */
 @Composable
-private fun Stepper(value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+internal fun Stepper(value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
     val colors = LocalCyberColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
