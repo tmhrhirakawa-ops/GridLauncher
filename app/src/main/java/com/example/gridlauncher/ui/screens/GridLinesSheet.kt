@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
@@ -56,6 +57,7 @@ fun GridLinesSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = maxContentHeight)
+                .consumeUpwardSheetFling()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),

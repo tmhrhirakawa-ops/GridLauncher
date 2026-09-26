@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.loadWidgetPreviewBitmap
@@ -161,7 +162,7 @@ fun AppWidgetPickerDialog(onDismiss: () -> Unit, onSelect: (AppWidgetProviderInf
             } else {
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxSize().padding(bottom = 16.dp)
+                    modifier = Modifier.fillMaxSize().consumeUpwardSheetFling().padding(bottom = 16.dp)
                 ) {
                     items(filteredEntries) { entry ->
                         WidgetProviderCard(entry = entry, onClick = { onSelect(entry.info) })
