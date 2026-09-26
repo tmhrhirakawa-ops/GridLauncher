@@ -99,6 +99,7 @@ private const val BaseRows = 6
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
  * @param onWallpaperModeToggle 壁紙透過（CLEAR）ボタンがクリックされたときのコールバック。
  * @param onGridLinesClick グリッド線（GRID）ボタンがクリックされたときのコールバック（グリッド線の設定画面を開く）。
+ * @param onCustomizeClick カスタマイズ（CUSTOM）ボタンがクリックされたときのコールバック（カスタマイズ画面を開く）。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
  * @param onUseOriginalIconColorsChange カラーパレット下部の「アプリアイコンはオリジナルカラーを
  *   使用」チェックボックスが切り替えられたときのコールバック。
@@ -122,6 +123,7 @@ fun QuickAccessSection(
     onThemeToggle: () -> Unit = {},
     onWallpaperModeToggle: () -> Unit = {},
     onGridLinesClick: () -> Unit = {},
+    onCustomizeClick: () -> Unit = {},
     onAccentColorChange: (Color) -> Unit = {},
     onUseOriginalIconColorsChange: (Boolean) -> Unit = {},
     onSettingsClick: () -> Unit = {},
@@ -193,6 +195,7 @@ fun QuickAccessSection(
             }
             QuickActionId.WALLPAPER_TRANSPARENT -> onWallpaperModeToggle()
             QuickActionId.GRID_LINES -> onGridLinesClick()
+            QuickActionId.CUSTOMIZE -> onCustomizeClick()
             QuickActionId.WALLPAPER -> {
                 val intent = Intent(Intent.ACTION_SET_WALLPAPER).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK

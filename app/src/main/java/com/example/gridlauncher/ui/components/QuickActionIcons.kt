@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,4 +34,5 @@ val QuickActionId.icon: ImageVector
         QuickActionId.WALLPAPER -> Icons.Outlined.Wallpaper
         QuickActionId.WALLPAPER_TRANSPARENT -> Icons.Outlined.Opacity
         QuickActionId.GRID_LINES -> Icons.Outlined.GridOn
+        QuickActionId.CUSTOMIZE -> Icons.Outlined.Tune
     }

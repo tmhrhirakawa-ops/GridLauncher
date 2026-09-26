@@ -1523,6 +1523,7 @@ fun CyberLauncherScreen() {
                             },
                             // グリッド線（ウィジェットごとの枠線）の設定画面を開く
                             onGridLinesClick = { showGridLinesSheet = true },
+                            onCustomizeClick = { showCustomizeSheet = true },
                             onSettingsClick = { showQuickAccessSettings = true },
                             onLayoutMeasured = { autoColumns, autoRows, pageSize ->
                                 quickAccessAutoSize = SlotGridSize(autoColumns, autoRows)

@@ -19,7 +19,8 @@ enum class QuickActionId(val label: String, val description: String) {
     APP("APP", "アプリの設定画面を開く"),
     WALLPAPER("WALL", "壁紙の設定画面を開く"),
     WALLPAPER_TRANSPARENT("CLEAR", "壁紙の透過を切り替える"),
-    GRID_LINES("GRID", "ウィジェットの枠線（グリッド線）の設定を開く")
+    GRID_LINES("GRID", "ウィジェットの枠線（グリッド線）の設定を開く"),
+    CUSTOMIZE("CUSTOM", "カスタマイズ画面を開く")
 }
 
 /**
