@@ -40,8 +40,9 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param isCompact trueの場合、アプリ名は表示せずアイコンのみを中央に表示する
- *   （APP LISTのICON ONLYモードなど、正方形のスロット向け）。falseの場合は従来通り、
- *   アイコンと名前を横に並べる。
+ *   （APP LISTのICON ONLYモードなど、正方形のスロット向け）。falseの場合は、アイコンと名前を
+ *   横に並べる。ただし名前が横に入り切らないほど狭いスロットでは、アイコンの下に小さめに表示する
+ *   （[cardLabelPlacement]参照）。
  * @param useOriginalIconColors trueの場合、アクセントカラーのデュオトーン加工をせず、
  *   アプリ本来の色のアイコンをそのまま表示する。
  * @param onClick カードがクリックされたときのコールバック。
@@ -78,42 +79,54 @@ fun AppCard(
             onLongClick = onLongClick
         )
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             // 実アイコンを、ロゴの形は保ちつつアクセントカラーのデュオトーンに加工して表示する
             // （useOriginalIconColorsがtrueのときは加工せず本来の色のまま表示する）
             val bitmap = rememberAppIconBitmap(packageName, icon, isMonochrome, useOriginalIconColors)
 
-            if (isCompact) {
-                // アイコンのみを中央に表示する（アプリ名は表示しない）
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = name,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .align(Alignment.Center)
-                )
-            } else {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .align(Alignment.CenterStart),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            when (cardLabelPlacement(maxWidth, maxHeight, isCompact)) {
+                CardLabelPlacement.NONE -> {
+                    // アイコンのみを中央に表示する（アプリ名は表示しない）
                     Image(
                         bitmap = bitmap,
                         contentDescription = name,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier
+                            .size(32.dp)
+                            .align(Alignment.Center)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = name,
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = LocalCyberColors.current.text,
-                        maxLines = 1,
-                        modifier = Modifier.basicMarquee()
-                    )
+                }
+                CardLabelPlacement.BESIDE -> {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .align(Alignment.CenterStart),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = name,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        CardLabel(text = name, fontSize = 12)
+                    }
+                }
+                CardLabelPlacement.BELOW -> {
+                    // 名前がアイコンの横に入り切らない狭いスロットでは、アイコンの下に小さめに表示する
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .padding(horizontal = 4.dp)
+                            .align(Alignment.Center)
+                    ) {
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = name,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        CardLabel(text = name, fontSize = 9)
+                    }
                 }
             }
 
@@ -150,4 +163,47 @@ fun AppCard(
             }
         }
     }
+}
+
+/**
+ * アプリ名をアイコンの横に並べる表示に必要な、スロットの最小の幅。アイコン（28dp）と余白だけで
+ * 約64dpを使うため、これより狭いと名前がほとんど表示できない。その場合はアイコンの下に表示する。
+ */
+private val LabelBesideMinWidth = 100.dp
+
+/** アイコンの下にアプリ名を表示するのに必要な、スロットの最小の高さ。これより低い場合はアイコンのみにする。 */
+private val LabelBelowMinHeight = 40.dp
+
+/** カードの中でのアプリ名（フォルダ名）の表示位置。 */
+internal enum class CardLabelPlacement {
+    /** アイコンの横に並べる（通常）。 */
+    BESIDE,
+
+    /** アイコンの下に小さめに表示する（名前が横に入り切らない狭いスロット）。 */
+    BELOW,
+
+    /** 表示しない（ICON ONLYモード、または名前を入れる高さもない場合）。 */
+    NONE
+}
+
+/** スロットの大きさ（[width]×[height]）から、アプリ名の表示位置を決める。 */
+internal fun cardLabelPlacement(width: Dp, height: Dp, isCompact: Boolean): CardLabelPlacement = when {
+    isCompact -> CardLabelPlacement.NONE
+    width >= LabelBesideMinWidth -> CardLabelPlacement.BESIDE
+    height >= LabelBelowMinHeight -> CardLabelPlacement.BELOW
+    else -> CardLabelPlacement.NONE
+}
+
+/** カードに表示するアプリ名（フォルダ名）。入り切らない場合は流れるように表示する。 */
+@Composable
+internal fun CardLabel(text: String, fontSize: Int) {
+    Text(
+        text = text,
+        fontFamily = CyberFont,
+        fontSize = fontSize.sp,
+        fontWeight = FontWeight.Bold,
+        color = LocalCyberColors.current.text,
+        maxLines = 1,
+        modifier = Modifier.basicMarquee()
+    )
 }
