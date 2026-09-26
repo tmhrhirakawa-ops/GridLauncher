@@ -968,6 +968,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors, LocalAppDragState provides appDragState) {
             AllAppsDrawer(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { showAllAppsDrawer = false }
             )
         }
@@ -1083,6 +1084,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppSelectorDialog(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { 
                     appSelectorTarget = null 
                     targetIndex = null
@@ -1117,6 +1119,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppSelectorDialog(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { appSlotPickerInstanceId = null },
                 onAppSelected = { packageName ->
                     saveAppSlotAssignment(prefs, instanceId, packageName)

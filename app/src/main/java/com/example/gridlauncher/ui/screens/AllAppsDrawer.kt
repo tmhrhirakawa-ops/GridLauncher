@@ -42,10 +42,11 @@ import kotlinx.coroutines.withContext
  *
  * @param allApps インストールされているすべてのアプリのリスト。
  * @param onDismiss ドロワーが閉じられるときに呼び出されるコールバック。
+ * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーで加工せず本来の色のまま表示する。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
+fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIconColors: Boolean = false) {
     var searchQuery by remember { mutableStateOf("") }
     val filteredApps = remember(allApps, searchQuery) { allApps.filter { it.label.contains(searchQuery, ignoreCase = true) } }
     val context = LocalContext.current
@@ -102,6 +103,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                     name = appInfo.label,
                                     packageName = appInfo.packageName,
                                     isMonochrome = appInfo.iconIsMonochrome,
+                                    useOriginalIconColors = useOriginalIconColors,
                                     icon = appInfo.icon,
                                     modifier = Modifier
                                         .width(80.dp)
@@ -160,6 +162,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                         name = appInfo.label,
                         packageName = appInfo.packageName,
                         isMonochrome = appInfo.iconIsMonochrome,
+                        useOriginalIconColors = useOriginalIconColors,
                         icon = appInfo.icon,
                         modifier = Modifier
                             .aspectRatio(2.5f) // ACCESS GRIDの比率に近い形
