@@ -38,9 +38,9 @@ import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
-import com.example.gridlauncher.util.AccessGridSize
+import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.adaptiveSlotCount
-import com.example.gridlauncher.util.requiredAccessGridPages
+import com.example.gridlauncher.util.requiredSlotGridPages
 import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.roundToInt
 
@@ -116,7 +116,7 @@ fun SharedTransitionScope.AccessGridSection(
     openFolderId: String? = null,
     showBorder: Boolean = true,
     isIconOnly: Boolean = false,
-    gridSize: AccessGridSize? = null,
+    gridSize: SlotGridSize? = null,
     pageCount: Int = 1,
     useOriginalIconColors: Boolean = false,
     onSettingsClick: () -> Unit = {},
@@ -179,7 +179,7 @@ fun SharedTransitionScope.AccessGridSection(
             }
             // ページ数は設定画面で指定した数（スロットが埋まっても自動では増やさない）。ただし、
             // アプリ・フォルダが入っているページが隠れないよう、それより少なくはしない
-            val displayedPageCount = maxOf(pageCount, requiredAccessGridPages(items, pageSize) { it == null })
+            val displayedPageCount = maxOf(pageCount, requiredSlotGridPages(items, pageSize) { it == null })
             val pagerState = rememberPagerState(pageCount = { displayedPageCount })
             val dragState = LocalAppDragState.current
 

@@ -161,7 +161,7 @@ fun NowPlayingWidget(
 }
 
 /** 一時停止中のイコライザーのバーの高さ（割合）。 */
-private const val PausedBarHeight = 0.3f
+internal const val PausedBarHeight = 0.3f
 
 /**
  * 再生中のイコライザー風のバー。3本をそれぞれ異なる周期でパルスさせる。
@@ -169,7 +169,7 @@ private const val PausedBarHeight = 0.3f
  * 描画フェーズでのみ読むことで、毎フレームの再コンポジションを避ける。
  */
 @Composable
-private fun AnimatedEqualizerBars() {
+internal fun AnimatedEqualizerBars() {
     val infiniteTransition = rememberInfiniteTransition(label = "nowPlayingAnim")
     val bar1 = infiniteTransition.animateFloat(
         initialValue = 0.3f, targetValue = 1f,
@@ -200,7 +200,7 @@ private fun AnimatedEqualizerBars() {
  * 描画時にだけ呼ばれる。
  */
 @Composable
-private fun EqualizerBars(heights: (index: Int) -> Float) {
+internal fun EqualizerBars(heights: (index: Int) -> Float) {
     val accent = LocalCyberColors.current.accent
     Canvas(modifier = Modifier.size(width = 13.dp, height = 14.dp)) {
         val barWidth = 3.dp.toPx()
@@ -224,7 +224,7 @@ private fun EqualizerBars(heights: (index: Int) -> Float) {
  * 使っている間に無駄に動かないようにする。
  */
 @Composable
-private fun NowPlayingProgressBar(info: CyberNotificationListener.NowPlayingInfo, compact: Boolean) {
+internal fun NowPlayingProgressBar(info: CyberNotificationListener.NowPlayingInfo, compact: Boolean) {
     var nowElapsed by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(info.isPlaying, info.position, info.lastPositionUpdateTime, lifecycleOwner) {
@@ -313,7 +313,7 @@ fun rememberNowPlayingDisplayState(nowPlaying: CyberNotificationListener.NowPlay
 }
 
 @Composable
-private fun NowPlayingIconButton(
+internal fun NowPlayingIconButton(
     icon: ImageVector,
     contentDescription: String,
     dim: Boolean = false,
@@ -340,7 +340,7 @@ private fun NowPlayingIconButton(
  * 再生/一時停止ボタン。他の操作ボタンより目立つように、円形のアクセントカラー背景で強調する。
  */
 @Composable
-private fun NowPlayingPlayButton(isPlaying: Boolean, onClick: () -> Unit) {
+internal fun NowPlayingPlayButton(isPlaying: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(24.dp)

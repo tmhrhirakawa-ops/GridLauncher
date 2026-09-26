@@ -272,6 +272,9 @@ class CyberNotificationListener : NotificationListenerService() {
         val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             ?: metadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)
 
+        // 再生中のメディアがなくなったときにNOW PLAYINGウィジェットへ表示できるよう、最後に再生したものとして残す
+        if (title != null) saveLastPlayedMedia(this, LastPlayedMedia(controller.packageName, title, artist))
+
         _nowPlaying.value = NowPlayingInfo(
             packageName = controller.packageName,
             title = title,

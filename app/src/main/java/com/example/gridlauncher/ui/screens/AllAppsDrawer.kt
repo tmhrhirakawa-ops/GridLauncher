@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.ui.components.AppCard
 import com.example.gridlauncher.ui.components.DockAppCard
@@ -41,10 +42,11 @@ import kotlinx.coroutines.withContext
  *
  * @param allApps インストールされているすべてのアプリのリスト。
  * @param onDismiss ドロワーが閉じられるときに呼び出されるコールバック。
+ * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーで加工せず本来の色のまま表示する。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
+fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIconColors: Boolean = false) {
     var searchQuery by remember { mutableStateOf("") }
     val filteredApps = remember(allApps, searchQuery) { allApps.filter { it.label.contains(searchQuery, ignoreCase = true) } }
     val context = LocalContext.current
@@ -101,6 +103,7 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                     name = appInfo.label,
                                     packageName = appInfo.packageName,
                                     isMonochrome = appInfo.iconIsMonochrome,
+                                    useOriginalIconColors = useOriginalIconColors,
                                     icon = appInfo.icon,
                                     modifier = Modifier
                                         .width(80.dp)
@@ -152,13 +155,14 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                 columns = GridCells.Fixed(if (isPortrait) 3 else 5), // 縦画面なら3列、横画面なら5列
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize().consumeUpwardSheetFling()
             ) {
                 items(filteredApps) { appInfo ->
                     AppCard(
                         name = appInfo.label,
                         packageName = appInfo.packageName,
                         isMonochrome = appInfo.iconIsMonochrome,
+                        useOriginalIconColors = useOriginalIconColors,
                         icon = appInfo.icon,
                         modifier = Modifier
                             .aspectRatio(2.5f) // ACCESS GRIDの比率に近い形

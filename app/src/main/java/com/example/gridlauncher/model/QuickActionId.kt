@@ -17,5 +17,19 @@ enum class QuickActionId(val label: String, val description: String) {
     VOLUME("VOLUME", "音量を調整する"),
     BRIGHTNESS("BRIGHT", "画面の明るさを調整する"),
     APP("APP", "アプリの設定画面を開く"),
-    WALLPAPER("WALL", "壁紙の設定画面を開く")
+    WALLPAPER("WALL", "壁紙の設定画面を開く"),
+    WALLPAPER_TRANSPARENT("CLEAR", "壁紙の透過を切り替える"),
+    GRID_LINES("GRID", "ウィジェットの枠線（グリッド線）の設定を開く"),
+    CUSTOMIZE("CUSTOM", "カスタマイズ画面を開く")
+}
+
+/**
+ * QUICK ACCESSのボタンの表示スタイル（QUICK ACCESSの設定画面で選ぶ）。
+ *
+ * @property label 設定画面に表示する名前。
+ */
+enum class QuickButtonStyle(val label: String) {
+    ICON_ONLY("ICON ONLY"),
+    ICON_AND_NAME("ICON+NAME"),
+    NAME_ONLY("NAME ONLY")
 }

@@ -11,6 +11,15 @@ enum class WidgetPanel(val label: String) {
     DEVICE_STATUS("SYSTEM MONITOR"),
     QUICK_ACCESS("QUICK ACCESS"),
 
+    /** ヘッダーと同じ時刻・日付の表示（ヘッダーを非表示にしたときなどに使う）。 */
+    CLOCK("CLOCK"),
+
+    /** ヘッダーと同じバッテリー残量の表示（中央の歯車でカスタマイズ画面を開く）。 */
+    BATTERY("BATTERY"),
+
+    /** 再生中のメディアの表示・操作。ホーム画面にあるときは、ヘッダーのNOW PLAYINGを表示しない。 */
+    NOW_PLAYING("NOW PLAYING"),
+
     /**
      * APP LISTの1マス分（アプリショートカット1個）だけを独立したウィジェットとして配置したもの。
      * アイコンのみ・正方形の表示スタイル。[APPWIDGET]と同様に複数配置できる

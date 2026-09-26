@@ -253,6 +253,7 @@ fun SharedTransitionScope.FolderContentsDialog(
     if (addTargetIndex != null) {
         AppSelectorDialog(
             allApps = allApps,
+            useOriginalIconColors = useOriginalIconColors,
             onDismiss = { addTargetIndex = null },
             onAppSelected = { packageName ->
                 onAddApp(addTargetIndex!!, packageName)

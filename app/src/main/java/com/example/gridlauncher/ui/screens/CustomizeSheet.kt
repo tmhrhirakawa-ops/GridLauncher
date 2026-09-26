@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.GridOn
@@ -27,6 +28,9 @@ import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ScreenRotation
+import androidx.compose.material.icons.outlined.VerticalAlignBottom
+import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -45,18 +49,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
+import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
+import com.example.gridlauncher.util.DOCK_MIN_SLOTS_PER_PAGE
+import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
 
 /**
  * バッテリーコア（歯車アイコン）のタップで開く、ランチャーの見た目をカスタマイズするボトムシート。
@@ -77,6 +87,18 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param useOriginalIconColors アプリアイコンをオリジナルカラーのまま表示しているかどうか。
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
  * @param onOpenAppListSettings 「APP LISTの詳細設定」がタップされたときのコールバック（APP LISTの設定画面を開く）。
+ * @param onOpenQuickAccessSettings 「QUICK ACCESSの詳細設定」がタップされたときのコールバック（QUICK ACCESSの設定画面を開く）。
+ * @param showHeader ヘッダー（時刻・バッテリーなど）を表示しているかどうか（今の画面の向きのもの）。
+ * @param onShowHeaderChange ヘッダーの表示スイッチが切り替えられたときのコールバック。
+ * @param showDock DOCKを表示しているかどうか（今の画面の向きのもの）。
+ * @param onShowDockChange DOCKの表示スイッチが切り替えられたときのコールバック。
+ * @param shareDockAcrossOrientations 縦画面と横画面でDOCKに同じアプリの並びを使うかどうか。
+ * @param onShareDockAcrossOrientationsChange 上記のスイッチが切り替えられたときのコールバック。
+ * @param dockSlotsPerPage DOCKの1ページに並べるアイコン数（今の画面の向きのもの）。
+ * @param onDockSlotsPerPageChange 上記が変更されたときのコールバック。
+ * @param dockPageCount DOCKのページ数（今の画面の向きのもの）。
+ * @param dockMinPageCount DOCKのアプリが入っているページ数（これより少なくはできない）。
+ * @param onDockPageCountChange DOCKのページ数が変更されたときのコールバック。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -101,6 +123,18 @@ fun CustomizeSheet(
     useOriginalIconColors: Boolean,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
     onOpenAppListSettings: () -> Unit,
+    onOpenQuickAccessSettings: () -> Unit,
+    showHeader: Boolean,
+    onShowHeaderChange: (Boolean) -> Unit,
+    showDock: Boolean,
+    onShowDockChange: (Boolean) -> Unit,
+    shareDockAcrossOrientations: Boolean,
+    onShareDockAcrossOrientationsChange: (Boolean) -> Unit,
+    dockSlotsPerPage: Int,
+    onDockSlotsPerPageChange: (Int) -> Unit,
+    dockPageCount: Int,
+    dockMinPageCount: Int,
+    onDockPageCountChange: (Int) -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -113,7 +147,6 @@ fun CustomizeSheet(
     val colors = LocalCyberColors.current
     var colorPickerTarget by remember { mutableStateOf<Int?>(null) } // パレットで編集中のアクセントカラー（1 or 2）
     var showPanelAccents by remember { mutableStateOf(false) }
-    var showPanelBorders by remember { mutableStateOf(false) }
 
     colorPickerTarget?.let { target ->
         val isAccent2 = target == 2
@@ -134,6 +167,9 @@ fun CustomizeSheet(
     // 画面に収まりきらない小さい画面で発生）。中身の高さに上限を設けてシートが上端に届かない
     // ようにし、収まらない分は中身をスクロールさせる
     val windowInfo = LocalWindowInfo.current
+    // DOCKの並びは画面の向きごとの設定なので、どちらの向きの設定かを表示する
+    val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+    val orientationLabel = if (isPortrait) "縦画面" else "横画面"
     val maxContentHeight = with(LocalDensity.current) { windowInfo.containerSize.height.toDp() } * 0.75f
 
     ModalBottomSheet(
@@ -145,6 +181,7 @@ fun CustomizeSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = maxContentHeight)
+                .consumeUpwardSheetFling()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
@@ -247,6 +284,90 @@ fun CustomizeSheet(
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
             }
 
+            // QUICK ACCESSの詳細設定（縦横で同じ並びにするか・ボタンの並び・ページ数）。
+            // QUICK ACCESSのヘッダーの歯車ボタンと同じ設定画面を開く
+            CustomizeRow(
+                icon = Icons.Outlined.Dashboard,
+                title = "QUICK ACCESS の詳細設定",
+                description = "ボタンの並び・ページ数などを設定します",
+                onClick = onOpenQuickAccessSettings
+            ) {
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+            }
+
+            // ヘッダー・DOCKの表示切り替え（非表示にすると、その分ウィジェットのエリアが広がる）
+            CustomizeRow(
+                icon = Icons.Outlined.VerticalAlignTop,
+                title = "ヘッダーの表示（$orientationLabel）",
+                description = "非表示にすると、この画面は長押しメニューなどから開けます",
+                onClick = { onShowHeaderChange(!showHeader) }
+            ) {
+                CyberSwitch(checked = showHeader, onCheckedChange = onShowHeaderChange)
+            }
+            // DOCKの表示と、1ページのアイコン数・ページ数（今の画面の向きの設定。縦横で別々に保存する）
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.VerticalAlignBottom,
+                    title = "DOCK の表示（$orientationLabel）",
+                    description = "非表示にすると、その分ウィジェットのエリアが広がります",
+                    modifier = Modifier.clickable { onShowDockChange(!showDock) }
+                ) {
+                    CyberSwitch(checked = showDock, onCheckedChange = onShowDockChange)
+                }
+                AnimatedVisibility(visible = showDock, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column {
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        // 縦画面と横画面で同じアプリを並べるかどうか（APP LISTと同様）
+                        CustomizeRowContent(
+                            icon = Icons.Outlined.ScreenRotation,
+                            title = "縦画面・横画面で同じ並びにする",
+                            description = if (shareDockAcrossOrientations) {
+                                "縦画面と横画面で同じアプリを並べます"
+                            } else {
+                                "縦画面と横画面で別々に並べます（オンにすると今の向きの並びにそろえます）"
+                            },
+                            modifier = Modifier.clickable { onShareDockAcrossOrientationsChange(!shareDockAcrossOrientations) }
+                        ) {
+                            CyberSwitch(checked = shareDockAcrossOrientations, onCheckedChange = onShareDockAcrossOrientationsChange)
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        Column(
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "今の画面の向き（$orientationLabel）の設定です",
+                                fontFamily = CyberFont,
+                                fontSize = 10.sp,
+                                color = colors.text.copy(alpha = 0.5f)
+                            )
+                            StepperRow(
+                                label = "1ページのアイコン数",
+                                value = dockSlotsPerPage,
+                                min = DOCK_MIN_SLOTS_PER_PAGE,
+                                max = DOCK_MAX_SLOTS_PER_PAGE,
+                                onChange = onDockSlotsPerPageChange
+                            )
+                            StepperRow(
+                                label = "ページ数",
+                                value = dockPageCount,
+                                min = dockMinPageCount,
+                                max = SLOT_GRID_MAX_PAGES,
+                                onChange = onDockPageCountChange
+                            )
+                            if (dockMinPageCount > 1) {
+                                Text(
+                                    "アプリが入っている${dockMinPageCount}ページより少なくはできません",
+                                    fontFamily = CyberFont,
+                                    fontSize = 10.sp,
+                                    color = colors.text.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）
             CustomizeRow(
                 icon = Icons.Outlined.AddBox,
@@ -258,50 +379,11 @@ fun CustomizeSheet(
             }
 
             // グリッド線（ウィジェットの枠線）の編集
-            val allBordersVisible = hiddenPanels.isEmpty()
-            CustomizeCard {
-                CustomizeRowContent(
-                    icon = Icons.Outlined.GridOn,
-                    title = "グリッド線",
-                    description = when {
-                        allBordersVisible -> "すべてのウィジェットに表示中"
-                        hiddenPanels.size == WidgetPanel.entries.size -> "すべて非表示"
-                        else -> "一部のウィジェットのみ表示中"
-                    },
-                    modifier = Modifier.clickable { onSetAllBorders(!allBordersVisible) }
-                ) {
-                    CyberSwitch(checked = allBordersVisible, onCheckedChange = onSetAllBorders)
-                }
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
-                ExpandHeader(
-                    label = "ウィジェットごとに設定",
-                    expanded = showPanelBorders,
-                    onToggle = { showPanelBorders = !showPanelBorders }
-                )
-                AnimatedVisibility(visible = showPanelBorders, enter = expandVertically(), exit = shrinkVertically()) {
-                    Column(modifier = Modifier.padding(start = 4.dp, end = 14.dp, bottom = 6.dp)) {
-                        WidgetPanel.entries.forEach { panel ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onTogglePanelBorder(panel) }
-                            ) {
-                                Checkbox(
-                                    checked = panel !in hiddenPanels,
-                                    onCheckedChange = { onTogglePanelBorder(panel) },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = colors.accent,
-                                        checkmarkColor = colors.onAccent,
-                                        uncheckedColor = colors.border
-                                    )
-                                )
-                                Text(panel.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
-                            }
-                        }
-                    }
-                }
-            }
+            GridLinesCard(
+                hiddenPanels = hiddenPanels,
+                onSetAllBorders = onSetAllBorders,
+                onTogglePanelBorder = onTogglePanelBorder
+            )
 
             // 従来のコアメニューにあった、端末設定・電源メニューへの導線
             Spacer(modifier = Modifier.height(4.dp))
@@ -538,6 +620,71 @@ private fun FooterButton(icon: ImageVector, label: String, onClick: () -> Unit, 
             Icon(icon, contentDescription = null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
             Text(label, fontFamily = CyberFont, fontSize = 11.sp, color = colors.text.copy(alpha = 0.8f))
+        }
+    }
+}
+
+/**
+ * グリッド線（ウィジェットの枠線）の設定カード。全ウィジェットの一括表示/非表示のスイッチと、
+ * 開閉できるウィジェットごとのチェックボックスを持つ。カスタマイズ画面と、QUICK ACCESSの
+ * GRIDボタンで開くグリッド線の設定画面（[GridLinesSheet]）で共通に使う。
+ *
+ * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
+ * @param onSetAllBorders 全ウィジェットの枠線を一括で表示/非表示にするときのコールバック（true=表示）。
+ * @param onTogglePanelBorder 個別のウィジェットの枠線が切り替えられたときのコールバック。
+ * @param initiallyExpanded 「ウィジェットごとに設定」を最初から開いておくかどうか。
+ */
+@Composable
+internal fun GridLinesCard(
+    hiddenPanels: Set<WidgetPanel>,
+    onSetAllBorders: (Boolean) -> Unit,
+    onTogglePanelBorder: (WidgetPanel) -> Unit,
+    initiallyExpanded: Boolean = false
+) {
+    val colors = LocalCyberColors.current
+    var showPanelBorders by remember { mutableStateOf(initiallyExpanded) }
+    val allBordersVisible = hiddenPanels.isEmpty()
+    CustomizeCard {
+        CustomizeRowContent(
+            icon = Icons.Outlined.GridOn,
+            title = "グリッド線",
+            description = when {
+                allBordersVisible -> "すべてのウィジェットに表示中"
+                hiddenPanels.size == WidgetPanel.entries.size -> "すべて非表示"
+                else -> "一部のウィジェットのみ表示中"
+            },
+            modifier = Modifier.clickable { onSetAllBorders(!allBordersVisible) }
+        ) {
+            CyberSwitch(checked = allBordersVisible, onCheckedChange = onSetAllBorders)
+        }
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+        ExpandHeader(
+            label = "ウィジェットごとに設定",
+            expanded = showPanelBorders,
+            onToggle = { showPanelBorders = !showPanelBorders }
+        )
+        AnimatedVisibility(visible = showPanelBorders, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(modifier = Modifier.padding(start = 4.dp, end = 14.dp, bottom = 6.dp)) {
+                WidgetPanel.entries.forEach { panel ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onTogglePanelBorder(panel) }
+                    ) {
+                        Checkbox(
+                            checked = panel !in hiddenPanels,
+                            onCheckedChange = { onTogglePanelBorder(panel) },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = colors.accent,
+                                checkmarkColor = colors.onAccent,
+                                uncheckedColor = colors.border
+                            )
+                        )
+                        Text(panel.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
+                    }
+                }
+            }
         }
     }
 }

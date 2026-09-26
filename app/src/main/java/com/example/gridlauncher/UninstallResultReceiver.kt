@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.core.content.edit
 import com.example.gridlauncher.util.KEY_GRID_APPS
 import com.example.gridlauncher.util.KEY_GRID_APPS_LANDSCAPE
+import com.example.gridlauncher.util.KEY_DOCK_APPS
+import com.example.gridlauncher.util.KEY_DOCK_APPS_LANDSCAPE
 
 /**
  * [android.content.pm.PackageInstaller.uninstall] が要求する
@@ -45,8 +47,8 @@ class UninstallResultReceiver : BroadcastReceiver() {
     private fun removeFromSlots(context: Context, packageName: String) {
         val prefs = context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE)
         prefs.edit {
-            // 横画面用のAPP LIST（縦画面と横画面で別々に並べている場合のみ存在）も対象にする
-            for (key in listOf(KEY_GRID_APPS, KEY_GRID_APPS_LANDSCAPE, "dock_apps")) {
+            // 横画面用のAPP LIST・DOCK（縦画面と横画面で別々に並べている場合のみ存在）も対象にする
+            for (key in listOf(KEY_GRID_APPS, KEY_GRID_APPS_LANDSCAPE, KEY_DOCK_APPS, KEY_DOCK_APPS_LANDSCAPE)) {
                 val packages = prefs.getString(key, "")?.split(",") ?: continue
                 if (packageName !in packages) continue
                 val cleared = packages.map { if (it == packageName) "" else it }

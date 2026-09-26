@@ -62,7 +62,7 @@ import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
-import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
+import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
@@ -82,7 +82,13 @@ import com.example.gridlauncher.ui.drag.AppDropTarget
 import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
-import com.example.gridlauncher.util.AccessGridSize
+import com.example.gridlauncher.util.SlotGridSize
+import com.example.gridlauncher.util.DockLayout
+import com.example.gridlauncher.util.loadDockLayout
+import com.example.gridlauncher.util.dockAppsKeyFor
+import com.example.gridlauncher.util.loadShareDockAcrossOrientations
+import com.example.gridlauncher.util.saveShareDockAcrossOrientations
+import com.example.gridlauncher.util.saveDockLayout
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 import com.example.gridlauncher.util.AppWidgetHostManager
 import com.example.gridlauncher.util.allocateNextAppSlotInstanceId
@@ -97,21 +103,26 @@ import com.example.gridlauncher.util.getInstalledApps
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
 import com.example.gridlauncher.util.loadAccent2WidgetPanels
-import com.example.gridlauncher.util.loadAccessGridPageCount
-import com.example.gridlauncher.util.loadAccessGridSize
+import com.example.gridlauncher.util.loadSlotGridPageCount
+import com.example.gridlauncher.util.SlotGridSection
+import com.example.gridlauncher.util.loadSlotGridSize
 import com.example.gridlauncher.util.loadShareGridAcrossOrientations
 import com.example.gridlauncher.util.gridAppsKeyFor
 import com.example.gridlauncher.util.loadFolders
 import com.example.gridlauncher.util.loadHiddenWidgetPanels
 import com.example.gridlauncher.util.loadPlacedWidgets
 import com.example.gridlauncher.util.loadQuickActionSlots
+import com.example.gridlauncher.util.loadQuickButtonStyle
+import com.example.gridlauncher.util.loadShareQuickActionsAcrossOrientations
+import com.example.gridlauncher.util.quickActionsKeyFor
+import com.example.gridlauncher.util.saveShareQuickActionsAcrossOrientations
 import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
-import com.example.gridlauncher.util.requiredAccessGridPages
+import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
-import com.example.gridlauncher.util.saveAccessGridPageCount
-import com.example.gridlauncher.util.saveAccessGridSize
+import com.example.gridlauncher.util.saveSlotGridPageCount
+import com.example.gridlauncher.util.saveSlotGridSize
 import com.example.gridlauncher.util.saveShareGridAcrossOrientations
 import com.example.gridlauncher.util.requestUninstall
 import com.example.gridlauncher.util.saveAppSlotAssignment
@@ -119,6 +130,7 @@ import com.example.gridlauncher.util.saveFolder
 import com.example.gridlauncher.util.saveHiddenWidgetPanels
 import com.example.gridlauncher.util.savePlacedWidgets
 import com.example.gridlauncher.util.saveQuickActionSlots
+import com.example.gridlauncher.util.saveQuickButtonStyle
 import com.example.gridlauncher.util.CyberNotificationListener
 import com.example.gridlauncher.util.WidgetLayoutMode
 import androidx.compose.ui.graphics.Color
@@ -150,7 +162,8 @@ private tailrec fun Context.findActivity(): Activity = when (this) {
  */
 /** ウィジェット種類のうち、常に1個までしか同時配置できないもの（それ以外は複数配置できる）。 */
 private val SingleInstanceWidgetPanels = setOf(
-    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS
+    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS,
+    WidgetPanel.CLOCK, WidgetPanel.BATTERY, WidgetPanel.NOW_PLAYING
 )
 
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
@@ -340,8 +353,11 @@ fun CyberLauncherScreen() {
     }
 
     // DockApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var dockPackages by remember {
-        mutableStateOf(prefs.getString("dock_apps", "")?.split(",") ?: emptyList())
+    // 縦画面と横画面で同じ並びにするかどうか（APP LISTと同様。別々のときは横画面用の並びを使う）
+    var shareDockAcrossOrientations by remember { mutableStateOf(loadShareDockAcrossOrientations(prefs)) }
+    val dockAppsKey = dockAppsKeyFor(shareDockAcrossOrientations, isPortrait)
+    var dockPackages by remember(dockAppsKey) {
+        mutableStateOf(prefs.getString(dockAppsKey, "")?.split(",") ?: emptyList())
     }
 
     // フォルダ: SharedPreferencesから保存されたフォルダ（ID→FolderInfo）を読み込む
@@ -349,7 +365,28 @@ fun CyberLauncherScreen() {
     var folders by remember { mutableStateOf(loadFolders(prefs)) }
 
     // QUICK ACCESSのボタン構成: SharedPreferencesから読み込む（アプリグリッドと同様に追加・削除可能）
-    var quickActionSlots by remember { mutableStateOf(loadQuickActionSlots(prefs)) }
+    // 縦画面と横画面で同じ並びを使うかどうか（QUICK ACCESSの設定画面で切り替える）
+    var shareQuickActionsAcrossOrientations by remember { mutableStateOf(loadShareQuickActionsAcrossOrientations(prefs)) }
+    val quickActionsKey = quickActionsKeyFor(shareQuickActionsAcrossOrientations, isPortrait)
+    var quickActionSlots by remember(quickActionsKey) { mutableStateOf(loadQuickActionSlots(prefs, quickActionsKey)) }
+    // 縦画面と横画面でQUICK ACCESSに同じ並びを使うかどうかを切り替える。同じにする場合は、
+    // 今表示している向きの並びにそろえる
+    fun setShareQuickActionsAcrossOrientations(share: Boolean) {
+        if (share == shareQuickActionsAcrossOrientations) return
+        saveShareQuickActionsAcrossOrientations(prefs, share, keepLandscape = !isPortrait)
+        shareQuickActionsAcrossOrientations = share
+        quickActionSlots = loadQuickActionSlots(prefs, quickActionsKeyFor(share, isPortrait))
+    }
+    // 別のスロットに設定済みのボタンを空きスロットに設定しようとしたときの確認待ち（設定先のスロットとボタン）
+    var pendingQuickActionMove by remember { mutableStateOf<Pair<Int, QuickActionId>?>(null) }
+    // QUICK ACCESSの[index]番目のスロットに[action]を設定する。他のスロットに同じボタンがあれば、そちらは空にする
+    fun assignQuickAction(index: Int, action: QuickActionId) {
+        val newSlots = quickActionSlots.map { if (it == action) null else it }.toMutableList()
+        while (newSlots.size <= index) newSlots.add(null)
+        newSlots[index] = action
+        quickActionSlots = newSlots
+        saveQuickActionSlots(prefs, quickActionsKey, newSlots)
+    }
     var quickActionAddIndex by remember { mutableStateOf<Int?>(null) } // QUICK ACCESSの空きスロットタップ時（ボタン種類選択待ち）
 
     // パッケージ名からアプリ情報を引くための索引。スロットごとに全アプリを線形探索しないようにする
@@ -369,10 +406,17 @@ fun CyberLauncherScreen() {
     val dockApps = remember(dockPackages, appsByPackage) {
         dockPackages.map { pkg -> if (pkg.isEmpty()) null else appsByPackage[pkg] }
     }
+    // DOCKの並び（1ページのアイコン数・ページ数）。画面の向きごとに保存する（カスタマイズ画面で変更）
+    var dockLayout by remember(isPortrait) { mutableStateOf(loadDockLayout(prefs, isPortrait)) }
+    // アプリが入っているページ数。これより少ないページ数にはできない（設定より多ければこちらで表示する）
+    val dockMinPageCount = requiredSlotGridPages(dockPackages, dockLayout.slotsPerPage) { it.isEmpty() }
+    fun updateDockLayout(layout: DockLayout) {
+        dockLayout = layout
+        saveDockLayout(prefs, isPortrait, layout)
+    }
 
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
-    var addSlotChoiceIndex by remember { mutableStateOf<Int?>(null) } // グリッドの空きスロットタップ時（アプリ/フォルダ選択待ち）
     var openFolderId by remember { mutableStateOf<String?>(null) } // 中身を表示中のフォルダ
     // ポップアップを閉じるアニメーション中もフォルダの中身を表示し続けるため、openFolderIdが
     // nullになった後も直前に表示していたフォルダの情報を保持しておく
@@ -382,6 +426,17 @@ fun CyberLauncherScreen() {
     var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
+    // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）。
+    // 画面の向きごとに保存する（向きごとの値が未設定なら、向きで分ける前の共通の設定を引き継ぐ）
+    val orientationSuffix = if (isPortrait) "portrait" else "landscape"
+    val showHeaderKey = "show_header_$orientationSuffix"
+    val showDockKey = "show_dock_$orientationSuffix"
+    var showHeader by remember(showHeaderKey) {
+        mutableStateOf(prefs.getBoolean(showHeaderKey, prefs.getBoolean("show_header", true)))
+    }
+    var showDock by remember(showDockKey) {
+        mutableStateOf(prefs.getBoolean(showDockKey, prefs.getBoolean("show_dock", true)))
+    }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
@@ -427,7 +482,7 @@ fun CyberLauncherScreen() {
                 else -> return
             }
             quickActionSlots = slots
-            saveQuickActionSlots(prefs, slots)
+            saveQuickActionSlots(prefs, quickActionsKey, slots)
             return
         }
 
@@ -548,8 +603,8 @@ fun CyberLauncherScreen() {
         }
 
         // フォルダの中から取り出して中身が1つだけになったフォルダは、フォルダをやめて
-        // 残ったアプリそのものの表示に戻す（空のフォルダを作ってからアプリを入れていく手順を
-        // 妨げないよう、取り出したときだけ判定する）
+        // 残ったアプリそのものの表示に戻す（フォルダの中の空きスロットにアプリを追加していく
+        // ときなどは判定せず、取り出したときだけ判定する）
         if (source is AppDragSource.FolderSlot) {
             val remaining = editedFolders[source.folderId]?.packageNames?.filter { it.isNotEmpty() }
             val folderSlotIndex = grid.indexOf(folderSlotValue(source.folderId))
@@ -573,7 +628,7 @@ fun CyberLauncherScreen() {
         }
         if (dock != dockPackages) {
             dockPackages = dock
-            prefs.edit { putString("dock_apps", dock.joinToString(",")) }
+            prefs.edit { putString(dockAppsKey, dock.joinToString(",")) }
         }
     }
     val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
@@ -581,11 +636,11 @@ fun CyberLauncherScreen() {
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
     // SharedPreferencesのAPP LIST・DOCKの並びを直接書き換える。ここではその変更を
     // 検知して、画面上のgridPackages/dockPackagesに反映する。
-    DisposableEffect(prefs, gridAppsKey) {
+    DisposableEffect(prefs, gridAppsKey, dockAppsKey) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
             when (key) {
                 gridAppsKey -> gridPackages = sharedPrefs.getString(gridAppsKey, "")?.split(",") ?: emptyList()
-                "dock_apps" -> dockPackages = sharedPrefs.getString("dock_apps", "")?.split(",") ?: emptyList()
+                dockAppsKey -> dockPackages = sharedPrefs.getString(dockAppsKey, "")?.split(",") ?: emptyList()
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
@@ -603,6 +658,15 @@ fun CyberLauncherScreen() {
         folders = loadFolders(prefs)
         val key = gridAppsKeyFor(share, isPortrait)
         gridPackages = prefs.getString(key, "")?.split(",") ?: emptyList()
+    }
+
+    // 縦画面と横画面でDOCKに同じ並びを使うかどうかを切り替える。同じにする場合は、
+    // 今表示している向きの並びにそろえる
+    fun setShareDockAcrossOrientations(share: Boolean) {
+        if (share == shareDockAcrossOrientations) return
+        saveShareDockAcrossOrientations(prefs, share, keepLandscape = !isPortrait)
+        shareDockAcrossOrientations = share
+        dockPackages = prefs.getString(dockAppsKeyFor(share, isPortrait), "")?.split(",") ?: emptyList()
     }
 
     // ウィジェット編集モード（ウィジェットのヘッダーなど、個々のスロット以外の長押しで入る。
@@ -723,18 +787,29 @@ fun CyberLauncherScreen() {
     }
     // APP LISTのアイコンの並び（nullはAUTO）とページ数。ウィジェットの大きさは画面モードごとに
     // 違うため、画面モードごとに保存する
-    var accessGridSize by remember(widgetLayoutMode) { mutableStateOf(loadAccessGridSize(prefs, widgetLayoutMode)) }
-    var accessGridPageCount by remember(widgetLayoutMode) { mutableIntStateOf(loadAccessGridPageCount(prefs, widgetLayoutMode)) }
+    var accessGridSize by remember(widgetLayoutMode) { mutableStateOf(loadSlotGridSize(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode)) }
+    var accessGridPageCount by remember(widgetLayoutMode) { mutableIntStateOf(loadSlotGridPageCount(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode)) }
     // APP LISTが実際に測った、AUTOの場合の並びと1ページのスロット数（設定画面の表示に使う）
-    var accessGridAutoSize by remember(widgetLayoutMode) { mutableStateOf<AccessGridSize?>(null) }
+    var accessGridAutoSize by remember(widgetLayoutMode) { mutableStateOf<SlotGridSize?>(null) }
     var accessGridPageSize by remember(widgetLayoutMode) { mutableIntStateOf(0) }
     var showAppListSettings by remember { mutableStateOf(false) }
+    // QUICK ACCESSのスロットの並び（nullはAUTO）とページ数（APP LISTと同じく画面モードごとに保存する）
+    var quickAccessGridSize by remember(widgetLayoutMode) { mutableStateOf(loadSlotGridSize(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode)) }
+    var quickAccessPageCount by remember(widgetLayoutMode) { mutableIntStateOf(loadSlotGridPageCount(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode)) }
+    var quickAccessAutoSize by remember(widgetLayoutMode) { mutableStateOf<SlotGridSize?>(null) }
+    var quickAccessPageSize by remember(widgetLayoutMode) { mutableIntStateOf(0) }
+    var showQuickAccessSettings by remember { mutableStateOf(false) }
+    var showGridLinesSheet by remember { mutableStateOf(false) } // QUICK ACCESSのGRIDボタンで開くグリッド線の設定
+    // QUICK ACCESSのボタンの表示スタイル（アイコンのみ・アイコン＋名前・名前のみ）
+    var quickButtonStyle by remember { mutableStateOf(loadQuickButtonStyle(prefs)) }
 
     var placedWidgets by remember(widgetLayoutMode) { mutableStateOf(loadPlacedWidgets(prefs, widgetLayoutMode)) }
     fun updatePlacedWidgets(newWidgets: List<PlacedWidget>) {
         placedWidgets = newWidgets
         savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
     }
+    // NOW PLAYINGウィジェットをホーム画面に置いているときは、ヘッダーには再生中メディアを表示しない
+    val headerNowPlaying = nowPlaying.takeIf { placedWidgets.none { it.type == WidgetPanel.NOW_PLAYING } }
     var showWidgetTypeSelector by remember { mutableStateOf(false) } // 「+ ADD WIDGET」タップ時（種類選択待ち）
     var showAppWidgetPicker by remember { mutableStateOf(false) } // 「＋ 外部ウィジェットを追加」タップ時（プレビュー付き一覧表示中）
 
@@ -747,6 +822,36 @@ fun CyberLauncherScreen() {
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
     // 長押しメニューの「ウィジェットを追加」が押されたが、ホーム画面に空きがないことを知らせるダイアログの表示状態
     var showNoWidgetSpaceError by remember { mutableStateOf(false) }
+
+    // ホームボタンが押されたら、開いているポップアップ・ボトムシート・ダイアログ・フォルダ・
+    // 編集モード・ドラッグなどをすべて閉じて、ホーム画面の状態に戻る
+    // （各ウィジェットの中のポップアップは、それぞれがLocalHomePressedSignalを見て閉じる）
+    val homePressedSignal = LocalHomePressedSignal.current
+    LaunchedEffect(homePressedSignal) {
+        if (homePressedSignal == 0) return@LaunchedEffect
+        showAllAppsDrawer = false
+        showCustomizeSheet = false
+        showAppListSettings = false
+        showQuickAccessSettings = false
+        showGridLinesSheet = false
+        pendingQuickActionMove = null
+        showMissingPermissionsSheet = false
+        showPowerPermissionRationale = false
+        homeMenuOffset = null
+        openFolderId = null
+        appSelectorTarget = null
+        targetIndex = null
+        quickActionAddIndex = null
+        appSlotPickerInstanceId = null
+        pendingAppSlotRemoval = null
+        pendingDeleteWidget = null
+        showWidgetTypeSelector = false
+        showAppWidgetPicker = false
+        appWidgetTooLargeError = false
+        showNoWidgetSpaceError = false
+        isWidgetEditMode = false
+        appDragState.cancel()
+    }
 
     // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
     // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、
@@ -899,6 +1004,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors, LocalAppDragState provides appDragState) {
             AllAppsDrawer(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { showAllAppsDrawer = false }
             )
         }
@@ -939,6 +1045,28 @@ fun CyberLauncherScreen() {
                     showCustomizeSheet = false
                     showAppListSettings = true
                 },
+                onOpenQuickAccessSettings = {
+                    // シートを重ねず、カスタマイズ画面を閉じてからQUICK ACCESSの設定画面を開く
+                    showCustomizeSheet = false
+                    showQuickAccessSettings = true
+                },
+                showHeader = showHeader,
+                onShowHeaderChange = { visible ->
+                    showHeader = visible
+                    prefs.edit { putBoolean(showHeaderKey, visible) }
+                },
+                showDock = showDock,
+                onShowDockChange = { visible ->
+                    showDock = visible
+                    prefs.edit { putBoolean(showDockKey, visible) }
+                },
+                shareDockAcrossOrientations = shareDockAcrossOrientations,
+                onShareDockAcrossOrientationsChange = ::setShareDockAcrossOrientations,
+                dockSlotsPerPage = dockLayout.slotsPerPage,
+                onDockSlotsPerPageChange = { updateDockLayout(dockLayout.copy(slotsPerPage = it)) },
+                dockPageCount = maxOf(dockLayout.pageCount, dockMinPageCount),
+                dockMinPageCount = dockMinPageCount,
+                onDockPageCountChange = { updateDockLayout(dockLayout.copy(pageCount = it)) },
                 showAddWidgetTile = showAddWidgetTile,
                 onShowAddWidgetTileChange = { visible ->
                     showAddWidgetTile = visible
@@ -999,6 +1127,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppSelectorDialog(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { 
                     appSelectorTarget = null 
                     targetIndex = null
@@ -1019,7 +1148,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         dockPackages = newPackages
-                        prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
+                        prefs.edit { putString(dockAppsKey, newPackages.joinToString(",")) }
                     }
                     appSelectorTarget = null
                     targetIndex = null
@@ -1033,6 +1162,7 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppSelectorDialog(
                 allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
                 onDismiss = { appSlotPickerInstanceId = null },
                 onAppSelected = { packageName ->
                     saveAppSlotAssignment(prefs, instanceId, packageName)
@@ -1043,49 +1173,54 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // グリッドの空きスロットタップ時、「アプリを追加」か「フォルダを作成」かを選ばせる
-    addSlotChoiceIndex?.let { index ->
+    // QUICK ACCESSの空きスロットタップ時、追加するボタンの種類を選ばせる
+    quickActionAddIndex?.let { index ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AddSlotChoiceDialog(
-                onDismiss = { addSlotChoiceIndex = null },
-                onAddApp = {
-                    appSelectorTarget = "grid"
-                    targetIndex = index
-                    addSlotChoiceIndex = null
-                },
-                onCreateFolder = {
-                    val folder = createFolder(prefs, "新しいフォルダ")
-                    folders = folders + (folder.id to folder)
-                    val newPackages = gridPackages.toMutableList()
-                    while (newPackages.size <= index) {
-                        newPackages.add("")
+            QuickActionSelectorDialog(
+                assignedActions = quickActionSlots.filterNotNull().toSet(),
+                onDismiss = { quickActionAddIndex = null },
+                onSelect = { actionId ->
+                    quickActionAddIndex = null
+                    // 別のスロットに設定済みのボタンは、移動してよいか確認してから設定する
+                    if (actionId in quickActionSlots) {
+                        pendingQuickActionMove = index to actionId
+                    } else {
+                        assignQuickAction(index, actionId)
                     }
-                    newPackages[index] = folderSlotValue(folder.id)
-                    gridPackages = newPackages
-                    prefs.edit { putString(gridAppsKey, newPackages.joinToString(",")) }
-                    addSlotChoiceIndex = null
                 }
             )
         }
     }
 
-    // QUICK ACCESSの空きスロットタップ時、追加するボタンの種類を選ばせる
-    quickActionAddIndex?.let { index ->
-        val usedActions = quickActionSlots.filterNotNull().toSet()
-        val availableActions = QuickActionId.entries.filter { it !in usedActions }
+    // 別のスロットに設定済みのボタンを選んだときの確認。移動すると元のスロットは空になる
+    pendingQuickActionMove?.let { (index, actionId) ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            QuickActionSelectorDialog(
-                availableActions = availableActions,
-                onDismiss = { quickActionAddIndex = null },
-                onSelect = { actionId ->
-                    val newSlots = quickActionSlots.toMutableList()
-                    while (newSlots.size <= index) {
-                        newSlots.add(null)
+            AlertDialog(
+                onDismissRequest = { pendingQuickActionMove = null },
+                containerColor = colors.panel,
+                title = {
+                    Text("設定済みのボタンです", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
+                },
+                text = {
+                    Text(
+                        "「${actionId.label}」は別のスロットに設定されています。このスロットに移動しますか？（元のスロットは空になります）",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        color = colors.text.copy(alpha = 0.8f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        assignQuickAction(index, actionId)
+                        pendingQuickActionMove = null
+                    }) {
+                        Text("移動する", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
                     }
-                    newSlots[index] = actionId
-                    quickActionSlots = newSlots
-                    saveQuickActionSlots(prefs, newSlots)
-                    quickActionAddIndex = null
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingQuickActionMove = null }) {
+                        Text("キャンセル", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text.copy(alpha = 0.7f))
+                    }
                 }
             )
         }
@@ -1147,9 +1282,11 @@ fun CyberLauncherScreen() {
     // APP LISTのヘッダーの歯車ボタンで開く、APP LISTの設定（ICON ONLY・アイコンの並び・ページ数）
     if (showAppListSettings) {
         // アプリ・フォルダが入っているページより少なくはできない
-        val minPageCount = requiredAccessGridPages(gridPackages, accessGridPageSize) { it.isEmpty() }
+        val minPageCount = requiredSlotGridPages(gridPackages, accessGridPageSize) { it.isEmpty() }
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AppListSettingsSheet(
+            SlotGridSettingsSheet(
+                title = "APP LIST",
+                itemName = "アプリ",
                 isIconOnly = accessGridIconOnly,
                 onIconOnlyChange = { setAccessGridIconOnly(it) },
                 shareAcrossOrientations = shareGridAcrossOrientations,
@@ -1158,15 +1295,60 @@ fun CyberLauncherScreen() {
                 autoGridSize = accessGridAutoSize,
                 onGridSizeChange = { size ->
                     accessGridSize = size
-                    saveAccessGridSize(prefs, widgetLayoutMode, size)
+                    saveSlotGridSize(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode, size)
                 },
                 pageCount = maxOf(accessGridPageCount, minPageCount),
                 minPageCount = minPageCount,
                 onPageCountChange = { count ->
                     accessGridPageCount = count
-                    saveAccessGridPageCount(prefs, widgetLayoutMode, count)
+                    saveSlotGridPageCount(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode, count)
                 },
                 onDismiss = { showAppListSettings = false }
+            )
+        }
+    }
+
+    // QUICK ACCESSのヘッダーの歯車ボタンで開く、QUICK ACCESSの設定（縦横で同じ並びにするか・
+    // スロットの並び・ページ数）
+    if (showQuickAccessSettings) {
+        // ボタンが入っているページより少なくはできない
+        val minPageCount = requiredSlotGridPages(quickActionSlots, quickAccessPageSize) { it == null }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            SlotGridSettingsSheet(
+                title = "QUICK ACCESS",
+                itemName = "ボタン",
+                buttonStyle = quickButtonStyle,
+                onButtonStyleChange = { style ->
+                    quickButtonStyle = style
+                    saveQuickButtonStyle(prefs, style)
+                },
+                shareAcrossOrientations = shareQuickActionsAcrossOrientations,
+                onShareAcrossOrientationsChange = { setShareQuickActionsAcrossOrientations(it) },
+                gridSize = quickAccessGridSize,
+                autoGridSize = quickAccessAutoSize,
+                onGridSizeChange = { size ->
+                    quickAccessGridSize = size
+                    saveSlotGridSize(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode, size)
+                },
+                pageCount = maxOf(quickAccessPageCount, minPageCount),
+                minPageCount = minPageCount,
+                onPageCountChange = { count ->
+                    quickAccessPageCount = count
+                    saveSlotGridPageCount(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode, count)
+                },
+                onDismiss = { showQuickAccessSettings = false }
+            )
+        }
+    }
+
+    // QUICK ACCESSのGRIDボタンで開く、グリッド線（ウィジェットごとの枠線）の設定
+    if (showGridLinesSheet) {
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            GridLinesSheet(
+                hiddenPanels = hiddenWidgetPanels,
+                onSetAllBorders = { visible -> setAllWidgetBorders(visible) },
+                onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) },
+                onDismiss = { showGridLinesSheet = false }
             )
         }
     }
@@ -1281,29 +1463,32 @@ fun CyberLauncherScreen() {
                         bottom = if (isPortrait) 16.dp else 24.dp
                     )
             ) {
-                if (isPortrait && screenWidthDp < 600) {
-                    // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
-                    HeaderSectionPortrait(
-                        nowPlaying = nowPlaying,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
-                } else if (isPortrait) {
-                    // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
-                    HeaderSectionPortrait(
-                        nowPlaying = nowPlaying,
-                        isLarge = true,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
-                } else {
-                    // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape(
-                        nowPlaying = nowPlaying,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
+                // ヘッダー（カスタマイズ画面で非表示にでき、その分ウィジェットのエリアが広がる）
+                if (showHeader) {
+                    if (isPortrait && screenWidthDp < 600) {
+                        // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
+                        HeaderSectionPortrait(
+                            nowPlaying = headerNowPlaying,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    } else if (isPortrait) {
+                        // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
+                        HeaderSectionPortrait(
+                            nowPlaying = headerNowPlaying,
+                            isLarge = true,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    } else {
+                        // 横画面（ランドスケープ/メイン画面）のレイアウト
+                        HeaderSectionLandscape(
+                            nowPlaying = headerNowPlaying,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                HeaderDivider()
-                Spacer(modifier = Modifier.height(16.dp))
 
                 // ACCESS GRID内部のアプリ一覧の基準列数・行数。画面モードごとに従来の
                 // 「Mサイズ」と同じ値を使う。ウィジェット自体がリサイズされた場合は、
@@ -1365,11 +1550,15 @@ fun CyberLauncherScreen() {
                                 pageCount = accessGridPageCount,
                                 onSettingsClick = { showAppListSettings = true },
                                 onLayoutMeasured = { autoColumns, autoRows, pageSize ->
-                                    accessGridAutoSize = AccessGridSize(autoColumns, autoRows)
+                                    accessGridAutoSize = SlotGridSize(autoColumns, autoRows)
                                     accessGridPageSize = pageSize
                                 },
                                 useOriginalIconColors = useOriginalIconColors,
-                                onAddClick = { index -> addSlotChoiceIndex = index },
+                                onAddClick = { index ->
+                                    // 空きスロットはそのままアプリ選択を開く（フォルダはアプリ同士を重ねて作る）
+                                    appSelectorTarget = "grid"
+                                    targetIndex = index
+                                },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id }
                             )
                         }
@@ -1381,17 +1570,41 @@ fun CyberLauncherScreen() {
                             modifier = boxModifier,
                             showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels
                         )
+                        WidgetPanel.CLOCK -> ClockWidgetSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.CLOCK !in hiddenWidgetPanels
+                        )
+                        WidgetPanel.BATTERY -> BatteryWidgetSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.BATTERY !in hiddenWidgetPanels,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                        WidgetPanel.NOW_PLAYING -> NowPlayingSection(
+                            info = nowPlaying,
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.NOW_PLAYING !in hiddenWidgetPanels
+                        )
                         WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
                             modifier = boxModifier,
                             slots = quickActionSlots,
                             isWallpaperMode = isWallpaperMode,
-                            isResizing = isResizing,
+                            gridSize = quickAccessGridSize,
+                            pageCount = quickAccessPageCount,
                             accentColor = accentColor,
                             useOriginalIconColors = useOriginalIconColors,
                             showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
-                            onSlotsChanged = { newSlots ->
-                                quickActionSlots = newSlots
-                                saveQuickActionSlots(prefs, newSlots)
+                            buttonStyle = quickButtonStyle,
+                            onWallpaperModeToggle = {
+                                isWallpaperMode = !isWallpaperMode
+                                prefs.edit { putBoolean("is_wallpaper_mode", isWallpaperMode) }
+                            },
+                            // グリッド線（ウィジェットごとの枠線）の設定画面を開く
+                            onGridLinesClick = { showGridLinesSheet = true },
+                            onCustomizeClick = { showCustomizeSheet = true },
+                            onSettingsClick = { showQuickAccessSettings = true },
+                            onLayoutMeasured = { autoColumns, autoRows, pageSize ->
+                                quickAccessAutoSize = SlotGridSize(autoColumns, autoRows)
+                                quickAccessPageSize = pageSize
                             },
                             onThemeToggle = {
                                 val newTheme = !isDarkTheme
@@ -1435,21 +1648,26 @@ fun CyberLauncherScreen() {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                HeaderDivider()
-                Spacer(modifier = Modifier.height(16.dp))
-                // 下段: よく使うアプリ（ドック）
-                BottomDockSection(
-                    apps = dockApps,
-                    isWallpaperMode = isWallpaperMode,
-                    activeNotifications = activeNotifications, // 追加
-                    useOriginalIconColors = useOriginalIconColors,
-                    onAddClick = { index ->
-                        appSelectorTarget = "dock"
-                        targetIndex = index
-                    }
-                )
-                
+                // 下段: よく使うアプリ（ドック）。カスタマイズ画面で非表示にでき、その分ウィジェットの
+                // エリアが広がる
+                if (showDock) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    BottomDockSection(
+                        apps = dockApps,
+                        slotsPerPage = dockLayout.slotsPerPage,
+                        pageCount = maxOf(dockLayout.pageCount, dockMinPageCount),
+                        isWallpaperMode = isWallpaperMode,
+                        activeNotifications = activeNotifications,
+                        useOriginalIconColors = useOriginalIconColors,
+                        onAddClick = { index ->
+                            appSelectorTarget = "dock"
+                            targetIndex = index
+                        }
+                    )
+                }
+
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
                 Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
             }

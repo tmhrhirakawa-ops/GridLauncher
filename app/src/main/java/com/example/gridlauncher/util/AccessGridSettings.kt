@@ -3,64 +3,6 @@ package com.example.gridlauncher.util
 import android.content.SharedPreferences
 import androidx.core.content.edit
 
-/** APP LISTに手動で指定できる列数・行数の範囲。 */
-const val ACCESS_GRID_MIN_SPAN = 1
-const val ACCESS_GRID_MAX_SPAN = 8
-
-/** APP LISTに設定できるページ数の上限。 */
-const val ACCESS_GRID_MAX_PAGES = 10
-
-/**
- * APP LISTに手動で指定したアイコンの並び（列数×行数）。
- */
-data class AccessGridSize(val columns: Int, val rows: Int)
-
-private fun gridSizeKey(mode: WidgetLayoutMode) = "access_grid_size_${mode.name}"
-private fun pageCountKey(mode: WidgetLayoutMode) = "access_grid_pages_${mode.name}"
-
-/**
- * 画面モードごとに保存したAPP LISTのアイコンの並びを読み込む。
- * 未設定、またはAUTO（ウィジェットの大きさから自動で決める）の場合はnullを返す。
- */
-fun loadAccessGridSize(prefs: SharedPreferences, mode: WidgetLayoutMode): AccessGridSize? {
-    val parts = prefs.getString(gridSizeKey(mode), null)?.split(",") ?: return null
-    val columns = parts.getOrNull(0)?.toIntOrNull() ?: return null
-    val rows = parts.getOrNull(1)?.toIntOrNull() ?: return null
-    return AccessGridSize(
-        columns.coerceIn(ACCESS_GRID_MIN_SPAN, ACCESS_GRID_MAX_SPAN),
-        rows.coerceIn(ACCESS_GRID_MIN_SPAN, ACCESS_GRID_MAX_SPAN)
-    )
-}
-
-/** 画面モードごとのAPP LISTのアイコンの並びを保存する（nullはAUTO）。 */
-fun saveAccessGridSize(prefs: SharedPreferences, mode: WidgetLayoutMode, size: AccessGridSize?) {
-    prefs.edit {
-        if (size == null) remove(gridSizeKey(mode)) else putString(gridSizeKey(mode), "${size.columns},${size.rows}")
-    }
-}
-
-/**
- * 画面モードごとに保存したAPP LISTのページ数を読み込む（未設定なら1ページ）。
- * 実際に表示するページ数は、アプリが入っているページ数を下回らないよう呼び出し側で調整する。
- */
-fun loadAccessGridPageCount(prefs: SharedPreferences, mode: WidgetLayoutMode): Int =
-    prefs.getInt(pageCountKey(mode), 1).coerceIn(1, ACCESS_GRID_MAX_PAGES)
-
-/** 画面モードごとのAPP LISTのページ数を保存する。 */
-fun saveAccessGridPageCount(prefs: SharedPreferences, mode: WidgetLayoutMode, pageCount: Int) {
-    prefs.edit { putInt(pageCountKey(mode), pageCount.coerceIn(1, ACCESS_GRID_MAX_PAGES)) }
-}
-
-/**
- * スロットの中身（空きはnullや空文字）の並び[items]を1ページ[pageSize]個で区切ったとき、
- * 中身が入っている最後のスロットを表示するのに必要なページ数（最低1ページ）。
- */
-fun <T> requiredAccessGridPages(items: List<T>, pageSize: Int, isEmpty: (T) -> Boolean): Int {
-    if (pageSize <= 0) return 1
-    val lastUsedIndex = items.indexOfLast { !isEmpty(it) }
-    return if (lastUsedIndex < 0) 1 else lastUsedIndex / pageSize + 1
-}
-
 /** APP LISTの並び（パッケージ名・フォルダのスロット値のカンマ区切り）の保存キー。 */
 const val KEY_GRID_APPS = "grid_apps"
 

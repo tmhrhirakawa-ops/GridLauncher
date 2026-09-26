@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.icon
 import com.example.gridlauncher.ui.components.rememberAppIconBitmap
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
@@ -153,14 +155,22 @@ private fun DraggedItemIcon(item: AppDragItem, useOriginalIconColors: Boolean) {
                     tint = colors.accent,
                     modifier = Modifier.size(34.dp)
                 )
-                is AppDragItem.QuickAction -> Text(
-                    text = item.actionId.label,
-                    fontFamily = CyberFont,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.accent,
-                    maxLines = 1
-                )
+                is AppDragItem.QuickAction -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = item.actionId.icon,
+                        contentDescription = null,
+                        tint = colors.accent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = item.actionId.label,
+                        fontFamily = CyberFont,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.accent,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }

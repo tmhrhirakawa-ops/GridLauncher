@@ -1,6 +1,5 @@
 package com.example.gridlauncher.ui.sections
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -13,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,19 +28,18 @@ import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 
-/** 縦画面のドックで1ページに表示するスロット数。この数ぴったりで折り返してページ送りする。 */
-private const val SlotsPerPage = 4
-
 /**
  * よく使うアプリを表示するボトムドックセクション。
  *
- * 縦画面では、[SlotsPerPage]個ぴったりが画面内に収まるサイズでスロットを均等配置し、
+ * 1ページに[slotsPerPage]個ぴったりが画面内に収まるサイズでスロットを均等配置し、
  * それを超える分はページとして横にスワイプ（スナップ）して切り替える
  * （無段階の自由スクロールにはしない）。
  *
  * アプリは長押し→ドラッグで移動・削除する（[com.example.gridlauncher.ui.drag]参照）。
  *
  * @param apps 表示するアプリのリスト。
+ * @param slotsPerPage 1ページに並べるスロット数（カスタマイズ画面で設定）。
+ * @param pageCount ページ数（カスタマイズ画面で設定。アプリが入っているページ数以上）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーのデュオトーン加工をせず、
@@ -52,18 +49,14 @@ private const val SlotsPerPage = 4
 @Composable
 fun BottomDockSection(
     apps: List<AppInfo?>,
+    slotsPerPage: Int,
+    pageCount: Int,
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
     useOriginalIconColors: Boolean = false,
     onAddClick: (Int) -> Unit
 ) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    
-    // ドックは最大8個まで
-    val maxDockApps = 8
-    
     val dragState = LocalAppDragState.current
 
     // 1スロット分。どのスロットもドロップ先にし、アプリがあるスロットは長押し→ドラッグで持ち上げられる
@@ -111,34 +104,28 @@ fun BottomDockSection(
         }
     }
 
-    // 縦画面：SlotsPerPage個ぴったりが画面幅に収まる均等サイズで並べ、それを超える分は
+    // slotsPerPage個ぴったりが画面幅に収まる均等サイズで並べ、それを超える分は
     // ページ送り（スワイプでスナップ）にする（無段階スクロールにはしない）
-    if (!isLandscape) {
-        val pageCount = maxOf(1, (maxDockApps + SlotsPerPage - 1) / SlotsPerPage)
-        val pagerState = rememberPagerState(pageCount = { pageCount })
+    val pages = pageCount.coerceAtLeast(1)
+    val pagerState = rememberPagerState(pageCount = { pages })
+    // アイコン数が多いときは、アイコンを小さくしすぎないよう間隔を詰める
+    val slotSpacing = if (slotsPerPage > 5) 8.dp else 12.dp
 
-        HorizontalPager(
-            state = pagerState,
-            // ドラッグ中に端でページ送りしても、ドラッグ元のスロットが破棄されないよう全ページを保持する
-            beyondViewportPageCount = pageCount - 1,
-            modifier = Modifier.fillMaxWidth().height(60.dp).dragEdgeAutoScroll(pagerState)
-        ) { page ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                for (col in 0 until SlotsPerPage) {
-                    dockSlot(page * SlotsPerPage + col)
-                }
-            }
-        }
-    } else {
+    HorizontalPager(
+        state = pagerState,
+        pageSpacing = slotSpacing,
+        // 1ページだけのときはスワイプしても動かないようにする
+        userScrollEnabled = pages > 1,
+        // ドラッグ中に端でページ送りしても、ドラッグ元のスロットが破棄されないよう全ページを保持する
+        beyondViewportPageCount = pages - 1,
+        modifier = Modifier.fillMaxWidth().height(60.dp).dragEdgeAutoScroll(pagerState)
+    ) { page ->
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth().height(60.dp)
+            horizontalArrangement = Arrangement.spacedBy(slotSpacing),
+            modifier = Modifier.fillMaxSize()
         ) {
-            for (index in 0 until maxDockApps) {
-                dockSlot(index)
+            for (col in 0 until slotsPerPage) {
+                dockSlot(page * slotsPerPage + col)
             }
         }
     }

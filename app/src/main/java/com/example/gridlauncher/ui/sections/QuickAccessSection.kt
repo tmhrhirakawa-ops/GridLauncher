@@ -3,8 +3,14 @@ package com.example.gridlauncher.ui.sections
 import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -22,12 +29,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.QuickActionId
+import com.example.gridlauncher.model.QuickButtonStyle
+import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
 import com.example.gridlauncher.ui.components.BrightnessControlDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor
-import com.example.gridlauncher.ui.components.QuickActionSelectorDialog
 import com.example.gridlauncher.ui.components.QuickButton
 import com.example.gridlauncher.ui.components.VolumeControlDialog
+import com.example.gridlauncher.ui.components.icon
 import com.example.gridlauncher.ui.drag.AppDragItem
 import com.example.gridlauncher.ui.drag.AppDragPayload
 import com.example.gridlauncher.ui.drag.AppDragSource
@@ -35,10 +44,12 @@ import com.example.gridlauncher.ui.drag.AppDropTarget
 import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.appDragSource
 import com.example.gridlauncher.ui.drag.appDropTarget
+import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
-import com.example.gridlauncher.util.QUICK_ACTION_CAPACITY
+import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.adaptiveSlotCount
+import com.example.gridlauncher.util.requiredSlotGridPages
 
 /** ボタンがこれより狭く・低くなると窮屈になるとみなす、1ボタンの最小幅・最小高さ。 */
 private val MinButtonWidth = 64.dp
@@ -55,45 +66,46 @@ private val ButtonSpacing = 8.dp
 private const val BaseColumns = 2
 
 /**
+ * ボタンの基準行数（ウィジェットのサイズがちょうどよいときに使う行数）。ボタンの種類を増やしても
+ * AUTOの並びが変わらないよう、種類の数からは求めず固定値にする。
+ */
+private const val BaseRows = 6
+
+/**
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
  * ボタングリッドはアプリのグリッドと同様に、空きスロットへの追加とドラッグでの並べ替え・削除ができる。
  *
- * 列数・行数は[BaseColumns]・スロット総数（[QUICK_ACTION_CAPACITY]、設定できる機能の総数）から
- * 求めた基準行数を軸に、ウィジェットの実際の描画サイズに応じて自動的に決まる。ボタンが
- * [MinButtonWidth]・[MinButtonHeight]を下回りそうなほど狭くなったときは列数・行数を減らし、
- * 逆に[MaxButtonWidth]・[MaxButtonHeight]を超えて間延びしそうなほど広くなったときは列数・行数を
- * 増やす。ただし列数×行数は[QUICK_ACTION_CAPACITY]を超えない（それ以上は必ず空きスロットにしか
- * ならないため、代わりにボタン自体を大きくする）。
+ * 列数・行数はAUTO（デフォルト）の場合、[BaseColumns]・[BaseRows]を軸に、
+ * ウィジェットの実際の描画サイズに応じて自動的に決まる。ボタンが[MinButtonWidth]・[MinButtonHeight]を
+ * 下回りそうなほど狭くなったときは列数・行数を減らし、逆に[MaxButtonWidth]・[MaxButtonHeight]を超えて
+ * 間延びしそうなほど広くなったときは列数・行数を増やす。QUICK ACCESSの設定画面（ヘッダーの歯車
+ * ボタン）で列数×行数を指定した場合はそちらを使う。
  *
- * ウィジェットが縮小されて、それまで表示されていたスロットの一部が入りきらなくなった場合、
- * ドラッグ中はそれらを一時的に非表示にするだけに留め、実際にリサイズハンドルのドラッグを
- * 終えた（[isResizing]がtrue→falseへ遷移した）タイミングで初めて、あふれたスロットを実際に
- * 空きスロットとして確定させる（そこに設定されていた機能は、別の空きスロットに設定し直せる
- * ようになる）。あふれて消えるスロットは、スロット番号の大きいものから（＝表示上は下・右側から）
- * 優先的に選ばれる。
- *
- * この確定処理は、あくまで実際のリサイズドラッグの完了だけをトリガーにしている（初回表示時や、
- * 縦画面・横画面の切り替えなど、ユーザーがドラッグしたわけではない理由でウィジェットのサイズが
- * 変わっただけのときは確定しない）。そのため、例えば縦画面では収まりきらず一時的に隠れている
- * スロットがあっても、横画面に切り替えただけでその設定が失われることはない。
+ * 1ページに入り切らないスロットは横スワイプのページに並べる。ページ数は設定画面で指定した数で、
+ * ボタンが入っているページより少なくはしない。ウィジェットを縮めてもボタンは消えず、後ろの
+ * ページへ送られるだけになる。
  *
  * ボタンは長押し→ドラッグで並べ替え・削除する（[com.example.gridlauncher.ui.drag]参照）。
  *
  * @param modifier レイアウトに適用するModifier。
  * @param slots QUICK ACCESSに配置するボタンのスロット（null=空きスロット）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
- * @param isResizing ウィジェットが現在リサイズドラッグ中かどうか。falseになったタイミングで、
- *   あふれたスロットを空きスロットとして確定する。
+ * @param gridSize 設定画面で指定したスロットの並び（列数×行数）。nullの場合はAUTO。
+ * @param pageCount 設定画面で指定したページ数。
  * @param accentColor 現在のメインテーマ（アクセント）カラー。
  * @param useOriginalIconColors trueの場合、アプリアイコンをアクセントカラーのデュオトーン
  *   加工をせず、本来の色のまま表示する（カラーパレット下部のチェックボックスで切り替える）。
+ * @param buttonStyle ボタンの表示スタイル（アイコンのみ・アイコン＋名前・名前のみ）。
  * @param onThemeToggle テーマ切り替えボタンがクリックされたときのコールバック。
+ * @param onWallpaperModeToggle 壁紙透過（CLEAR）ボタンがクリックされたときのコールバック。
+ * @param onGridLinesClick グリッド線（GRID）ボタンがクリックされたときのコールバック（グリッド線の設定画面を開く）。
+ * @param onCustomizeClick カスタマイズ（CUSTOM）ボタンがクリックされたときのコールバック（カスタマイズ画面を開く）。
  * @param onAccentColorChange カラーパレットで色が選択されたときのコールバック。
  * @param onUseOriginalIconColorsChange カラーパレット下部の「アプリアイコンはオリジナルカラーを
  *   使用」チェックボックスが切り替えられたときのコールバック。
- * @param onSlotsChanged ウィジェットのサイズが確定し、あふれたスロットを空きスロットとして
- *   実際に確定するときのコールバック（更新後の全スロットを渡す）。呼び出し側はこれを使って
- *   保存する想定。
+ * @param onSettingsClick ヘッダーの歯車ボタン（QUICK ACCESSの設定）がクリックされたときのコールバック。
+ * @param onLayoutMeasured AUTOの場合の列数・行数と、実際の1ページのスロット数が決まるたびに呼ばれる
+ *   コールバック（設定画面で現在の並びや、必要な最小ページ数を表示するために使う）。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param showBorder 枠線を表示するかどうか。
  */
@@ -102,14 +114,20 @@ fun QuickAccessSection(
     modifier: Modifier = Modifier,
     slots: List<QuickActionId?> = emptyList(),
     isWallpaperMode: Boolean = false,
-    isResizing: Boolean = false,
+    gridSize: SlotGridSize? = null,
+    pageCount: Int = 1,
     accentColor: Color = DefaultAccentColor,
     useOriginalIconColors: Boolean = false,
     showBorder: Boolean = true,
+    buttonStyle: QuickButtonStyle = QuickButtonStyle.NAME_ONLY,
     onThemeToggle: () -> Unit = {},
+    onWallpaperModeToggle: () -> Unit = {},
+    onGridLinesClick: () -> Unit = {},
+    onCustomizeClick: () -> Unit = {},
     onAccentColorChange: (Color) -> Unit = {},
     onUseOriginalIconColorsChange: (Boolean) -> Unit = {},
-    onSlotsChanged: (List<QuickActionId?>) -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    onLayoutMeasured: (autoColumns: Int, autoRows: Int, pageSize: Int) -> Unit = { _, _, _ -> },
     onAddClick: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -117,6 +135,14 @@ fun QuickAccessSection(
     var showColorPicker by remember { mutableStateOf(false) }
     var showVolumeControl by remember { mutableStateOf(false) }
     var showBrightnessControl by remember { mutableStateOf(false) }
+    // ホームボタンが押されたら、開いているポップアップ（カラーパレット・音量・明るさ）を閉じる
+    val homePressedSignal = LocalHomePressedSignal.current
+    LaunchedEffect(homePressedSignal) {
+        if (homePressedSignal == 0) return@LaunchedEffect
+        showColorPicker = false
+        showVolumeControl = false
+        showBrightnessControl = false
+    }
 
     fun handleActionClick(action: QuickActionId) {
         when (action) {
@@ -167,6 +193,9 @@ fun QuickAccessSection(
                 }
                 context.startActivity(intent)
             }
+            QuickActionId.WALLPAPER_TRANSPARENT -> onWallpaperModeToggle()
+            QuickActionId.GRID_LINES -> onGridLinesClick()
+            QuickActionId.CUSTOMIZE -> onCustomizeClick()
             QuickActionId.WALLPAPER -> {
                 val intent = Intent(Intent.ACTION_SET_WALLPAPER).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -182,95 +211,100 @@ fun QuickAccessSection(
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = modifier.fillMaxSize()
     ) {
-         Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier
                     .size(6.dp)
                     .background(LocalCyberColors.current.accent))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("QUICK ACCESS", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
+                Spacer(modifier = Modifier.weight(1f))
+                // QUICK ACCESSの設定（縦横で同じ並びにするか・スロットの並び・ページ数）を開く歯車ボタン
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = "QUICK ACCESS Settings",
+                    tint = LocalCyberColors.current.accent,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onSettingsClick)
+                        .padding(2.dp)
+                )
             }
             Spacer(modifier = Modifier.height(6.dp))
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val baseRows = (QUICK_ACTION_CAPACITY + BaseColumns - 1) / BaseColumns
-                val columns = adaptiveSlotCount(maxWidth, BaseColumns, MinButtonWidth, MaxButtonWidth, ButtonSpacing)
-                // 列数×行数がQUICK_ACTION_CAPACITY（設定できる機能の総数）を超えないよう、
-                // 行数の上限をここで決めておく。それ以上増やしても必ず空きスロットにしかならない
-                val maxRowsForCapacity = (QUICK_ACTION_CAPACITY / columns).coerceAtLeast(1)
-                val rows = adaptiveSlotCount(maxHeight, baseRows, MinButtonHeight, MaxButtonHeight, ButtonSpacing)
-                    .coerceAtMost(maxRowsForCapacity)
-                val effectiveCapacity = columns * rows
-
-                // ウィジェットのサイズが確定した（リサイズドラッグ中でなくなった）タイミングでだけ、
-                // 現在表示しきれないスロット（番号の大きいもの＝下・右側）を空きスロットとして確定する。
-                // ただし「isResizingがfalseになった」だけを条件にすると、縦画面・横画面の切り替えなど
-                // ユーザーがドラッグでリサイズしたわけではない理由でウィジェットのサイズが変わった
-                // 直後の初回測定でも（isResizingは変化前からfalseのままなので通常は再実行されないが、
-                // 念のため）誤ってスロットが消えてしまわないよう、「実際にリサイズドラッグが
-                // true→falseへ遷移した」ときだけ確定する。初回コンポーズ時のfalseは無視する
-                var hasHandledInitialResizingState by remember { mutableStateOf(false) }
-                LaunchedEffect(isResizing) {
-                    if (!hasHandledInitialResizingState) {
-                        hasHandledInitialResizingState = true
-                        return@LaunchedEffect
-                    }
-                    if (!isResizing) {
-                        val hasOverflow = slots.withIndex().any { (index, action) -> action != null && index >= effectiveCapacity }
-                        if (hasOverflow) {
-                            onSlotsChanged(slots.mapIndexed { index, action -> if (index < effectiveCapacity) action else null })
-                        }
-                    }
+                // AUTO（ウィジェットの大きさから自動で決める）の場合の列数・行数
+                val autoColumns = adaptiveSlotCount(maxWidth, BaseColumns, MinButtonWidth, MaxButtonWidth, ButtonSpacing)
+                val autoRows = adaptiveSlotCount(maxHeight, BaseRows, MinButtonHeight, MaxButtonHeight, ButtonSpacing)
+                // 設定画面で並びを指定している場合はそちらを使う
+                val columns = gridSize?.columns ?: autoColumns
+                val rows = gridSize?.rows ?: autoRows
+                val pageSize = columns * rows
+                LaunchedEffect(autoColumns, autoRows, pageSize) {
+                    onLayoutMeasured(autoColumns, autoRows, pageSize)
                 }
+                // ページ数は設定画面で指定した数。ボタンが入っているページが隠れないよう、それより少なくはしない
+                val displayedPageCount = maxOf(pageCount, requiredSlotGridPages(slots, pageSize) { it == null })
+                val pagerState = rememberPagerState(pageCount = { displayedPageCount })
 
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(ButtonSpacing)
-                ) {
-                    for (rowIndex in 0 until rows) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(ButtonSpacing)
-                        ) {
-                            for (col in 0 until columns) {
-                                val index = rowIndex * columns + col
-                                val action = slots.getOrNull(index)
-                                // どのスロットもドロップ先にする。持ち上げ中のスロットは薄く表示して「抜けた」ことを示す
-                                val slotModifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .appDropTarget(AppDropTarget.QuickSlot(index))
-                                    .graphicsLayer {
-                                        alpha = if (dragState?.payload?.source == AppDragSource.QuickAccess(index)) 0.3f else 1f
-                                    }
-                                if (action != null) {
-                                    Box(modifier = slotModifier) {
-                                        QuickButton(
-                                            text = action.label,
-                                            modifier = Modifier.fillMaxSize().appDragSource {
-                                                AppDragPayload(AppDragSource.QuickAccess(index), AppDragItem.QuickAction(action))
-                                            },
-                                            isWallpaperMode = isWallpaperMode,
-                                            onClick = { handleActionClick(action) }
-                                        )
-                                        // ボタンの近くに縦スライダーのポップアップを表示する
-                                        if (action == QuickActionId.VOLUME && showVolumeControl) {
-                                            VolumeControlDialog(onDismiss = { showVolumeControl = false })
+                HorizontalPager(
+                    state = pagerState,
+                    // ドラッグ中に端でページ送りしても、ドラッグ元のスロットが破棄されないよう全ページを保持する
+                    beyondViewportPageCount = displayedPageCount - 1,
+                    modifier = Modifier.fillMaxSize().dragEdgeAutoScroll(pagerState)
+                ) { page ->
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(ButtonSpacing)
+                    ) {
+                        for (rowIndex in 0 until rows) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                horizontalArrangement = Arrangement.spacedBy(ButtonSpacing)
+                            ) {
+                                for (col in 0 until columns) {
+                                    val index = page * pageSize + rowIndex * columns + col
+                                    val action = slots.getOrNull(index)
+                                    // どのスロットもドロップ先にする。持ち上げ中のスロットは薄く表示して「抜けた」ことを示す
+                                    val slotModifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .appDropTarget(AppDropTarget.QuickSlot(index))
+                                        .graphicsLayer {
+                                            alpha = if (dragState?.payload?.source == AppDragSource.QuickAccess(index)) 0.3f else 1f
                                         }
-                                        if (action == QuickActionId.BRIGHTNESS && showBrightnessControl) {
-                                            BrightnessControlDialog(onDismiss = { showBrightnessControl = false })
+                                    if (action != null) {
+                                        Box(modifier = slotModifier) {
+                                            QuickButton(
+                                                text = action.label,
+                                                icon = action.icon,
+                                                style = buttonStyle,
+                                                modifier = Modifier.fillMaxSize().appDragSource {
+                                                    AppDragPayload(AppDragSource.QuickAccess(index), AppDragItem.QuickAction(action))
+                                                },
+                                                isWallpaperMode = isWallpaperMode,
+                                                onClick = { handleActionClick(action) }
+                                            )
+                                            // ボタンの近くに縦スライダーのポップアップを表示する
+                                            if (action == QuickActionId.VOLUME && showVolumeControl) {
+                                                VolumeControlDialog(onDismiss = { showVolumeControl = false })
+                                            }
+                                            if (action == QuickActionId.BRIGHTNESS && showBrightnessControl) {
+                                                BrightnessControlDialog(onDismiss = { showBrightnessControl = false })
+                                            }
                                         }
-                                    }
-                                } else {
-                                    Surface(
-                                        onClick = { onAddClick(index) },
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = Color.Transparent,
-                                        border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                                        modifier = slotModifier
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
+                                    } else {
+                                        Surface(
+                                            onClick = { onAddClick(index) },
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color.Transparent,
+                                            border = BorderStroke(1.dp, LocalCyberColors.current.border),
+                                            modifier = slotModifier
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
+                                            }
                                         }
                                     }
                                 }
@@ -279,7 +313,7 @@ fun QuickAccessSection(
                     }
                 }
             }
-         }
+        }
     }
 
     if (showColorPicker) {
