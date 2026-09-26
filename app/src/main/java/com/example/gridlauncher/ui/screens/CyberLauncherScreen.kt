@@ -62,6 +62,7 @@ import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
+import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
@@ -747,6 +748,34 @@ fun CyberLauncherScreen() {
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
     // 長押しメニューの「ウィジェットを追加」が押されたが、ホーム画面に空きがないことを知らせるダイアログの表示状態
     var showNoWidgetSpaceError by remember { mutableStateOf(false) }
+
+    // ホームボタンが押されたら、開いているポップアップ・ボトムシート・ダイアログ・フォルダ・
+    // 編集モード・ドラッグなどをすべて閉じて、ホーム画面の状態に戻る
+    // （各ウィジェットの中のポップアップは、それぞれがLocalHomePressedSignalを見て閉じる）
+    val homePressedSignal = LocalHomePressedSignal.current
+    LaunchedEffect(homePressedSignal) {
+        if (homePressedSignal == 0) return@LaunchedEffect
+        showAllAppsDrawer = false
+        showCustomizeSheet = false
+        showAppListSettings = false
+        showMissingPermissionsSheet = false
+        showPowerPermissionRationale = false
+        homeMenuOffset = null
+        openFolderId = null
+        appSelectorTarget = null
+        targetIndex = null
+        addSlotChoiceIndex = null
+        quickActionAddIndex = null
+        appSlotPickerInstanceId = null
+        pendingAppSlotRemoval = null
+        pendingDeleteWidget = null
+        showWidgetTypeSelector = false
+        showAppWidgetPicker = false
+        appWidgetTooLargeError = false
+        showNoWidgetSpaceError = false
+        isWidgetEditMode = false
+        appDragState.cancel()
+    }
 
     // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
     // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、

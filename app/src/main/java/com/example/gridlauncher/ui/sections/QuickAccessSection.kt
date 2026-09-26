@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.QuickActionId
+import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
 import com.example.gridlauncher.ui.components.BrightnessControlDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor
@@ -117,6 +118,14 @@ fun QuickAccessSection(
     var showColorPicker by remember { mutableStateOf(false) }
     var showVolumeControl by remember { mutableStateOf(false) }
     var showBrightnessControl by remember { mutableStateOf(false) }
+    // ホームボタンが押されたら、開いているポップアップ（カラーパレット・音量・明るさ）を閉じる
+    val homePressedSignal = LocalHomePressedSignal.current
+    LaunchedEffect(homePressedSignal) {
+        if (homePressedSignal == 0) return@LaunchedEffect
+        showColorPicker = false
+        showVolumeControl = false
+        showBrightnessControl = false
+    }
 
     fun handleActionClick(action: QuickActionId) {
         when (action) {

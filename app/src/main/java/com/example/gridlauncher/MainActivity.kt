@@ -6,19 +6,39 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.screens.CyberLauncherScreen
 import com.example.gridlauncher.ui.theme.GridLauncherTheme
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 
 class MainActivity : ComponentActivity() {
+    // ホームボタンが押された回数（LocalHomePressedSignal参照）
+    private var homePressedSignal by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             GridLauncherTheme {
-                CyberLauncherScreen()
+                CompositionLocalProvider(LocalHomePressedSignal provides homePressedSignal) {
+                    CyberLauncherScreen()
+                }
             }
+        }
+    }
+
+    // ランチャー（launchMode="singleTask"）を表示中、または他のアプリを使用中にホームボタンが
+    // 押されると、HOMEカテゴリのIntentがここに届く。開いているポップアップ・ボトムシート・
+    // 編集モードなどを閉じてホーム画面に戻るよう、画面側に知らせる
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            homePressedSignal++
         }
     }
 
