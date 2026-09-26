@@ -37,6 +37,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -54,6 +56,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,6 +68,7 @@ import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
+import com.example.gridlauncher.util.HeaderTitle
 import com.example.gridlauncher.util.DOCK_MIN_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
 
@@ -90,6 +94,8 @@ import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
  * @param onOpenQuickAccessSettings 「QUICK ACCESSの詳細設定」がタップされたときのコールバック（QUICK ACCESSの設定画面を開く）。
  * @param showHeader ヘッダー（時刻・バッテリーなど）を表示しているかどうか（今の画面の向きのもの）。
  * @param onShowHeaderChange ヘッダーの表示スイッチが切り替えられたときのコールバック。
+ * @param headerTitle ヘッダー中央（横画面・縦画面（大））に表示する3段の文字。
+ * @param onHeaderTitleChange 上記が編集されたときのコールバック。
  * @param showDock DOCKを表示しているかどうか（今の画面の向きのもの）。
  * @param onShowDockChange DOCKの表示スイッチが切り替えられたときのコールバック。
  * @param shareDockAcrossOrientations 縦画面と横画面でDOCKに同じアプリの並びを使うかどうか。
@@ -126,6 +132,8 @@ fun CustomizeSheet(
     onOpenQuickAccessSettings: () -> Unit,
     showHeader: Boolean,
     onShowHeaderChange: (Boolean) -> Unit,
+    headerTitle: HeaderTitle,
+    onHeaderTitleChange: (HeaderTitle) -> Unit,
     showDock: Boolean,
     onShowDockChange: (Boolean) -> Unit,
     shareDockAcrossOrientations: Boolean,
@@ -296,13 +304,51 @@ fun CustomizeSheet(
             }
 
             // ヘッダー・DOCKの表示切り替え（非表示にすると、その分ウィジェットのエリアが広がる）
-            CustomizeRow(
-                icon = Icons.Outlined.VerticalAlignTop,
-                title = "ヘッダーの表示（$orientationLabel）",
-                description = "非表示にすると、この画面は長押しメニューなどから開けます",
-                onClick = { onShowHeaderChange(!showHeader) }
-            ) {
-                CyberSwitch(checked = showHeader, onCheckedChange = onShowHeaderChange)
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.VerticalAlignTop,
+                    title = "ヘッダーの表示（$orientationLabel）",
+                    description = "非表示にすると、この画面は長押しメニューなどから開けます",
+                    modifier = Modifier.clickable { onShowHeaderChange(!showHeader) }
+                ) {
+                    CyberSwitch(checked = showHeader, onCheckedChange = onShowHeaderChange)
+                }
+                // ヘッダー中央の3段の文字の編集（中央の表記が出る横画面のときだけ表示する）
+                AnimatedVisibility(visible = showHeader && !isPortrait, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column {
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        Column(
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "ヘッダー中央の文字",
+                                    fontFamily = CyberFont,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.text,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (headerTitle != HeaderTitle.Default) {
+                                    Text(
+                                        "元に戻す",
+                                        fontFamily = CyberFont,
+                                        fontSize = 11.sp,
+                                        color = colors.accent,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable { onHeaderTitleChange(HeaderTitle.Default) }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            HeaderTitleField(label = "上段", value = headerTitle.top) { onHeaderTitleChange(headerTitle.copy(top = it)) }
+                            HeaderTitleField(label = "中段", value = headerTitle.main) { onHeaderTitleChange(headerTitle.copy(main = it)) }
+                            HeaderTitleField(label = "下段", value = headerTitle.bottom) { onHeaderTitleChange(headerTitle.copy(bottom = it)) }
+                        }
+                    }
+                }
             }
             // DOCKの表示と、1ページのアイコン数・ページ数（今の画面の向きの設定。縦横で別々に保存する）
             CustomizeCard {
@@ -448,6 +494,27 @@ internal fun CustomizeRow(
             trailing = trailing
         )
     }
+}
+
+/** ヘッダー中央の文字1段分の入力欄。 */
+@Composable
+private fun HeaderTitleField(label: String, value: String, onValueChange: (String) -> Unit) {
+    val colors = LocalCyberColors.current
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label, fontFamily = CyberFont, fontSize = 11.sp) },
+        singleLine = true,
+        textStyle = TextStyle(fontFamily = CyberFont, fontSize = 13.sp, color = colors.text),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.accent,
+            unfocusedBorderColor = colors.border,
+            focusedLabelColor = colors.accent,
+            unfocusedLabelColor = colors.text.copy(alpha = 0.5f),
+            cursorColor = colors.accent
+        ),
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

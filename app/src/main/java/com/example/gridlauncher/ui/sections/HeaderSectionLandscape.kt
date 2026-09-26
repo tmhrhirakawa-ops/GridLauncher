@@ -20,6 +20,7 @@ import com.example.gridlauncher.ui.components.rememberNowPlayingDisplayState
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.CyberNotificationListener
+import com.example.gridlauncher.util.HeaderTitle
 import com.example.gridlauncher.util.rememberBatteryLevel
 import com.example.gridlauncher.util.rememberCurrentTimeMillis
 import java.text.SimpleDateFormat
@@ -30,11 +31,13 @@ import java.util.Locale
  * 横画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
  *
  * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
+ * @param title 中央に表示する3段の文字（カスタマイズ画面で書き換えられる）。
  * @param onCoreClick バッテリーコア（歯車アイコン）がタップされたときのコールバック（カスタマイズ画面を開く）。
  */
 @Composable
 fun HeaderSectionLandscape(
     nowPlaying: CyberNotificationListener.NowPlayingInfo? = null,
+    title: HeaderTitle = HeaderTitle.Default,
     onCoreClick: () -> Unit = {}
 ) {
     // 再生中メディアの表示状態（消えるときのアニメーション中も直前の内容を表示し続ける）
@@ -51,13 +54,13 @@ fun HeaderSectionLandscape(
     val timeString = timeFormat.format(Date(currentTime))
     val dateString = dateFormat.format(Date(currentTime)).uppercase()
 
-    // 時刻を左端、MAIN TERMINALを画面幅の中央、バッテリーを右端に置く。再生中メディアは
+    // 時刻を左端、中央の表記を画面幅の中央、バッテリーを右端に置く。再生中メディアは
     // バッテリーの左に置き、表示されてもヘッダーの高さ（＝下のウィジェットのエリア）は変えない。
-    // 再生中メディアと重なる場合はMAIN TERMINALを左へ寄せる（HeaderLayout参照）
+    // 再生中メディアと重なる場合は中央の表記を左へ寄せる（HeaderLayout参照）
     HeaderLayout(
         alignTop = false,
         nowPlayingGap = 16.dp,
-        // 再生中メディアの出し入れのアニメーションに合わせて、MAIN TERMINALも一緒にスライドさせる
+        // 再生中メディアの出し入れのアニメーションに合わせて、中央の表記も一緒にスライドさせる
         nowPlayingProgress = { nowPlayingDisplay.scale },
         start = {
             Column {
@@ -69,7 +72,7 @@ fun HeaderSectionLandscape(
                 }
             }
         },
-        center = { MainTerminalTitle() },
+        center = { HeaderCenterTitle(title) },
         end = {
             // バッテリー残量とシステムステータスのUI
             Row(verticalAlignment = Alignment.CenterVertically) {

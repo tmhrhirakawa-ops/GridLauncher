@@ -85,6 +85,8 @@ import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.DockLayout
+import com.example.gridlauncher.util.loadHeaderTitle
+import com.example.gridlauncher.util.saveHeaderTitle
 import com.example.gridlauncher.util.loadDockLayout
 import com.example.gridlauncher.util.dockAppsKeyFor
 import com.example.gridlauncher.util.loadShareDockAcrossOrientations
@@ -439,6 +441,8 @@ fun CyberLauncherScreen() {
     var showDock by remember(showDockKey) {
         mutableStateOf(prefs.getBoolean(showDockKey, prefs.getBoolean("show_dock", true)))
     }
+    // ヘッダー中央（横画面・縦画面（大））に表示する3段の文字（カスタマイズ画面で書き換える）
+    var headerTitle by remember { mutableStateOf(loadHeaderTitle(prefs)) }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
@@ -1070,6 +1074,11 @@ fun CyberLauncherScreen() {
                     showHeader = visible
                     prefs.edit { putBoolean(showHeaderKey, visible) }
                 },
+                headerTitle = headerTitle,
+                onHeaderTitleChange = { title ->
+                    headerTitle = title
+                    saveHeaderTitle(prefs, title)
+                },
                 showDock = showDock,
                 onShowDockChange = { visible ->
                     showDock = visible
@@ -1484,12 +1493,14 @@ fun CyberLauncherScreen() {
                         // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
+                            title = headerTitle,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     } else if (isPortrait) {
                         // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
+                            title = headerTitle,
                             isLarge = true,
                             onCoreClick = { showCustomizeSheet = true }
                         )
@@ -1497,6 +1508,7 @@ fun CyberLauncherScreen() {
                         // 横画面（ランドスケープ/メイン画面）のレイアウト
                         HeaderSectionLandscape(
                             nowPlaying = headerNowPlaying,
+                            title = headerTitle,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     }

@@ -21,6 +21,7 @@ import com.example.gridlauncher.ui.components.rememberNowPlayingDisplayState
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.CyberNotificationListener
+import com.example.gridlauncher.util.HeaderTitle
 import com.example.gridlauncher.util.rememberBatteryLevel
 import com.example.gridlauncher.util.rememberCurrentTimeMillis
 import java.text.SimpleDateFormat
@@ -31,13 +32,15 @@ import java.util.Locale
  * 縦画面用のヘッダーセクション。時刻やバッテリーのステータスを表示します。
  *
  * @param nowPlaying 現在再生中のメディア情報。nullの場合は何も表示しない。
- * @param isLarge 縦画面（大）かどうか。trueの場合、中央に「MAIN TERMINAL」の表記を追加する。
+ * @param isLarge 縦画面（大）かどうか。trueの場合、中央に中央の表記（[HeaderCenterTitle]）を追加する。
+ * @param title 中央に表示する3段の文字（カスタマイズ画面で書き換えられる）。
  * @param onCoreClick バッテリーコア（歯車アイコン）がタップされたときのコールバック（カスタマイズ画面を開く）。
  */
 @Composable
 fun HeaderSectionPortrait(
     nowPlaying: CyberNotificationListener.NowPlayingInfo? = null,
     isLarge: Boolean = false,
+    title: HeaderTitle = HeaderTitle.Default,
     onCoreClick: () -> Unit = {}
 ) {
     // 再生中メディアの表示状態（消えるときのアニメーション中も直前の内容を表示し続ける）
@@ -53,13 +56,13 @@ fun HeaderSectionPortrait(
     val timeString = timeFormat.format(Date(currentTime))
     val dateString = dateFormat.format(Date(currentTime)).uppercase()
 
-    // 時刻を左端、MAIN TERMINAL（縦画面（大）のみ）を画面幅の中央、バッテリーを右端に置く。
+    // 時刻を左端、中央の表記（縦画面（大）のみ）を画面幅の中央、バッテリーを右端に置く。
     // 再生中メディアはバッテリーの左に置き、表示されてもヘッダーの高さ（＝下のウィジェットの
-    // エリア）は変えない。再生中メディアと重なる場合はMAIN TERMINALを左へ寄せる（HeaderLayout参照）
+    // エリア）は変えない。再生中メディアと重なる場合は中央の表記を左へ寄せる（HeaderLayout参照）
     HeaderLayout(
         alignTop = true,
         nowPlayingGap = 8.dp,
-        // 再生中メディアの出し入れのアニメーションに合わせて、MAIN TERMINALも一緒にスライドさせる
+        // 再生中メディアの出し入れのアニメーションに合わせて、中央の表記も一緒にスライドさせる
         nowPlayingProgress = { nowPlayingDisplay.scale },
         start = {
             Column {
@@ -71,9 +74,9 @@ fun HeaderSectionPortrait(
                 }
             }
         },
-        // 縦画面（大）のみ、中央に「MAIN TERMINAL」の表記を追加する
+        // 縦画面（大）のみ、中央に中央の表記（[HeaderCenterTitle]）を追加する
         center = if (isLarge) {
-            { MainTerminalTitle() }
+            { HeaderCenterTitle(title) }
         } else {
             null
         },
