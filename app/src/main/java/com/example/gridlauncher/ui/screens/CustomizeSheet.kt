@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.GridOn
@@ -77,6 +78,7 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param useOriginalIconColors アプリアイコンをオリジナルカラーのまま表示しているかどうか。
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
  * @param onOpenAppListSettings 「APP LISTの詳細設定」がタップされたときのコールバック（APP LISTの設定画面を開く）。
+ * @param onOpenQuickAccessSettings 「QUICK ACCESSの詳細設定」がタップされたときのコールバック（QUICK ACCESSの設定画面を開く）。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -101,6 +103,7 @@ fun CustomizeSheet(
     useOriginalIconColors: Boolean,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
     onOpenAppListSettings: () -> Unit,
+    onOpenQuickAccessSettings: () -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -113,7 +116,6 @@ fun CustomizeSheet(
     val colors = LocalCyberColors.current
     var colorPickerTarget by remember { mutableStateOf<Int?>(null) } // パレットで編集中のアクセントカラー（1 or 2）
     var showPanelAccents by remember { mutableStateOf(false) }
-    var showPanelBorders by remember { mutableStateOf(false) }
 
     colorPickerTarget?.let { target ->
         val isAccent2 = target == 2
@@ -247,6 +249,17 @@ fun CustomizeSheet(
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
             }
 
+            // QUICK ACCESSの詳細設定（縦横で同じ並びにするか・ボタンの並び・ページ数）。
+            // QUICK ACCESSのヘッダーの歯車ボタンと同じ設定画面を開く
+            CustomizeRow(
+                icon = Icons.Outlined.Dashboard,
+                title = "QUICK ACCESS の詳細設定",
+                description = "ボタンの並び・ページ数などを設定します",
+                onClick = onOpenQuickAccessSettings
+            ) {
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+            }
+
             // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）
             CustomizeRow(
                 icon = Icons.Outlined.AddBox,
@@ -258,50 +271,11 @@ fun CustomizeSheet(
             }
 
             // グリッド線（ウィジェットの枠線）の編集
-            val allBordersVisible = hiddenPanels.isEmpty()
-            CustomizeCard {
-                CustomizeRowContent(
-                    icon = Icons.Outlined.GridOn,
-                    title = "グリッド線",
-                    description = when {
-                        allBordersVisible -> "すべてのウィジェットに表示中"
-                        hiddenPanels.size == WidgetPanel.entries.size -> "すべて非表示"
-                        else -> "一部のウィジェットのみ表示中"
-                    },
-                    modifier = Modifier.clickable { onSetAllBorders(!allBordersVisible) }
-                ) {
-                    CyberSwitch(checked = allBordersVisible, onCheckedChange = onSetAllBorders)
-                }
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
-                ExpandHeader(
-                    label = "ウィジェットごとに設定",
-                    expanded = showPanelBorders,
-                    onToggle = { showPanelBorders = !showPanelBorders }
-                )
-                AnimatedVisibility(visible = showPanelBorders, enter = expandVertically(), exit = shrinkVertically()) {
-                    Column(modifier = Modifier.padding(start = 4.dp, end = 14.dp, bottom = 6.dp)) {
-                        WidgetPanel.entries.forEach { panel ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onTogglePanelBorder(panel) }
-                            ) {
-                                Checkbox(
-                                    checked = panel !in hiddenPanels,
-                                    onCheckedChange = { onTogglePanelBorder(panel) },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = colors.accent,
-                                        checkmarkColor = colors.onAccent,
-                                        uncheckedColor = colors.border
-                                    )
-                                )
-                                Text(panel.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
-                            }
-                        }
-                    }
-                }
-            }
+            GridLinesCard(
+                hiddenPanels = hiddenPanels,
+                onSetAllBorders = onSetAllBorders,
+                onTogglePanelBorder = onTogglePanelBorder
+            )
 
             // 従来のコアメニューにあった、端末設定・電源メニューへの導線
             Spacer(modifier = Modifier.height(4.dp))
@@ -538,6 +512,71 @@ private fun FooterButton(icon: ImageVector, label: String, onClick: () -> Unit, 
             Icon(icon, contentDescription = null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
             Text(label, fontFamily = CyberFont, fontSize = 11.sp, color = colors.text.copy(alpha = 0.8f))
+        }
+    }
+}
+
+/**
+ * グリッド線（ウィジェットの枠線）の設定カード。全ウィジェットの一括表示/非表示のスイッチと、
+ * 開閉できるウィジェットごとのチェックボックスを持つ。カスタマイズ画面と、QUICK ACCESSの
+ * GRIDボタンで開くグリッド線の設定画面（[GridLinesSheet]）で共通に使う。
+ *
+ * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
+ * @param onSetAllBorders 全ウィジェットの枠線を一括で表示/非表示にするときのコールバック（true=表示）。
+ * @param onTogglePanelBorder 個別のウィジェットの枠線が切り替えられたときのコールバック。
+ * @param initiallyExpanded 「ウィジェットごとに設定」を最初から開いておくかどうか。
+ */
+@Composable
+internal fun GridLinesCard(
+    hiddenPanels: Set<WidgetPanel>,
+    onSetAllBorders: (Boolean) -> Unit,
+    onTogglePanelBorder: (WidgetPanel) -> Unit,
+    initiallyExpanded: Boolean = false
+) {
+    val colors = LocalCyberColors.current
+    var showPanelBorders by remember { mutableStateOf(initiallyExpanded) }
+    val allBordersVisible = hiddenPanels.isEmpty()
+    CustomizeCard {
+        CustomizeRowContent(
+            icon = Icons.Outlined.GridOn,
+            title = "グリッド線",
+            description = when {
+                allBordersVisible -> "すべてのウィジェットに表示中"
+                hiddenPanels.size == WidgetPanel.entries.size -> "すべて非表示"
+                else -> "一部のウィジェットのみ表示中"
+            },
+            modifier = Modifier.clickable { onSetAllBorders(!allBordersVisible) }
+        ) {
+            CyberSwitch(checked = allBordersVisible, onCheckedChange = onSetAllBorders)
+        }
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+        ExpandHeader(
+            label = "ウィジェットごとに設定",
+            expanded = showPanelBorders,
+            onToggle = { showPanelBorders = !showPanelBorders }
+        )
+        AnimatedVisibility(visible = showPanelBorders, enter = expandVertically(), exit = shrinkVertically()) {
+            Column(modifier = Modifier.padding(start = 4.dp, end = 14.dp, bottom = 6.dp)) {
+                WidgetPanel.entries.forEach { panel ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onTogglePanelBorder(panel) }
+                    ) {
+                        Checkbox(
+                            checked = panel !in hiddenPanels,
+                            onCheckedChange = { onTogglePanelBorder(panel) },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = colors.accent,
+                                checkmarkColor = colors.onAccent,
+                                uncheckedColor = colors.border
+                            )
+                        )
+                        Text(panel.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
+                    }
+                }
+            }
         }
     }
 }
