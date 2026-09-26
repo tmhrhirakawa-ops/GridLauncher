@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,6 +28,13 @@ import com.example.gridlauncher.ui.components.DefaultAccentColor
 import com.example.gridlauncher.ui.components.QuickActionSelectorDialog
 import com.example.gridlauncher.ui.components.QuickButton
 import com.example.gridlauncher.ui.components.VolumeControlDialog
+import com.example.gridlauncher.ui.drag.AppDragItem
+import com.example.gridlauncher.ui.drag.AppDragPayload
+import com.example.gridlauncher.ui.drag.AppDragSource
+import com.example.gridlauncher.ui.drag.AppDropTarget
+import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.appDragSource
+import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.QUICK_ACTION_CAPACITY
@@ -48,7 +56,7 @@ private const val BaseColumns = 2
 
 /**
  * デバイスの様々な設定にアクセスするためのクイックアクセスボタンを提供するセクション。
- * ボタングリッドはアプリのグリッドと同様に追加・削除でき、編集モードはメイングリッドと共通。
+ * ボタングリッドはアプリのグリッドと同様に、空きスロットへの追加とドラッグでの並べ替え・削除ができる。
  *
  * 列数・行数は[BaseColumns]・スロット総数（[QUICK_ACTION_CAPACITY]、設定できる機能の総数）から
  * 求めた基準行数を軸に、ウィジェットの実際の描画サイズに応じて自動的に決まる。ボタンが
@@ -69,9 +77,10 @@ private const val BaseColumns = 2
  * 変わっただけのときは確定しない）。そのため、例えば縦画面では収まりきらず一時的に隠れている
  * スロットがあっても、横画面に切り替えただけでその設定が失われることはない。
  *
+ * ボタンは長押し→ドラッグで並べ替え・削除する（[com.example.gridlauncher.ui.drag]参照）。
+ *
  * @param modifier レイアウトに適用するModifier。
  * @param slots QUICK ACCESSに配置するボタンのスロット（null=空きスロット）。
- * @param isEditMode UIが編集モードかどうか（メイングリッドと共通の状態）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param isResizing ウィジェットが現在リサイズドラッグ中かどうか。falseになったタイミングで、
  *   あふれたスロットを空きスロットとして確定する。
@@ -86,16 +95,12 @@ private const val BaseColumns = 2
  *   実際に確定するときのコールバック（更新後の全スロットを渡す）。呼び出し側はこれを使って
  *   保存する想定。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
- * @param onLongClick ボタンが長押しされたときのコールバック。
- * @param onRemoveClick 編集モードで削除バッジがクリックされたときのコールバック。
- * @param onExitEditMode 編集モード中に削除バッジ以外の部分がタップされたときのコールバック。
  * @param showBorder 枠線を表示するかどうか。
  */
 @Composable
 fun QuickAccessSection(
     modifier: Modifier = Modifier,
     slots: List<QuickActionId?> = emptyList(),
-    isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     isResizing: Boolean = false,
     accentColor: Color = DefaultAccentColor,
@@ -105,12 +110,10 @@ fun QuickAccessSection(
     onAccentColorChange: (Color) -> Unit = {},
     onUseOriginalIconColorsChange: (Boolean) -> Unit = {},
     onSlotsChanged: (List<QuickActionId?>) -> Unit = {},
-    onAddClick: (Int) -> Unit = {},
-    onLongClick: () -> Unit = {},
-    onRemoveClick: (Int) -> Unit = {},
-    onExitEditMode: () -> Unit = {}
+    onAddClick: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val dragState = LocalAppDragState.current
     var showColorPicker by remember { mutableStateOf(false) }
     var showVolumeControl by remember { mutableStateOf(false) }
     var showBrightnessControl by remember { mutableStateOf(false) }
@@ -232,18 +235,23 @@ fun QuickAccessSection(
                             for (col in 0 until columns) {
                                 val index = rowIndex * columns + col
                                 val action = slots.getOrNull(index)
+                                // どのスロットもドロップ先にする。持ち上げ中のスロットは薄く表示して「抜けた」ことを示す
+                                val slotModifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .appDropTarget(AppDropTarget.QuickSlot(index))
+                                    .graphicsLayer {
+                                        alpha = if (dragState?.payload?.source == AppDragSource.QuickAccess(index)) 0.3f else 1f
+                                    }
                                 if (action != null) {
-                                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                    Box(modifier = slotModifier) {
                                         QuickButton(
                                             text = action.label,
-                                            modifier = Modifier.fillMaxSize(),
-                                            isWallpaperMode = isWallpaperMode,
-                                            isEditMode = isEditMode,
-                                            onClick = {
-                                                if (isEditMode) onExitEditMode() else handleActionClick(action)
+                                            modifier = Modifier.fillMaxSize().appDragSource {
+                                                AppDragPayload(AppDragSource.QuickAccess(index), AppDragItem.QuickAction(action))
                                             },
-                                            onLongClick = onLongClick,
-                                            onRemoveClick = { onRemoveClick(index) }
+                                            isWallpaperMode = isWallpaperMode,
+                                            onClick = { handleActionClick(action) }
                                         )
                                         // ボタンの近くに縦スライダーのポップアップを表示する
                                         if (action == QuickActionId.VOLUME && showVolumeControl) {
@@ -255,11 +263,11 @@ fun QuickAccessSection(
                                     }
                                 } else {
                                     Surface(
-                                        onClick = { if (isEditMode) onExitEditMode() else onAddClick(index) },
+                                        onClick = { onAddClick(index) },
                                         shape = RoundedCornerShape(4.dp),
                                         color = Color.Transparent,
                                         border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                                        modifier = Modifier.weight(1f).fillMaxHeight()
+                                        modifier = slotModifier
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text("EMPTY", fontFamily = CyberFont, fontSize = 9.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))

@@ -13,20 +13,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.AppInfo
-import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.AppCard
 import com.example.gridlauncher.ui.components.DockAppCard
+import com.example.gridlauncher.ui.drag.AppDragItem
+import com.example.gridlauncher.ui.drag.AppDragPayload
+import com.example.gridlauncher.ui.drag.AppDragSource
+import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.appDragSource
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.getFrequentApps
 import com.example.gridlauncher.util.hasUsageStatsPermission
-import com.example.gridlauncher.util.requestUninstall
 import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,23 +56,19 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
             value = withContext(Dispatchers.IO) { getFrequentApps(context, allApps) }
         }
     }
-    var uninstallTarget by remember { mutableStateOf<AppInfo?>(null) } // 長押しでアンインストール確認中のアプリ
-
-    uninstallTarget?.let { appInfo ->
-        AppActionDialog(
-            appName = appInfo.label,
-            onDismiss = { uninstallTarget = null },
-            onUninstall = {
-                requestUninstall(context, appInfo.packageName)
-                uninstallTarget = null
-            }
-        )
-    }
+    // アプリを長押し→ドラッグでホーム画面に配置する間は、ドロワーを閉じずに透明にしておく。
+    // ドロワーは別ウィンドウのため、閉じるとドラッグ中の指の追跡が途切れてしまう
+    // （ドロップ後にホーム画面側がドロワーを閉じる）
+    val dragState = LocalAppDragState.current
+    val isDraggingFromDrawer = dragState?.payload?.source == AppDragSource.Drawer
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = LocalCyberColors.current.bg,
-        modifier = Modifier.fillMaxHeight(0.95f) // 画面の95%の高さまで表示
+        scrimColor = if (isDraggingFromDrawer) Color.Transparent else BottomSheetDefaults.ScrimColor,
+        modifier = Modifier
+            .fillMaxHeight(0.95f) // 画面の95%の高さまで表示
+            .alpha(if (isDraggingFromDrawer) 0f else 1f)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
             // 検索バー
@@ -101,7 +102,10 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                     packageName = appInfo.packageName,
                                     isMonochrome = appInfo.iconIsMonochrome,
                                     icon = appInfo.icon,
-                                    modifier = Modifier.width(80.dp).fillMaxHeight(), // 幅を80dpに固定して統一
+                                    modifier = Modifier
+                                        .width(80.dp)
+                                        .fillMaxHeight() // 幅を80dpに固定して統一
+                                        .appDragSource { AppDragPayload(AppDragSource.Drawer, AppDragItem.App(appInfo)) },
                                     onClick = {
                                         val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
                                         if (launchIntent != null) {
@@ -109,7 +113,6 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                             onDismiss()
                                         }
                                     },
-                                    onLongClick = { uninstallTarget = appInfo }
                                 )
                             }
                         }
@@ -157,7 +160,9 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                         packageName = appInfo.packageName,
                         isMonochrome = appInfo.iconIsMonochrome,
                         icon = appInfo.icon,
-                        modifier = Modifier.aspectRatio(2.5f), // ACCESS GRIDの比率に近い形
+                        modifier = Modifier
+                            .aspectRatio(2.5f) // ACCESS GRIDの比率に近い形
+                            .appDragSource { AppDragPayload(AppDragSource.Drawer, AppDragItem.App(appInfo)) },
                         onClick = {
                             val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
                             if (launchIntent != null) {
@@ -165,7 +170,6 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit) {
                                 onDismiss()
                             }
                         },
-                        onLongClick = { uninstallTarget = appInfo }
                     )
                 }
             }

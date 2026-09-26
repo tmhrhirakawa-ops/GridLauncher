@@ -1,16 +1,10 @@
 package com.example.gridlauncher.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,10 +23,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param text ボタンに表示するテキスト。
  * @param modifier レイアウトに適用するModifier。
  * @param isWallpaperMode 壁紙透過モードかどうか。
- * @param isEditMode UIが編集モードかどうか。trueの場合、右上に削除バッジを表示する。
  * @param onClick ボタンがクリックされたときに呼び出されるコールバック。
  * @param onLongClick ボタンが長押しされたときに呼び出されるコールバック。
- * @param onRemoveClick 編集モードで削除バッジがクリックされたときに呼び出されるコールバック。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -40,10 +32,8 @@ fun QuickButton(
     text: String,
     modifier: Modifier = Modifier,
     isWallpaperMode: Boolean = false,
-    isEditMode: Boolean = false,
     onClick: () -> Unit = {},
-    onLongClick: () -> Unit = {},
-    onRemoveClick: () -> Unit = {}
+    onLongClick: () -> Unit = {}
 ) {
     Surface(
         shape = RoundedCornerShape(4.dp),
@@ -52,24 +42,14 @@ fun QuickButton(
         modifier = modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = text,
-                    fontFamily = CyberFont,
-                    fontSize = 10.sp,
-                    color = LocalCyberColors.current.accent,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            AnimatedVisibility(
-                visible = isEditMode,
-                enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-                exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
-            ) {
-                RemoveBadge(onClick = onRemoveClick, size = 14.dp)
-            }
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = text,
+                fontFamily = CyberFont,
+                fontSize = 10.sp,
+                color = LocalCyberColors.current.accent,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

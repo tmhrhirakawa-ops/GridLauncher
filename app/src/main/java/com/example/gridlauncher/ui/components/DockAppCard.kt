@@ -1,11 +1,6 @@
 package com.example.gridlauncher.ui.components
 
 import android.graphics.drawable.Drawable
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -36,14 +31,12 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param modifier レイアウトに適用するModifier。
  * @param packageName アプリのパッケージ名。デュオトーン加工のキャッシュキーに使用。
  * @param isMonochrome [icon]がモノクロレイヤー由来かどうか。デュオトーン加工方法の選択に使う。
- * @param isEditMode UIが編集モードかどうか。
  * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param useOriginalIconColors trueの場合、アクセントカラーのデュオトーン加工をせず、
  *   アプリ本来の色のアイコンをそのまま表示する。
  * @param onClick カードがクリックされたときのコールバック。
  * @param onLongClick カードが長押しされたときのコールバック。
- * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,13 +46,11 @@ fun DockAppCard(
     modifier: Modifier = Modifier,
     packageName: String = "",
     isMonochrome: Boolean = false,
-    isEditMode: Boolean = false,
     notificationCount: Int = 0,
     isWallpaperMode: Boolean = false,
     useOriginalIconColors: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
-    onRemoveClick: () -> Unit = {}
+    onLongClick: () -> Unit = {}
 ) {
     Surface(
         shape = RoundedCornerShape(4.dp),
@@ -98,7 +89,7 @@ fun DockAppCard(
                 )
             }
             
-            if (notificationCount > 0 && !isEditMode) {
+            if (notificationCount > 0) {
                 val label = if (notificationCount > 99) "99+" else notificationCount.toString()
                 Box(
                     modifier = Modifier
@@ -118,15 +109,6 @@ fun DockAppCard(
                         maxLines = 1
                     )
                 }
-            }
-            
-            AnimatedVisibility(
-                visible = isEditMode,
-                enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-                exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
-            ) {
-                RemoveBadge(onClick = onRemoveClick, size = 16.dp)
             }
         }
     }

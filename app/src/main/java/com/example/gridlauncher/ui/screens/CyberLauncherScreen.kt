@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -73,6 +74,13 @@ import com.example.gridlauncher.ui.components.StandaloneAppSlotSection
 import com.example.gridlauncher.ui.components.WidgetDeleteConfirmDialog
 import com.example.gridlauncher.ui.components.WidgetTypeSelectorDialog
 import com.example.gridlauncher.ui.sections.*
+import com.example.gridlauncher.ui.drag.AppDragItem
+import com.example.gridlauncher.ui.drag.AppDragOverlay
+import com.example.gridlauncher.ui.drag.AppDragPayload
+import com.example.gridlauncher.ui.drag.AppDragSource
+import com.example.gridlauncher.ui.drag.AppDropTarget
+import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 import com.example.gridlauncher.util.AppWidgetHostManager
@@ -156,13 +164,14 @@ private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
 }
 
 /**
- * 編集モードで削除操作が要求されたスロットの情報。
+ * ウィジェット編集モードでAPP SLOTの✗ボタンが押されたときの対象。
  * 「スロットから削除」か「アンインストール」かをダイアログで選ばせるために保持する。
+ * （APP LIST・DOCK・QUICK ACCESS・フォルダの中は、長押し→ドラッグで削除する）
+ *
+ * @property instanceId 対象のAPP SLOTのinstanceId。
  */
-private data class PendingRemoval(
-    val target: String, // "grid"・"dock"・"app_slot"
-    // "grid"/"dock"の場合は配列インデックス、"app_slot"の場合はAPP SLOTのinstanceId
-    val index: Int,
+private data class PendingAppSlotRemoval(
+    val instanceId: Int,
     val packageName: String,
     val label: String
 )
@@ -357,7 +366,7 @@ fun CyberLauncherScreen() {
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
-    var pendingRemoval by remember { mutableStateOf<PendingRemoval?>(null) } // ✗ボタン押下時の操作選択待ち
+    var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
     // APP SLOT（単体ウィジェット）ごとに割り当てられているアプリ。画面モードをまたいで共有する
     var appSlotAssignments by remember { mutableStateOf(loadAppSlotAssignments(prefs)) }
@@ -372,64 +381,185 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // グリッドのスロット（アプリ or フォルダ）を削除する。フォルダはアンインストールの概念が
-    // ないため、確認ダイアログなしでスロットとフォルダ自体を即座に削除する。
-    fun removeGridItem(index: Int) {
-        when (val item = gridItems.getOrNull(index)) {
-            is GridItem.FolderItem -> {
-                deleteFolder(prefs, item.folder.id)
-                folders = folders - item.folder.id
-                val newPackages = gridPackages.toMutableList()
-                if (index < newPackages.size) {
-                    newPackages[index] = ""
-                    gridPackages = newPackages
-                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
-                }
-            }
-            is GridItem.AppItem -> {
-                pendingRemoval = PendingRemoval("grid", index, item.appInfo.packageName, item.appInfo.label)
-            }
-            null -> Unit
-        }
-    }
+    // アプリアイコン・フォルダ・QUICK ACCESSのボタンのドラッグ＆ドロップの結果を反映する
+    fun handleAppDrop(payload: AppDragPayload, target: AppDropTarget?) {
+        val source = payload.source
+        // アプリドロワーから持ってきた場合は、ドロップ先にかかわらずドロワーを閉じる
+        // （ドラッグ中は透明にして開いたままにしている）
+        if (source == AppDragSource.Drawer) showAllAppsDrawer = false
+        // どこにも重なっていない、またはフォルダのポップアップの余白に落とした場合は何もしない
+        if (target == null || target == AppDropTarget.FolderPanel) return
 
-    // QUICK ACCESSのスロットを空にする
-    fun removeQuickAction(index: Int) {
-        val newSlots = quickActionSlots.toMutableList()
-        if (index < newSlots.size) {
-            newSlots[index] = null
-            quickActionSlots = newSlots
-            saveQuickActionSlots(prefs, newSlots)
+        // QUICK ACCESSのボタンは、QUICK ACCESS内での並べ替え（入れ替え）と削除のみ
+        if (payload.item is AppDragItem.QuickAction) {
+            val from = (source as? AppDragSource.QuickAccess)?.index ?: return
+            val slots = quickActionSlots.toMutableList()
+            fun ensureQuickIndex(index: Int) {
+                while (slots.size <= index) slots.add(null)
+            }
+            ensureQuickIndex(from)
+            when (target) {
+                AppDropTarget.RemoveZone -> slots[from] = null
+                is AppDropTarget.QuickSlot -> {
+                    if (target.index == from) return
+                    ensureQuickIndex(target.index)
+                    val existing = slots[target.index]
+                    slots[target.index] = slots[from]
+                    slots[from] = existing
+                }
+                else -> return
+            }
+            quickActionSlots = slots
+            saveQuickActionSlots(prefs, slots)
+            return
         }
-    }
 
-    // 指定したスロットを空にする（スロットからの削除。アプリ自体はアンインストールしない）
-    fun clearSlot(removal: PendingRemoval) {
-        when (removal.target) {
-            "grid" -> {
-                val newPackages = gridPackages.toMutableList()
-                if (removal.index < newPackages.size) {
-                    newPackages[removal.index] = ""
-                    gridPackages = newPackages
-                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
-                }
-            }
-            "app_slot" -> {
-                // "app_slot"の場合はindexを配列インデックスではなくinstanceIdとして使う。
-                // ウィジェット自体（PlacedWidget）は消さず、割り当てだけ外す
-                clearAppSlotAssignment(prefs, removal.index)
-                appSlotAssignments = appSlotAssignments - removal.index
-            }
-            else -> {
-                val newPackages = dockPackages.toMutableList()
-                if (removal.index < newPackages.size) {
-                    newPackages[removal.index] = ""
-                    dockPackages = newPackages
-                    prefs.edit { putString("dock_apps", newPackages.joinToString(",")) }
-                }
+        if (target == AppDropTarget.UninstallZone) {
+            // スロットはここでは消さない。実際にアンインストールが完了した場合のみ
+            // UninstallResultReceiverが取り除く
+            (payload.item as? AppDragItem.App)?.let { requestUninstall(context, it.appInfo.packageName) }
+            return
+        }
+
+        val grid = gridPackages.toMutableList()
+        val dock = dockPackages.toMutableList()
+        val editedFolders = folders.toMutableMap()
+        fun MutableList<String>.ensureIndex(index: Int) {
+            while (size <= index) add("")
+        }
+        fun updateFolderSlot(folderId: String, index: Int, value: String) {
+            val folder = editedFolders[folderId] ?: return
+            editedFolders[folderId] = folder.copy(packageNames = folder.packageNames.toMutableList().also { it[index] = value })
+        }
+        val draggedValue = when (val item = payload.item) {
+            is AppDragItem.App -> item.appInfo.packageName
+            is AppDragItem.Folder -> folderSlotValue(item.folder.id)
+            is AppDragItem.QuickAction -> return
+        }
+        // ドラッグ元のスロットの中身を置き換える（""で空ける。入れ替えの場合は相手の値を入れる）。
+        // アプリドロワーから持ってきた場合は、元のスロットがないため何もしない
+        fun replaceSource(value: String) {
+            when (source) {
+                is AppDragSource.Grid -> { grid.ensureIndex(source.index); grid[source.index] = value }
+                is AppDragSource.Dock -> { dock.ensureIndex(source.index); dock[source.index] = value }
+                is AppDragSource.FolderSlot -> updateFolderSlot(source.folderId, source.index, value)
+                is AppDragSource.QuickAccess, AppDragSource.Drawer -> Unit
             }
         }
+
+        when (target) {
+            AppDropTarget.RemoveZone -> {
+                (payload.item as? AppDragItem.Folder)?.let { item ->
+                    editedFolders.remove(item.folder.id)
+                    deleteFolder(prefs, item.folder.id)
+                }
+                replaceSource("")
+            }
+            // 開いているフォルダの中での並べ替え（入れ替え）
+            is AppDropTarget.FolderSlot -> {
+                val from = source as? AppDragSource.FolderSlot ?: return
+                if (from.index == target.index) return
+                val existing = editedFolders[target.folderId]?.packageNames?.getOrNull(target.index) ?: return
+                updateFolderSlot(target.folderId, target.index, draggedValue)
+                updateFolderSlot(from.folderId, from.index, existing)
+            }
+            is AppDropTarget.GridSlot -> {
+                if (source == AppDragSource.Grid(target.index)) return
+                grid.ensureIndex(target.index)
+                val existing = grid[target.index]
+                // フォルダの中のアプリを、そのフォルダ自身の上に落とした場合は何もしない
+                if (source is AppDragSource.FolderSlot && existing == folderSlotValue(source.folderId)) return
+                val item = payload.item
+                when {
+                    existing.isEmpty() -> {
+                        replaceSource("")
+                        grid[target.index] = draggedValue
+                    }
+                    // フォルダの上に重ねたアプリは、フォルダの空きに追加する
+                    item is AppDragItem.App && isFolderSlotValue(existing) -> {
+                        val folderId = folderIdFromSlotValue(existing) ?: return
+                        val folder = editedFolders[folderId] ?: return
+                        val packageName = item.appInfo.packageName
+                        val emptyIndex = folder.packageNames.indexOfFirst { it.isEmpty() }
+                        if (packageName in folder.packageNames) {
+                            // 既に入っているアプリは重複させず、ドラッグ元から外すだけにする
+                            if (source == AppDragSource.Drawer) return
+                        } else if (emptyIndex < 0) {
+                            Toast.makeText(context, "フォルダがいっぱいです", Toast.LENGTH_SHORT).show()
+                            return
+                        } else {
+                            updateFolderSlot(folderId, emptyIndex, packageName)
+                        }
+                        replaceSource("")
+                    }
+                    // アプリの上に重ねたアプリは、2つをまとめた新しいフォルダにする
+                    item is AppDragItem.App -> {
+                        if (existing == item.appInfo.packageName) return
+                        val created = createFolder(prefs, "新しいフォルダ")
+                        editedFolders[created.id] = created.copy(
+                            packageNames = created.packageNames.toMutableList().also {
+                                it[0] = existing
+                                it[1] = item.appInfo.packageName
+                            }
+                        )
+                        replaceSource("")
+                        grid[target.index] = folderSlotValue(created.id)
+                    }
+                    // フォルダを他のスロットに重ねた場合は、位置を入れ替える
+                    else -> {
+                        if (source !is AppDragSource.Grid) return
+                        replaceSource(existing)
+                        grid[target.index] = draggedValue
+                    }
+                }
+            }
+            is AppDropTarget.DockSlot -> {
+                if (source == AppDragSource.Dock(target.index)) return
+                dock.ensureIndex(target.index)
+                val existing = dock[target.index]
+                if (existing.isEmpty()) {
+                    replaceSource("")
+                } else {
+                    // 使用中のスロットに重ねた場合は、ドラッグ元と入れ替える
+                    // （アプリドロワーから持ってきた場合は入れ替え先がないため何もしない）
+                    if (source == AppDragSource.Drawer) return
+                    replaceSource(existing)
+                }
+                dock[target.index] = draggedValue
+            }
+            else -> return
+        }
+
+        // フォルダの中から取り出して中身が1つだけになったフォルダは、フォルダをやめて
+        // 残ったアプリそのものの表示に戻す（空のフォルダを作ってからアプリを入れていく手順を
+        // 妨げないよう、取り出したときだけ判定する）
+        if (source is AppDragSource.FolderSlot) {
+            val remaining = editedFolders[source.folderId]?.packageNames?.filter { it.isNotEmpty() }
+            val folderSlotIndex = grid.indexOf(folderSlotValue(source.folderId))
+            if (remaining != null && remaining.size == 1 && folderSlotIndex >= 0) {
+                grid[folderSlotIndex] = remaining.first()
+                editedFolders.remove(source.folderId)
+                deleteFolder(prefs, source.folderId)
+            }
+            // フォルダの外へ持ち出した場合や、フォルダ自体がなくなった場合はポップアップを閉じる
+            val movedOut = target is AppDropTarget.GridSlot || target is AppDropTarget.DockSlot
+            if (movedOut || source.folderId !in editedFolders) openFolderId = null
+        }
+
+        editedFolders.values.forEach { folder ->
+            if (folders[folder.id] != folder) saveFolder(prefs, folder)
+        }
+        if (editedFolders != folders) folders = editedFolders.toMap()
+        if (grid != gridPackages) {
+            gridPackages = grid
+            prefs.edit { putString("grid_apps", grid.joinToString(",")) }
+        }
+        if (dock != dockPackages) {
+            dockPackages = dock
+            prefs.edit { putString("dock_apps", dock.joinToString(",")) }
+        }
     }
+    val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
 
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
     // SharedPreferencesの"grid_apps"/"dock_apps"を直接書き換える。ここではその変更を
@@ -447,19 +577,12 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // スロット編集モード（アプリアイコン・ボタンなど個々のスロットの長押しで入る。✗バッジ表示用）
-    var isEditMode by remember { mutableStateOf(false) }
     // ウィジェット編集モード（ウィジェットのヘッダーなど、個々のスロット以外の長押しで入る。
-    // 移動・リサイズ・削除ハンドル表示用）。スロット編集モードとは独立しており、片方に入ると
-    // もう片方は自動的に抜ける。
+    // 移動・リサイズ・削除ハンドル表示用）。アプリ・QUICK ACCESSのボタンなど個々のスロットは、
+    // 編集モードではなく長押し→ドラッグで移動・削除する
     var isWidgetEditMode by remember { mutableStateOf(false) }
-    fun enterSlotEditMode() {
-        isEditMode = true
-        isWidgetEditMode = false
-    }
     fun enterWidgetEditMode() {
         isWidgetEditMode = true
-        isEditMode = false
     }
 
     // ウィジェットを移動ドラッグ中にDock付近へ表示する「ここにドラッグして削除」ゾーン関連の状態。
@@ -484,7 +607,6 @@ fun CyberLauncherScreen() {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isEditMode = false
                 isWidgetEditMode = false
             }
         }
@@ -737,7 +859,7 @@ fun CyberLauncherScreen() {
     }
 
     if (showAllAppsDrawer) {
-        CompositionLocalProvider(LocalCyberColors provides colors) {
+        CompositionLocalProvider(LocalCyberColors provides colors, LocalAppDragState provides appDragState) {
             AllAppsDrawer(
                 allApps = allApps,
                 onDismiss = { showAllAppsDrawer = false }
@@ -809,22 +931,23 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // 編集モードで✗ボタンが押されたときの「スロットから削除」か「アンインストール」かの選択ダイアログ
-    pendingRemoval?.let { removal ->
+    // APP SLOTの✗ボタンが押されたときの「スロットから削除」か「アンインストール」かの選択ダイアログ
+    pendingAppSlotRemoval?.let { removal ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
             AppActionDialog(
                 appName = removal.label,
-                onDismiss = { pendingRemoval = null },
+                onDismiss = { pendingAppSlotRemoval = null },
                 onRemoveFromSlot = {
-                    clearSlot(removal)
-                    pendingRemoval = null
+                    // ウィジェット自体（PlacedWidget）は消さず、割り当てだけ外す
+                    clearAppSlotAssignment(prefs, removal.instanceId)
+                    appSlotAssignments = appSlotAssignments - removal.instanceId
+                    pendingAppSlotRemoval = null
                 },
                 onUninstall = {
                     // スロットはここでは消さない。ユーザーが確認画面で実際にアンインストールを
-                    // 完了した場合のみ、UninstallResultReceiverがSharedPreferencesを書き換え、
-                    // 下のリスナー経由でgridPackages/dockPackagesに反映される。
+                    // 完了した場合のみ、割り当てが外れたアプリとして扱われる。
                     requestUninstall(context, removal.packageName)
-                    pendingRemoval = null
+                    pendingAppSlotRemoval = null
                 }
             )
         }
@@ -1046,7 +1169,7 @@ fun CyberLauncherScreen() {
         }
     }
 
-    CompositionLocalProvider(LocalCyberColors provides colors) {
+    CompositionLocalProvider(LocalCyberColors provides colors, LocalAppDragState provides appDragState) {
         // フォルダを開いたときに、グリッド上のフォルダアイコンそのものがポップアップへ
         // 拡大していくコンテナ変形アニメーション（共有要素）を実現するため、メインの
         // グリッドとフォルダポップアップを同じSharedTransitionLayout内に配置する。
@@ -1057,15 +1180,10 @@ fun CyberLauncherScreen() {
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
                         // Y方向（縦）の移動量がマイナス（上方向）に一定以上でドロワーを表示
-                        if (isEditMode && dragAmount.y < -20) {
-                            showAllAppsDrawer = true
-                            isEditMode = false
-                            change.consume()
-                        } else if (!isEditMode && dragAmount.y < -20) {
+                        if (dragAmount.y < -20) {
                             showAllAppsDrawer = true
                             change.consume()
                         } else {
-                            isEditMode = false
                             isWidgetEditMode = false
                         }
                     }
@@ -1073,10 +1191,9 @@ fun CyberLauncherScreen() {
                 .pointerInput(Unit) {
                     detectTapGestures(
                         // 空白タップで編集モード解除
-                        onTap = { isEditMode = false; isWidgetEditMode = false },
+                        onTap = { isWidgetEditMode = false },
                         // 何もないところの長押しで、ウィジェット追加・カスタマイズのメニューを表示
                         onLongPress = { offset ->
-                            isEditMode = false
                             isWidgetEditMode = false
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             homeMenuOffset = offset
@@ -1170,7 +1287,6 @@ fun CyberLauncherScreen() {
                                 items = gridItems,
                                 baseColumns = accessGridMColumns,
                                 baseRows = accessGridMRows,
-                                isEditMode = isEditMode,
                                 isWallpaperMode = isWallpaperMode,
                                 activeNotifications = activeNotifications,
                                 openFolderId = openFolderId,
@@ -1179,10 +1295,7 @@ fun CyberLauncherScreen() {
                                 onIconOnlyClick = { toggleAccessGridIconOnly() },
                                 useOriginalIconColors = useOriginalIconColors,
                                 onAddClick = { index -> addSlotChoiceIndex = index },
-                                onFolderClick = { folderItem -> openFolderId = folderItem.folder.id },
-                                onLongClick = { enterSlotEditMode() },
-                                onRemoveClick = { index -> removeGridItem(index) },
-                                onExitEditMode = { isEditMode = false }
+                                onFolderClick = { folderItem -> openFolderId = folderItem.folder.id }
                             )
                         }
                         WidgetPanel.CALENDAR -> CalendarSection(
@@ -1196,7 +1309,6 @@ fun CyberLauncherScreen() {
                         WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
                             modifier = boxModifier,
                             slots = quickActionSlots,
-                            isEditMode = isEditMode,
                             isWallpaperMode = isWallpaperMode,
                             isResizing = isResizing,
                             accentColor = accentColor,
@@ -1216,10 +1328,7 @@ fun CyberLauncherScreen() {
                                 prefs.edit { putInt("accent_color", color.toArgb()) }
                             },
                             onUseOriginalIconColorsChange = { toggleUseOriginalIconColors() },
-                            onAddClick = { index -> quickActionAddIndex = index },
-                            onLongClick = { enterSlotEditMode() },
-                            onRemoveClick = { index -> removeQuickAction(index) },
-                            onExitEditMode = { isEditMode = false }
+                            onAddClick = { index -> quickActionAddIndex = index }
                         )
                         WidgetPanel.APPWIDGET -> AppWidgetHostSection(
                             appWidgetId = appWidgetId,
@@ -1242,7 +1351,7 @@ fun CyberLauncherScreen() {
                                 val packageName = appSlotAssignments[instanceId]
                                 if (packageName != null) {
                                     val label = appsByPackage[packageName]?.label ?: packageName
-                                    pendingRemoval = PendingRemoval("app_slot", instanceId, packageName, label)
+                                    pendingAppSlotRemoval = PendingAppSlotRemoval(instanceId, packageName, label)
                                 }
                             },
                             onExitWidgetEditMode = { isWidgetEditMode = false }
@@ -1257,21 +1366,13 @@ fun CyberLauncherScreen() {
                 // 下段: よく使うアプリ（ドック）
                 BottomDockSection(
                     apps = dockApps,
-                    isEditMode = isEditMode,
                     isWallpaperMode = isWallpaperMode,
                     activeNotifications = activeNotifications, // 追加
                     useOriginalIconColors = useOriginalIconColors,
                     onAddClick = { index ->
                         appSelectorTarget = "dock"
                         targetIndex = index
-                    },
-                    onLongClick = { enterSlotEditMode() },
-                    onRemoveClick = { index ->
-                        dockApps.getOrNull(index)?.let { appInfo ->
-                            pendingRemoval = PendingRemoval("dock", index, appInfo.packageName, appInfo.label)
-                        }
-                    },
-                    onExitEditMode = { isEditMode = false }
+                    }
                 )
                 
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
@@ -1331,15 +1432,6 @@ fun CyberLauncherScreen() {
                         folders = folders + (updated.id to updated)
                         saveFolder(prefs, updated)
                     },
-                    onRemoveApp = { index ->
-                        val newPackages = folder.packageNames.toMutableList()
-                        if (index < newPackages.size) {
-                            newPackages[index] = ""
-                            val updated = folder.copy(packageNames = newPackages)
-                            folders = folders + (updated.id to updated)
-                            saveFolder(prefs, updated)
-                        }
-                    },
                     onLaunchApp = { packageName ->
                         val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
                         launchIntent?.let { context.startActivity(it) }
@@ -1363,6 +1455,10 @@ fun CyberLauncherScreen() {
                 DeleteWidgetDropZone(isActive = isDraggedWidgetOverDeleteZone)
             }
         }
+
+        // アプリアイコン・フォルダのドラッグ中に重ねて表示する、指についてくるアイコンと
+        // 画面上部の「削除」「アンインストール」エリア
+        AppDragOverlay(useOriginalIconColors = useOriginalIconColors)
         }
     }
 

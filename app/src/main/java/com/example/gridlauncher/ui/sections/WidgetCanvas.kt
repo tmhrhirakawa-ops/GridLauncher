@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.WidgetPanel
+import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.findFreeGridSlot
@@ -438,6 +439,7 @@ private fun WidgetSlot(
     val currentIsWidgetEditMode = rememberUpdatedState(isWidgetEditMode)
     val currentOnWidgetLongClick = rememberUpdatedState(onWidgetLongClick)
     val currentOnExitWidgetEditMode = rememberUpdatedState(onExitWidgetEditMode)
+    val appDragState = LocalAppDragState.current
 
     // スナップ先ガイド（破線枠。ドラッグ中のみ表示。削除ゾーンの上にいる間は移動先の意味が
     // なくなるため隠す）。直近で有効だった位置に固定し続けるため常に確定可能な位置を指しており、
@@ -527,6 +529,13 @@ private fun WidgetSlot(
                             currentOnExitWidgetEditMode.value()
                         }
                     } else {
+                        // APP LISTのアプリ・フォルダなど、長押し→ドラッグで持ち上げられる要素の上から
+                        // 始まった場合は、ウィジェット編集モードより要素側の長押し（スロット編集モード・
+                        // ドラッグ）を優先し、本体側は一切手を出さない（consumeもしない）
+                        val downScreen = widgetBoxCoordinates?.localToScreen(down.position)
+                        if (downScreen != null && appDragState?.isOverDragSource(downScreen) == true) {
+                            return@awaitEachGesture
+                        }
                         val downTime = down.uptimeMillis
                         val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
                         var isLongPress = false

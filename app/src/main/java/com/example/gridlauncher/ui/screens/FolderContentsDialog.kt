@@ -26,12 +26,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.model.FolderInfo
 import com.example.gridlauncher.ui.components.AppCard
+import com.example.gridlauncher.ui.drag.AppDragItem
+import com.example.gridlauncher.ui.drag.AppDragPayload
+import com.example.gridlauncher.ui.drag.AppDragSource
+import com.example.gridlauncher.ui.drag.AppDropTarget
+import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.appDragSource
+import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 
@@ -44,6 +52,10 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * （[com.example.gridlauncher.ui.screens.CyberLauncherScreen]）と同じ[SharedTransitionLayout]内の
  * オーバーレイとして描画する。そのため背景の暗幕・戻るボタンでの終了は自前で用意している。
  *
+ * 中のアプリは長押し→ドラッグで、フォルダ内での並べ替え・フォルダの外（APP LIST・DOCK）への
+ * 持ち出し・削除・アンインストールができる（[com.example.gridlauncher.ui.drag]参照）。
+ * 持ち出すためにポップアップの外へ指を動かしている間は、下のホーム画面が見えるよう透明にする。
+ *
  * @param folder 表示対象のフォルダ。
  * @param allApps インストールされているすべてのアプリのリスト（アプリ選択・アイコン解決に使用）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
@@ -53,7 +65,6 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param onDismiss ポップアップが閉じられるときのコールバック。
  * @param onRename フォルダ名が変更されたときのコールバック。
  * @param onAddApp 空きスロット（[index]）にアプリ（[packageName]）が追加されたときのコールバック。
- * @param onRemoveApp スロット（[index]）のアプリが削除されたときのコールバック。
  * @param onLaunchApp アプリ（[packageName]）が起動されたときのコールバック。
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -67,14 +78,14 @@ fun SharedTransitionScope.FolderContentsDialog(
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
     onAddApp: (index: Int, packageName: String) -> Unit,
-    onRemoveApp: (index: Int) -> Unit,
     onLaunchApp: (packageName: String) -> Unit
 ) {
     val colors = LocalCyberColors.current
     var editedName by remember(folder.id) { mutableStateOf(folder.name) }
     var addTargetIndex by remember { mutableStateOf<Int?>(null) }
-    // フォルダ名をタップ（編集開始）した時、またはアプリを長押しした時だけ削除バッジを表示する
-    var isEditMode by remember { mutableStateOf(false) }
+    // フォルダ名をタップしたときだけ、名前の入力欄を表示する
+    var isEditingName by remember { mutableStateOf(false) }
+    val dragState = LocalAppDragState.current
     // フォルダ名がタップされたときだけ入力欄にフォーカス・キーボード表示を要求する
     var focusNameField by remember { mutableStateOf(false) }
     val nameFocusRequester = remember { FocusRequester() }
@@ -92,6 +103,15 @@ fun SharedTransitionScope.FolderContentsDialog(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 中のアプリをポップアップの外へ一度持ち出したら、そのドラッグが終わるまで全体を
+            // 透明にし、ポップアップの下に隠れていたスロットも含めてホーム画面にドロップ先を
+            // 探せるようにする。ドラッグ中の指の追跡は持ち上げたアプリ側が続けるため、
+            // ポップアップ自体は閉じずに残しておく（持ち出しをやめて何もない所に離すと再表示される）
+            .graphicsLayer {
+                val isCarriedOut = dragState?.isCarriedOutOfFolder == true &&
+                    (dragState.payload?.source as? AppDragSource.FolderSlot)?.folderId == folder.id
+                alpha = if (isCarriedOut) 0f else 1f
+            }
             .background(Color.Black.copy(alpha = 0.6f))
             .clickable(
                 indication = null,
@@ -109,13 +129,14 @@ fun SharedTransitionScope.FolderContentsDialog(
                     rememberSharedContentState(key = folder.id),
                     animatedVisibilityScope = animatedVisibilityScope
                 )
+                .appDropTarget(AppDropTarget.FolderPanel, highlight = false)
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
-                ) { isEditMode = false } // 空白部分をタップしたら編集モード解除（暗幕への伝播も防ぐ）
+                ) { isEditingName = false } // 空白部分をタップしたら名前の編集を終える（暗幕への伝播も防ぐ）
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                if (isEditMode) {
+                if (isEditingName) {
                     OutlinedTextField(
                         value = editedName,
                         onValueChange = {
@@ -146,7 +167,7 @@ fun SharedTransitionScope.FolderContentsDialog(
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() }
                             ) {
-                                isEditMode = true
+                                isEditingName = true
                                 focusNameField = true
                             }
                     )
@@ -169,6 +190,14 @@ fun SharedTransitionScope.FolderContentsDialog(
                             val index = row * 3 + col
                             val packageName = folder.packageNames.getOrNull(index)?.takeIf { it.isNotEmpty() }
                             val appInfo = packageName?.let { pkg -> allApps.find { it.packageName == pkg } }
+                            // どのスロットもドロップ先にする。持ち上げ中のスロットは薄く表示して「抜けた」ことを示す
+                            val slotModifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .appDropTarget(AppDropTarget.FolderSlot(folder.id, index))
+                                .graphicsLayer {
+                                    alpha = if (dragState?.payload?.source == AppDragSource.FolderSlot(folder.id, index)) 0.3f else 1f
+                                }
 
                             if (appInfo != null) {
                                 AppCard(
@@ -176,28 +205,23 @@ fun SharedTransitionScope.FolderContentsDialog(
                                     packageName = appInfo.packageName,
                                     icon = appInfo.icon,
                                     isMonochrome = appInfo.iconIsMonochrome,
-                                    isEditMode = isEditMode,
                                     isWallpaperMode = isWallpaperMode,
                                     useOriginalIconColors = useOriginalIconColors,
-                                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                                    onClick = {
-                                        if (isEditMode) {
-                                            isEditMode = false
-                                        } else {
-                                            onLaunchApp(appInfo.packageName)
-                                            onDismiss()
-                                        }
+                                    modifier = slotModifier.appDragSource {
+                                        AppDragPayload(AppDragSource.FolderSlot(folder.id, index), AppDragItem.App(appInfo))
                                     },
-                                    onLongClick = { isEditMode = true },
-                                    onRemoveClick = { onRemoveApp(index) }
+                                    onClick = {
+                                        onLaunchApp(appInfo.packageName)
+                                        onDismiss()
+                                    }
                                 )
                             } else {
                                 Surface(
-                                    onClick = { if (isEditMode) isEditMode = false else addTargetIndex = index },
+                                    onClick = { addTargetIndex = index },
                                     shape = RoundedCornerShape(4.dp),
                                     color = Color.Transparent,
                                     border = BorderStroke(1.dp, colors.border),
-                                    modifier = Modifier.weight(1f).fillMaxHeight()
+                                    modifier = slotModifier
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Text(

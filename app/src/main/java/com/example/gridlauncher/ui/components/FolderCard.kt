@@ -1,10 +1,5 @@
 package com.example.gridlauncher.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -32,21 +27,17 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  *
  * @param name フォルダの名前。
  * @param modifier レイアウトに適用するModifier。
- * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param onClick カードがクリックされたときのコールバック（通常時はフォルダの中身を開く）。
  * @param onLongClick カードが長押しされたときのコールバック。
- * @param onRemoveClick 編集モードで削除アイコンがクリックされたときのコールバック。
  */
 @Composable
 fun FolderCard(
     name: String,
     modifier: Modifier = Modifier,
-    isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
-    onRemoveClick: () -> Unit = {}
+    onLongClick: () -> Unit = {}
 ) {
     Surface(
         shape = RoundedCornerShape(4.dp),
@@ -80,15 +71,6 @@ fun FolderCard(
                     maxLines = 1,
                     modifier = Modifier.basicMarquee()
                 )
-            }
-
-            AnimatedVisibility(
-                visible = isEditMode,
-                enter = scaleIn(initialScale = 0.4f) + fadeIn(),
-                exit = scaleOut(targetScale = 0.4f) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
-            ) {
-                RemoveBadge(onClick = onRemoveClick)
             }
         }
     }

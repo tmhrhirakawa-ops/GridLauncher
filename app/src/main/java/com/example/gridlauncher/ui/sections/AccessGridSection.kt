@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,14 @@ import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.ui.components.AppCard
 import com.example.gridlauncher.ui.components.FolderCard
+import com.example.gridlauncher.ui.drag.AppDragItem
+import com.example.gridlauncher.ui.drag.AppDragPayload
+import com.example.gridlauncher.ui.drag.AppDragSource
+import com.example.gridlauncher.ui.drag.AppDropTarget
+import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.appDragSource
+import com.example.gridlauncher.ui.drag.appDropTarget
+import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.adaptiveSlotCount
@@ -75,10 +84,11 @@ private val HeaderNarrowWidthThreshold = 260.dp
  * られる。この場合はスロットが正方形になるよう列数から行数を導出し、名前がないぶん最小・最大
  * サイズのしきい値（[IconOnlySlotMinSize]・[IconOnlySlotMaxSize]）も通常モードより小さくする。
  *
+ * アプリ・フォルダは長押し→ドラッグで移動・フォルダ化・削除する（[com.example.gridlauncher.ui.drag]参照）。
+ *
  * @param items 表示するスロットの中身のリスト（アプリ・フォルダ・null=空きスロット）。
  * @param baseColumns グリッドの基準列数（ウィジェットのサイズがちょうどよいときに使う列数）。
  * @param baseRows グリッドの基準行数（ウィジェットのサイズがちょうどよいときに使う行数）。
- * @param isEditMode UIが編集モードかどうか。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
  * @param openFolderId 現在ポップアップで開いているフォルダのID。該当するフォルダのカードは、
@@ -88,10 +98,7 @@ private val HeaderNarrowWidthThreshold = 260.dp
  * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーのデュオトーン加工をせず、
  *   アプリ本来の色のまま表示する。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
- * @param onFolderClick フォルダがクリックされたとき（編集モードでない場合）のコールバック。
- * @param onLongClick アプリ・フォルダが長押しされたときのコールバック。
- * @param onRemoveClick 削除アイコンがクリックされたときのコールバック。
- * @param onExitEditMode 編集モード中に削除アイコン以外の部分がタップされたときのコールバック。
+ * @param onFolderClick フォルダがクリックされたときのコールバック。
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -99,7 +106,6 @@ fun SharedTransitionScope.AccessGridSection(
     items: List<GridItem?>,
     baseColumns: Int,
     baseRows: Int,
-    isEditMode: Boolean = false,
     isWallpaperMode: Boolean = false,
     activeNotifications: Map<String, Int> = emptyMap(),
     openFolderId: String? = null,
@@ -108,10 +114,7 @@ fun SharedTransitionScope.AccessGridSection(
     onIconOnlyClick: () -> Unit = {},
     useOriginalIconColors: Boolean = false,
     onAddClick: (Int) -> Unit,
-    onFolderClick: (GridItem.FolderItem) -> Unit = {},
-    onLongClick: () -> Unit = {},
-    onRemoveClick: (Int) -> Unit = {},
-    onExitEditMode: () -> Unit = {}
+    onFolderClick: (GridItem.FolderItem) -> Unit = {}
 ) {
     val context = LocalContext.current
 
@@ -173,10 +176,14 @@ fun SharedTransitionScope.AccessGridSection(
             // 少なくとも1ページ分は空きスロットを表示する
             val pageCount = maxOf(1, ((items.size + 1) / pageSize) + if (((items.size + 1) % pageSize) == 0) 0 else 1)
             val pagerState = rememberPagerState(pageCount = { pageCount })
+            val dragState = LocalAppDragState.current
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                // ドラッグ中に端でページ送りしても、ドラッグ元のスロット（持ち上げたアプリ）が
+                // 破棄されてドラッグが途切れないよう、全ページを保持しておく
+                beyondViewportPageCount = pageCount - 1,
+                modifier = Modifier.fillMaxSize().dragEdgeAutoScroll(pagerState)
             ) { page ->
                 val startIndex = page * pageSize
                 val pageItems = items.asSequence().drop(startIndex).take(pageSize).toList()
@@ -198,6 +205,14 @@ fun SharedTransitionScope.AccessGridSection(
                                 val itemIndex = rowIndex + (colIndex * rows) // 縦埋めから横埋めに変更が必要な場合はここを修正
                                 val globalIndex = startIndex + itemIndex
                                 val item = pageItems.getOrNull(itemIndex)
+                                // どのスロットもドロップ先にする。持ち上げ中のスロットは薄く表示して「抜けた」ことを示す
+                                val slotModifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .appDropTarget(AppDropTarget.GridSlot(globalIndex))
+                                    .graphicsLayer {
+                                        alpha = if (dragState?.payload?.source == AppDragSource.Grid(globalIndex)) 0.3f else 1f
+                                    }
 
                                 when (item) {
                                     is GridItem.AppItem -> {
@@ -208,53 +223,43 @@ fun SharedTransitionScope.AccessGridSection(
                                             packageName = appInfo.packageName,
                                             isMonochrome = appInfo.iconIsMonochrome,
                                             icon = appInfo.icon,
-                                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                                            isEditMode = isEditMode,
+                                            modifier = slotModifier.appDragSource {
+                                                AppDragPayload(AppDragSource.Grid(globalIndex), AppDragItem.App(appInfo))
+                                            },
                                             notificationCount = notifCount,
                                             isWallpaperMode = isWallpaperMode,
                                             isCompact = isIconOnly,
                                             useOriginalIconColors = useOriginalIconColors,
                                             onClick = {
-                                                if (isEditMode) {
-                                                    onExitEditMode()
-                                                } else {
-                                                    val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                                                    launchIntent?.let {
-                                                        context.startActivity(it)
-                                                    }
+                                                context.packageManager.getLaunchIntentForPackage(appInfo.packageName)?.let {
+                                                    context.startActivity(it)
                                                 }
-                                            },
-                                            onLongClick = onLongClick,
-                                            onRemoveClick = { onRemoveClick(globalIndex) }
+                                            }
                                         )
                                     }
                                     is GridItem.FolderItem -> {
                                         FolderCard(
                                             name = item.folder.name,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxHeight()
+                                            modifier = slotModifier
+                                                .appDragSource {
+                                                    AppDragPayload(AppDragSource.Grid(globalIndex), AppDragItem.Folder(item.folder))
+                                                }
                                                 .sharedElementWithCallerManagedVisibility(
                                                     rememberSharedContentState(key = item.folder.id),
                                                     visible = item.folder.id != openFolderId
                                                 ),
-                                            isEditMode = isEditMode,
                                             isWallpaperMode = isWallpaperMode,
-                                            onClick = {
-                                                if (isEditMode) onExitEditMode() else onFolderClick(item)
-                                            },
-                                            onLongClick = onLongClick,
-                                            onRemoveClick = { onRemoveClick(globalIndex) }
+                                            onClick = { onFolderClick(item) }
                                         )
                                     }
                                     null -> {
                                         // 空きスロット（タップでアプリ追加。編集モード中は編集モード終了のみ）
                                         Surface(
-                                            onClick = { if (isEditMode) onExitEditMode() else onAddClick(globalIndex) },
+                                            onClick = { onAddClick(globalIndex) },
                                             shape = RoundedCornerShape(4.dp),
                                             color = Color.Transparent,
                                             border = BorderStroke(1.dp, LocalCyberColors.current.border),
-                                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                            modifier = slotModifier
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Text("EMPTY SLOT", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.3f))
