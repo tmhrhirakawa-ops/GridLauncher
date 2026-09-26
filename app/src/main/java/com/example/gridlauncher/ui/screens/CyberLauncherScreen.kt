@@ -82,6 +82,7 @@ import com.example.gridlauncher.ui.drag.AppDropTarget
 import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
+import com.example.gridlauncher.util.AccessGridSize
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 import com.example.gridlauncher.util.AppWidgetHostManager
 import com.example.gridlauncher.util.allocateNextAppSlotInstanceId
@@ -96,14 +97,22 @@ import com.example.gridlauncher.util.getInstalledApps
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
 import com.example.gridlauncher.util.loadAccent2WidgetPanels
+import com.example.gridlauncher.util.loadAccessGridPageCount
+import com.example.gridlauncher.util.loadAccessGridSize
+import com.example.gridlauncher.util.loadShareGridAcrossOrientations
+import com.example.gridlauncher.util.gridAppsKeyFor
 import com.example.gridlauncher.util.loadFolders
 import com.example.gridlauncher.util.loadHiddenWidgetPanels
 import com.example.gridlauncher.util.loadPlacedWidgets
 import com.example.gridlauncher.util.loadQuickActionSlots
 import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
+import com.example.gridlauncher.util.requiredAccessGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
+import com.example.gridlauncher.util.saveAccessGridPageCount
+import com.example.gridlauncher.util.saveAccessGridSize
+import com.example.gridlauncher.util.saveShareGridAcrossOrientations
 import com.example.gridlauncher.util.requestUninstall
 import com.example.gridlauncher.util.saveAppSlotAssignment
 import com.example.gridlauncher.util.saveFolder
@@ -276,18 +285,18 @@ fun CyberLauncherScreen() {
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
 
-    // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。ヘッダーのボタンで切り替える。
+    // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。APP LISTの設定画面で切り替える。
     // 縦画面・横画面を切り替えても意図せず引き継がれないよう、それぞれ別に記憶する。
     var accessGridIconOnlyPortrait by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only_portrait", false)) }
     var accessGridIconOnlyLandscape by remember { mutableStateOf(prefs.getBoolean("access_grid_icon_only_landscape", false)) }
     val accessGridIconOnly = if (isPortrait) accessGridIconOnlyPortrait else accessGridIconOnlyLandscape
-    fun toggleAccessGridIconOnly() {
+    fun setAccessGridIconOnly(iconOnly: Boolean) {
         if (isPortrait) {
-            accessGridIconOnlyPortrait = !accessGridIconOnlyPortrait
-            prefs.edit { putBoolean("access_grid_icon_only_portrait", accessGridIconOnlyPortrait) }
+            accessGridIconOnlyPortrait = iconOnly
+            prefs.edit { putBoolean("access_grid_icon_only_portrait", iconOnly) }
         } else {
-            accessGridIconOnlyLandscape = !accessGridIconOnlyLandscape
-            prefs.edit { putBoolean("access_grid_icon_only_landscape", accessGridIconOnlyLandscape) }
+            accessGridIconOnlyLandscape = iconOnly
+            prefs.edit { putBoolean("access_grid_icon_only_landscape", iconOnly) }
         }
     }
 
@@ -317,9 +326,14 @@ fun CyberLauncherScreen() {
         saveAccent2WidgetPanels(prefs, accent2WidgetPanels)
     }
 
-    // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
-    var gridPackages by remember {
-        mutableStateOf(prefs.getString("grid_apps", "")?.split(",") ?: emptyList())
+    // 縦画面と横画面でAPP LISTに同じ並びを使うかどうか（APP LISTの設定画面で切り替える）。
+    // 別々にする場合は、横画面では専用の並び（KEY_GRID_APPS_LANDSCAPE）を使う
+    var shareGridAcrossOrientations by remember { mutableStateOf(loadShareGridAcrossOrientations(prefs)) }
+    val gridAppsKey = gridAppsKeyFor(shareGridAcrossOrientations, isPortrait)
+
+    // GridApps: SharedPreferencesから保存されたパッケージ名リストを読み込む（今の向きで使う並び）
+    var gridPackages by remember(gridAppsKey) {
+        mutableStateOf(prefs.getString(gridAppsKey, "")?.split(",") ?: emptyList())
     }
 
     // DockApps: SharedPreferencesから保存されたパッケージ名リストを読み込む
@@ -552,7 +566,7 @@ fun CyberLauncherScreen() {
         if (editedFolders != folders) folders = editedFolders.toMap()
         if (grid != gridPackages) {
             gridPackages = grid
-            prefs.edit { putString("grid_apps", grid.joinToString(",")) }
+            prefs.edit { putString(gridAppsKey, grid.joinToString(",")) }
         }
         if (dock != dockPackages) {
             dockPackages = dock
@@ -562,12 +576,12 @@ fun CyberLauncherScreen() {
     val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
 
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
-    // SharedPreferencesの"grid_apps"/"dock_apps"を直接書き換える。ここではその変更を
+    // SharedPreferencesのAPP LIST・DOCKの並びを直接書き換える。ここではその変更を
     // 検知して、画面上のgridPackages/dockPackagesに反映する。
-    DisposableEffect(prefs) {
+    DisposableEffect(prefs, gridAppsKey) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { sharedPrefs, key ->
             when (key) {
-                "grid_apps" -> gridPackages = sharedPrefs.getString("grid_apps", "")?.split(",") ?: emptyList()
+                gridAppsKey -> gridPackages = sharedPrefs.getString(gridAppsKey, "")?.split(",") ?: emptyList()
                 "dock_apps" -> dockPackages = sharedPrefs.getString("dock_apps", "")?.split(",") ?: emptyList()
             }
         }
@@ -575,6 +589,17 @@ fun CyberLauncherScreen() {
         onDispose {
             prefs.unregisterOnSharedPreferenceChangeListener(listener)
         }
+    }
+
+    // 縦画面と横画面でAPP LISTに同じ並びを使うかどうかを切り替える。同じにする場合は、
+    // 今表示している向きの並びにそろえる
+    fun setShareGridAcrossOrientations(share: Boolean) {
+        if (share == shareGridAcrossOrientations) return
+        saveShareGridAcrossOrientations(prefs, share, keepLandscape = !isPortrait)
+        shareGridAcrossOrientations = share
+        folders = loadFolders(prefs)
+        val key = gridAppsKeyFor(share, isPortrait)
+        gridPackages = prefs.getString(key, "")?.split(",") ?: emptyList()
     }
 
     // ウィジェット編集モード（ウィジェットのヘッダーなど、個々のスロット以外の長押しで入る。
@@ -693,6 +718,15 @@ fun CyberLauncherScreen() {
         isPortrait -> WidgetLayoutMode.LARGE_PORTRAIT
         else -> WidgetLayoutMode.LANDSCAPE
     }
+    // APP LISTのアイコンの並び（nullはAUTO）とページ数。ウィジェットの大きさは画面モードごとに
+    // 違うため、画面モードごとに保存する
+    var accessGridSize by remember(widgetLayoutMode) { mutableStateOf(loadAccessGridSize(prefs, widgetLayoutMode)) }
+    var accessGridPageCount by remember(widgetLayoutMode) { mutableIntStateOf(loadAccessGridPageCount(prefs, widgetLayoutMode)) }
+    // APP LISTが実際に測った、AUTOの場合の並びと1ページのスロット数（設定画面の表示に使う）
+    var accessGridAutoSize by remember(widgetLayoutMode) { mutableStateOf<AccessGridSize?>(null) }
+    var accessGridPageSize by remember(widgetLayoutMode) { mutableIntStateOf(0) }
+    var showAppListSettings by remember { mutableStateOf(false) }
+
     var placedWidgets by remember(widgetLayoutMode) { mutableStateOf(loadPlacedWidgets(prefs, widgetLayoutMode)) }
     fun updatePlacedWidgets(newWidgets: List<PlacedWidget>) {
         placedWidgets = newWidgets
@@ -897,6 +931,11 @@ fun CyberLauncherScreen() {
                 onUseOriginalIconColorsChange = { enabled ->
                     if (enabled != useOriginalIconColors) toggleUseOriginalIconColors()
                 },
+                onOpenAppListSettings = {
+                    // シートを重ねず、カスタマイズ画面を閉じてからAPP LISTの設定画面を開く
+                    showCustomizeSheet = false
+                    showAppListSettings = true
+                },
                 showAddWidgetTile = showAddWidgetTile,
                 onShowAddWidgetTileChange = { visible ->
                     showAddWidgetTile = visible
@@ -969,7 +1008,7 @@ fun CyberLauncherScreen() {
                         }
                         newPackages[targetIndex!!] = packageName
                         gridPackages = newPackages
-                        prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                        prefs.edit { putString(gridAppsKey, newPackages.joinToString(",")) }
                     } else if (appSelectorTarget == "dock") {
                         val newPackages = dockPackages.toMutableList()
                         while (newPackages.size <= targetIndex!!) {
@@ -1020,7 +1059,7 @@ fun CyberLauncherScreen() {
                     }
                     newPackages[index] = folderSlotValue(folder.id)
                     gridPackages = newPackages
-                    prefs.edit { putString("grid_apps", newPackages.joinToString(",")) }
+                    prefs.edit { putString(gridAppsKey, newPackages.joinToString(",")) }
                     addSlotChoiceIndex = null
                 }
             )
@@ -1098,6 +1137,33 @@ fun CyberLauncherScreen() {
                     showWidgetTypeSelector = false
                     showAppWidgetPicker = true
                 }
+            )
+        }
+    }
+
+    // APP LISTのヘッダーの歯車ボタンで開く、APP LISTの設定（ICON ONLY・アイコンの並び・ページ数）
+    if (showAppListSettings) {
+        // アプリ・フォルダが入っているページより少なくはできない
+        val minPageCount = requiredAccessGridPages(gridPackages, accessGridPageSize) { it.isEmpty() }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppListSettingsSheet(
+                isIconOnly = accessGridIconOnly,
+                onIconOnlyChange = { setAccessGridIconOnly(it) },
+                shareAcrossOrientations = shareGridAcrossOrientations,
+                onShareAcrossOrientationsChange = { setShareGridAcrossOrientations(it) },
+                gridSize = accessGridSize,
+                autoGridSize = accessGridAutoSize,
+                onGridSizeChange = { size ->
+                    accessGridSize = size
+                    saveAccessGridSize(prefs, widgetLayoutMode, size)
+                },
+                pageCount = maxOf(accessGridPageCount, minPageCount),
+                minPageCount = minPageCount,
+                onPageCountChange = { count ->
+                    accessGridPageCount = count
+                    saveAccessGridPageCount(prefs, widgetLayoutMode, count)
+                },
+                onDismiss = { showAppListSettings = false }
             )
         }
     }
@@ -1292,7 +1358,13 @@ fun CyberLauncherScreen() {
                                 openFolderId = openFolderId,
                                 showBorder = WidgetPanel.ACCESS_GRID !in hiddenWidgetPanels,
                                 isIconOnly = accessGridIconOnly,
-                                onIconOnlyClick = { toggleAccessGridIconOnly() },
+                                gridSize = accessGridSize,
+                                pageCount = accessGridPageCount,
+                                onSettingsClick = { showAppListSettings = true },
+                                onLayoutMeasured = { autoColumns, autoRows, pageSize ->
+                                    accessGridAutoSize = AccessGridSize(autoColumns, autoRows)
+                                    accessGridPageSize = pageSize
+                                },
                                 useOriginalIconColors = useOriginalIconColors,
                                 onAddClick = { index -> addSlotChoiceIndex = index },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id }

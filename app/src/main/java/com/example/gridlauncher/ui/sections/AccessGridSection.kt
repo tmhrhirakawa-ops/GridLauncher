@@ -4,17 +4,21 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -34,7 +38,9 @@ import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
+import com.example.gridlauncher.util.AccessGridSize
 import com.example.gridlauncher.util.adaptiveSlotCount
+import com.example.gridlauncher.util.requiredAccessGridPages
 import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.roundToInt
 
@@ -66,12 +72,6 @@ private val IconOnlySlotMaxSize = 64.dp
 private val SlotSpacing = 12.dp
 
 /**
- * ウィジェット全体の幅がこれを下回ったら、ヘッダーが窮屈だとみなしICON ONLYボタンの文字を
- * 「IO」に略す（「APP LIST // APP NODES」との衝突・折り返しでレイアウトが崩れるのを防ぐため）。
- */
-private val HeaderNarrowWidthThreshold = 260.dp
-
-/**
  * アプリアイコン・フォルダのグリッドを表示するセクション。
  *
  * 列数・行数は[baseColumns]・[baseRows]を基準に、ウィジェットの実際の描画サイズに応じて
@@ -80,8 +80,8 @@ private val HeaderNarrowWidthThreshold = 260.dp
  * アプリの数を減らすことで読みやすさを保つ）、逆に[MaxSlotWidth]・[MaxSlotHeight]を超えて
  * 間延びしそうなほど広くなったときは列数・行数を増やして余白を詰める。
  *
- * ヘッダー右上の「ICON ONLY」ボタンでアイコンのみ表示（名前非表示・正方形スロット）に切り替え
- * られる。この場合はスロットが正方形になるよう列数から行数を導出し、名前がないぶん最小・最大
+ * ICON ONLYモード（APP LISTの設定画面で切り替える）では、アイコンのみ表示（名前非表示・正方形スロット）に
+ * なる。この場合はスロットが正方形になるよう列数から行数を導出し、名前がないぶん最小・最大
  * サイズのしきい値（[IconOnlySlotMinSize]・[IconOnlySlotMaxSize]）も通常モードより小さくする。
  *
  * アプリ・フォルダは長押し→ドラッグで移動・フォルダ化・削除する（[com.example.gridlauncher.ui.drag]参照）。
@@ -94,9 +94,14 @@ private val HeaderNarrowWidthThreshold = 260.dp
  * @param openFolderId 現在ポップアップで開いているフォルダのID。該当するフォルダのカードは、
  *   ポップアップへ拡大するアニメーション（共有要素）のため見た目を隠す。
  * @param isIconOnly ICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。
- * @param onIconOnlyClick ICON ONLYボタンがクリックされたとき（オン・オフを切り替える）のコールバック。
+ * @param gridSize 設定画面で指定したアイコンの並び（列数×行数）。nullの場合はAUTO（上記の自動判定）。
+ * @param pageCount 設定画面で指定したページ数。スロットが埋まっても自動では増やさないが、
+ *   アプリ・フォルダが入っているページより少なくはしない。
  * @param useOriginalIconColors trueの場合、アイコンをアクセントカラーのデュオトーン加工をせず、
  *   アプリ本来の色のまま表示する。
+ * @param onSettingsClick ヘッダーの歯車ボタン（APP LISTの設定）がクリックされたときのコールバック。
+ * @param onLayoutMeasured AUTOの場合の列数・行数と、実際の1ページのスロット数が決まるたびに呼ばれる
+ *   コールバック（設定画面で現在の並びや、必要な最小ページ数を表示するために使う）。
  * @param onAddClick 空きスロットがクリックされたときのコールバック。
  * @param onFolderClick フォルダがクリックされたときのコールバック。
  */
@@ -111,8 +116,11 @@ fun SharedTransitionScope.AccessGridSection(
     openFolderId: String? = null,
     showBorder: Boolean = true,
     isIconOnly: Boolean = false,
-    onIconOnlyClick: () -> Unit = {},
+    gridSize: AccessGridSize? = null,
+    pageCount: Int = 1,
     useOriginalIconColors: Boolean = false,
+    onSettingsClick: () -> Unit = {},
+    onLayoutMeasured: (autoColumns: Int, autoRows: Int, pageSize: Int) -> Unit = { _, _, _ -> },
     onAddClick: (Int) -> Unit,
     onFolderClick: (GridItem.FolderItem) -> Unit = {}
 ) {
@@ -124,10 +132,6 @@ fun SharedTransitionScope.AccessGridSection(
         border = if (showBorder) BorderStroke(1.dp, LocalCyberColors.current.border) else null,
         modifier = Modifier.fillMaxSize()
     ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // ウィジェットが狭くリサイズされてヘッダーが窮屈になってきたら、ICON ONLYボタンの
-        // 文字を「IO」に略してレイアウトが崩れないようにする
-        val isHeaderNarrow = maxWidth < HeaderNarrowWidthThreshold
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier
@@ -136,53 +140,54 @@ fun SharedTransitionScope.AccessGridSection(
             Spacer(modifier = Modifier.width(8.dp))
             Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
             Spacer(modifier = Modifier.weight(1f))
-            // ICON ONLY切り替えボタン（オンのときは塗りつぶし、オフのときは枠線のみ）
-            Text(
-                text = if (isHeaderNarrow) "IO" else "ICON ONLY",
-                fontFamily = CyberFont,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isIconOnly) LocalCyberColors.current.bg else LocalCyberColors.current.accent,
+            // APP LISTの設定（ICON ONLY・アイコンの並び・ページ数）を開く歯車ボタン
+            Icon(
+                imageVector = Icons.Outlined.Settings,
+                contentDescription = "APP LIST Settings",
+                tint = LocalCyberColors.current.accent,
                 modifier = Modifier
-                    .then(
-                        if (isIconOnly) {
-                            Modifier.background(LocalCyberColors.current.accent, RoundedCornerShape(4.dp))
-                        } else {
-                            Modifier.border(1.dp, LocalCyberColors.current.accent.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                        }
-                    )
-                    .clickable { onIconOnlyClick() }
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                    .size(24.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onSettingsClick)
+                    .padding(3.dp)
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val columns: Int
-            val rows: Int
+            // AUTO（ウィジェットの大きさから自動で決める）の場合の列数・行数
+            val autoColumns: Int
+            val autoRows: Int
             if (isIconOnly) {
                 // 列数は幅から通常通り決め、行数はそのスロット1辺の長さになるべく近くなる数を
                 // 逆算する（スロットを正方形にするため）
-                columns = adaptiveSlotCount(maxWidth, baseColumns, IconOnlySlotMinSize, IconOnlySlotMaxSize, SlotSpacing)
-                val slotSize = (maxWidth - SlotSpacing * (columns - 1)) / columns
-                rows = squareCountForSlotSize(maxHeight, slotSize, SlotSpacing)
+                autoColumns = adaptiveSlotCount(maxWidth, baseColumns, IconOnlySlotMinSize, IconOnlySlotMaxSize, SlotSpacing)
+                val slotSize = (maxWidth - SlotSpacing * (autoColumns - 1)) / autoColumns
+                autoRows = squareCountForSlotSize(maxHeight, slotSize, SlotSpacing)
             } else {
-                columns = adaptiveSlotCount(maxWidth, baseColumns, MinSlotWidth, MaxSlotWidth, SlotSpacing)
-                rows = adaptiveSlotCount(maxHeight, baseRows, MinSlotHeight, MaxSlotHeight, SlotSpacing)
+                autoColumns = adaptiveSlotCount(maxWidth, baseColumns, MinSlotWidth, MaxSlotWidth, SlotSpacing)
+                autoRows = adaptiveSlotCount(maxHeight, baseRows, MinSlotHeight, MaxSlotHeight, SlotSpacing)
             }
+            // 設定画面で並びを指定している場合はそちらを使う
+            val columns = gridSize?.columns ?: autoColumns
+            val rows = gridSize?.rows ?: autoRows
 
             // アプリ・フォルダを実際の行数・列数で分割
             val pageSize = columns * rows
-            // 少なくとも1ページ分は空きスロットを表示する
-            val pageCount = maxOf(1, ((items.size + 1) / pageSize) + if (((items.size + 1) % pageSize) == 0) 0 else 1)
-            val pagerState = rememberPagerState(pageCount = { pageCount })
+            LaunchedEffect(autoColumns, autoRows, pageSize) {
+                onLayoutMeasured(autoColumns, autoRows, pageSize)
+            }
+            // ページ数は設定画面で指定した数（スロットが埋まっても自動では増やさない）。ただし、
+            // アプリ・フォルダが入っているページが隠れないよう、それより少なくはしない
+            val displayedPageCount = maxOf(pageCount, requiredAccessGridPages(items, pageSize) { it == null })
+            val pagerState = rememberPagerState(pageCount = { displayedPageCount })
             val dragState = LocalAppDragState.current
 
             HorizontalPager(
                 state = pagerState,
                 // ドラッグ中に端でページ送りしても、ドラッグ元のスロット（持ち上げたアプリ）が
                 // 破棄されてドラッグが途切れないよう、全ページを保持しておく
-                beyondViewportPageCount = pageCount - 1,
+                beyondViewportPageCount = displayedPageCount - 1,
                 modifier = Modifier.fillMaxSize().dragEdgeAutoScroll(pagerState)
             ) { page ->
                 val startIndex = page * pageSize
@@ -273,7 +278,6 @@ fun SharedTransitionScope.AccessGridSection(
                 }
             }
         }
-    }
     }
     }
 }

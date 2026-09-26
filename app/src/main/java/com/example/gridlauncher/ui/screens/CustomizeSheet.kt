@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.GridOn
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Opacity
@@ -75,6 +76,7 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  *   （trueならアクセントカラー2を使う）。
  * @param useOriginalIconColors アプリアイコンをオリジナルカラーのまま表示しているかどうか。
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
+ * @param onOpenAppListSettings 「APP LISTの詳細設定」がタップされたときのコールバック（APP LISTの設定画面を開く）。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -98,6 +100,7 @@ fun CustomizeSheet(
     onPanelAccentChange: (WidgetPanel, Boolean) -> Unit,
     useOriginalIconColors: Boolean,
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
+    onOpenAppListSettings: () -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -233,6 +236,17 @@ fun CustomizeSheet(
                 CyberSwitch(checked = useOriginalIconColors, onCheckedChange = onUseOriginalIconColorsChange)
             }
 
+            // APP LISTの詳細設定（ICON ONLY・縦横で同じ並びにするか・アイコンの並び・ページ数）。
+            // APP LISTのヘッダーの歯車ボタンと同じ設定画面を開く
+            CustomizeRow(
+                icon = Icons.Outlined.GridView,
+                title = "APP LIST の詳細設定",
+                description = "アイコンの並び・ページ数・ICON ONLY などを設定します",
+                onClick = onOpenAppListSettings
+            ) {
+                Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+            }
+
             // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）
             CustomizeRow(
                 icon = Icons.Outlined.AddBox,
@@ -319,7 +333,7 @@ fun CustomizeSheet(
 
 /** カスタマイズ項目1つ分の枠（パネル色＋枠線の角丸カード）。 */
 @Composable
-private fun CustomizeCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun CustomizeCard(content: @Composable ColumnScope.() -> Unit) {
     val colors = LocalCyberColors.current
     Surface(
         shape = RoundedCornerShape(6.dp),
@@ -336,7 +350,7 @@ private fun CustomizeCard(content: @Composable ColumnScope.() -> Unit) {
  * [onClick]を指定すると行全体がタップ可能になる。
  */
 @Composable
-private fun CustomizeRow(
+internal fun CustomizeRow(
     icon: ImageVector,
     title: String,
     description: String,
@@ -355,7 +369,7 @@ private fun CustomizeRow(
 }
 
 @Composable
-private fun CustomizeRowContent(
+internal fun CustomizeRowContent(
     icon: ImageVector,
     title: String,
     description: String,
@@ -383,7 +397,7 @@ private fun CustomizeRowContent(
 
 /** アクセントカラーに合わせたスイッチ。 */
 @Composable
-private fun CyberSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun CyberSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val colors = LocalCyberColors.current
     Switch(
         checked = checked,
