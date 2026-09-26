@@ -1,6 +1,8 @@
 package com.example.gridlauncher.ui.screens
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -20,7 +22,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,9 +34,19 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.gridlauncher.R
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.OnboardingSteps
+
+/** 背景画像の上に重ねる黒の不透明度（背景の模様の上でも文字を読みやすくするため）。 */
+private const val OnboardingBackgroundScrimAlpha = 0.2f
+
+/**
+ * 横画面で、オンボーディングの文字を表示する左側の領域の幅（画面幅に対する割合）。
+ * 横画面の背景画像は中央の図柄が右寄りにあるため、文字が図柄と重ならないよう左側に寄せる。
+ */
+private const val LandscapeContentWidthFraction = 0.5f
 
 /**
  * 初回起動時のオンボーディング画面。「ウェルカム」→ 各種権限/設定案内 → 「完了」の一本道。
@@ -42,6 +58,7 @@ import com.example.gridlauncher.util.OnboardingSteps
 fun OnboardingScreen(onFinish: () -> Unit) {
     val context = LocalContext.current
     val colors = LocalCyberColors.current
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     // 0=ウェルカム, 1..N=各ステップ, N+1=完了
     var currentStep by remember { mutableIntStateOf(0) }
@@ -63,6 +80,19 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     }
 
     Surface(color = colors.bg, modifier = Modifier.fillMaxSize()) {
+        // 背景画像（縦画面用・横画面用はリソースの向きの修飾子で自動的に切り替わる）。縦横比を
+        // 保ったまま画面いっぱいに切り取って表示する。縦画面用は図柄が上のほうにあるため、
+        // 端末の縦横比が違っても図柄が切れないよう上を基準に切り取る
+        Image(
+            painter = painterResource(R.drawable.onboarding_background),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = if (isLandscape) Alignment.Center else Alignment.TopCenter,
+            modifier = Modifier.fillMaxSize()
+        )
+        // 背景の模様の上でも文字が読めるよう、半透明の黒を重ねる
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = OnboardingBackgroundScrimAlpha)))
+
         // Edge-to-Edge 表示のため、ナビゲーションバー（3ボタン/ジェスチャー）・ステータスバー・
         // ディスプレイカットアウトの分を避けてから余白を取る（ボタンがバーと重ならないように）
         Column(modifier = Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp)) {
@@ -87,7 +117,9 @@ fun OnboardingScreen(onFinish: () -> Unit) {
             }
 
             Column(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(if (isLandscape) LandscapeContentWidthFraction else 1f),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

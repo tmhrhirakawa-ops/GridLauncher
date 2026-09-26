@@ -268,7 +268,10 @@ fun CyberLauncherScreen() {
     // （アプリ一覧の読み込み等）を準備する必要がないため、ここで早期リターンする
     var showOnboarding by remember { mutableStateOf(!prefs.getBoolean("onboarding_completed", false)) }
     if (showOnboarding) {
-        CompositionLocalProvider(LocalCyberColors provides colors) {
+        // オンボーディングの背景画像はダーク前提のデザインのため、テーマ設定にかかわらずダークの
+        // 配色で表示する（アクセントカラーはユーザーの設定を使う）
+        val onboardingColors = CyberColors(DarkBgColor, DarkPanelColor, accentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
+        CompositionLocalProvider(LocalCyberColors provides onboardingColors) {
             OnboardingScreen(
                 onFinish = {
                     prefs.edit { putBoolean("onboarding_completed", true) }
