@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,7 +45,7 @@ fun WidgetTypeSelectorDialog(
             Text("ウィジェットを追加", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
         },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 availableWidgets.forEach { widget ->
                     Text(
                         text = widget.label,

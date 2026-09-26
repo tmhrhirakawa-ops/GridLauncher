@@ -156,7 +156,8 @@ private tailrec fun Context.findActivity(): Activity = when (this) {
  */
 /** ウィジェット種類のうち、常に1個までしか同時配置できないもの（それ以外は複数配置できる）。 */
 private val SingleInstanceWidgetPanels = setOf(
-    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS
+    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS,
+    WidgetPanel.CLOCK, WidgetPanel.BATTERY
 )
 
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
@@ -408,6 +409,9 @@ fun CyberLauncherScreen() {
     var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
+    // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）
+    var showHeader by remember { mutableStateOf(prefs.getBoolean("show_header", true)) }
+    var showDock by remember { mutableStateOf(prefs.getBoolean("show_dock", true)) }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
@@ -1009,6 +1013,16 @@ fun CyberLauncherScreen() {
                     showCustomizeSheet = false
                     showQuickAccessSettings = true
                 },
+                showHeader = showHeader,
+                onShowHeaderChange = { visible ->
+                    showHeader = visible
+                    prefs.edit { putBoolean("show_header", visible) }
+                },
+                showDock = showDock,
+                onShowDockChange = { visible ->
+                    showDock = visible
+                    prefs.edit { putBoolean("show_dock", visible) }
+                },
                 showAddWidgetTile = showAddWidgetTile,
                 onShowAddWidgetTileChange = { visible ->
                     showAddWidgetTile = visible
@@ -1403,29 +1417,32 @@ fun CyberLauncherScreen() {
                         bottom = if (isPortrait) 16.dp else 24.dp
                     )
             ) {
-                if (isPortrait && screenWidthDp < 600) {
-                    // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
-                    HeaderSectionPortrait(
-                        nowPlaying = nowPlaying,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
-                } else if (isPortrait) {
-                    // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
-                    HeaderSectionPortrait(
-                        nowPlaying = nowPlaying,
-                        isLarge = true,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
-                } else {
-                    // 横画面（ランドスケープ/メイン画面）のレイアウト
-                    HeaderSectionLandscape(
-                        nowPlaying = nowPlaying,
-                        onCoreClick = { showCustomizeSheet = true }
-                    )
+                // ヘッダー（カスタマイズ画面で非表示にでき、その分ウィジェットのエリアが広がる）
+                if (showHeader) {
+                    if (isPortrait && screenWidthDp < 600) {
+                        // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
+                        HeaderSectionPortrait(
+                            nowPlaying = nowPlaying,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    } else if (isPortrait) {
+                        // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
+                        HeaderSectionPortrait(
+                            nowPlaying = nowPlaying,
+                            isLarge = true,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    } else {
+                        // 横画面（ランドスケープ/メイン画面）のレイアウト
+                        HeaderSectionLandscape(
+                            nowPlaying = nowPlaying,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                HeaderDivider()
-                Spacer(modifier = Modifier.height(16.dp))
 
                 // ACCESS GRID内部のアプリ一覧の基準列数・行数。画面モードごとに従来の
                 // 「Mサイズ」と同じ値を使う。ウィジェット自体がリサイズされた場合は、
@@ -1507,6 +1524,15 @@ fun CyberLauncherScreen() {
                             modifier = boxModifier,
                             showBorder = WidgetPanel.DEVICE_STATUS !in hiddenWidgetPanels
                         )
+                        WidgetPanel.CLOCK -> ClockWidgetSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.CLOCK !in hiddenWidgetPanels
+                        )
+                        WidgetPanel.BATTERY -> BatteryWidgetSection(
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.BATTERY !in hiddenWidgetPanels,
+                            onCoreClick = { showCustomizeSheet = true }
+                        )
                         WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
                             modifier = boxModifier,
                             slots = quickActionSlots,
@@ -1571,21 +1597,24 @@ fun CyberLauncherScreen() {
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                HeaderDivider()
-                Spacer(modifier = Modifier.height(16.dp))
-                // 下段: よく使うアプリ（ドック）
-                BottomDockSection(
-                    apps = dockApps,
-                    isWallpaperMode = isWallpaperMode,
-                    activeNotifications = activeNotifications, // 追加
-                    useOriginalIconColors = useOriginalIconColors,
-                    onAddClick = { index ->
-                        appSelectorTarget = "dock"
-                        targetIndex = index
-                    }
-                )
-                
+                // 下段: よく使うアプリ（ドック）。カスタマイズ画面で非表示にでき、その分ウィジェットの
+                // エリアが広がる
+                if (showDock) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HeaderDivider()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    BottomDockSection(
+                        apps = dockApps,
+                        isWallpaperMode = isWallpaperMode,
+                        activeNotifications = activeNotifications,
+                        useOriginalIconColors = useOriginalIconColors,
+                        onAddClick = { index ->
+                            appSelectorTarget = "dock"
+                            targetIndex = index
+                        }
+                    )
+                }
+
                 // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
                 Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
             }

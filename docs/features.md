@@ -28,7 +28,9 @@
 - 移動ドラッグ中にドック付近へ「ここにドラッグして削除」ゾーンを表示し、ドロップで削除（確認ダイアログあり）
 - 空き領域に「+ ADD WIDGET」タイルを表示（カスタマイズ画面で非表示にできる）
 - 配置できるウィジェット
-  - APP LIST（ACCESS GRID）/ CALENDAR / SYSTEM MONITOR / QUICK ACCESS: 各1個まで
+  - APP LIST（ACCESS GRID）/ CALENDAR / SYSTEM MONITOR / QUICK ACCESS / CLOCK / BATTERY: 各1個まで
+  - CLOCK / BATTERY: ヘッダーと同じ時計（時刻・日付）とバッテリー残量を、ウィジェットの大きさに合わせて表示
+    （ヘッダーを非表示にしたとき用。BATTERY の中央の歯車でカスタマイズ画面を開く。`ClockBatterySections.kt`）
   - APP SLOT（アイコンのみ / アプリ名つき）: アプリ1個分のショートカット。複数配置可（`StandaloneAppSlotSection.kt`）
   - 外部ウィジェット（他アプリのAppWidget）: 複数配置可（`AppWidgetHostSection.kt` / `AppWidgetPickerDialog.kt`）
 - 外部ウィジェットはプレビュー画像つきの一覧から選択し、推奨サイズに応じたセル数で配置。
@@ -76,6 +78,7 @@
 - アプリアイコンをオリジナルカラーに戻す（デュオトーン加工のオン/オフ）
 - APP LIST の詳細設定（APP LIST の歯車ボタンと同じ設定画面を開く）
 - QUICK ACCESS の詳細設定（QUICK ACCESS の歯車ボタンと同じ設定画面を開く）
+- ヘッダー・DOCK の表示/非表示（非表示にすると、その分ウィジェットのエリアが縦に広がる）
 - 「+ ADD WIDGET」タイルの表示/非表示
 - グリッド線（ウィジェットの枠線）の一括表示/非表示と、ウィジェットごとの個別設定
 - 端末設定・電源メニューへのボタン

@@ -28,6 +28,8 @@ import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VerticalAlignBottom
+import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -79,6 +81,10 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
  * @param onOpenAppListSettings 「APP LISTの詳細設定」がタップされたときのコールバック（APP LISTの設定画面を開く）。
  * @param onOpenQuickAccessSettings 「QUICK ACCESSの詳細設定」がタップされたときのコールバック（QUICK ACCESSの設定画面を開く）。
+ * @param showHeader ヘッダー（時刻・バッテリーなど）を表示しているかどうか。
+ * @param onShowHeaderChange ヘッダーの表示スイッチが切り替えられたときのコールバック。
+ * @param showDock DOCKを表示しているかどうか。
+ * @param onShowDockChange DOCKの表示スイッチが切り替えられたときのコールバック。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
@@ -104,6 +110,10 @@ fun CustomizeSheet(
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
     onOpenAppListSettings: () -> Unit,
     onOpenQuickAccessSettings: () -> Unit,
+    showHeader: Boolean,
+    onShowHeaderChange: (Boolean) -> Unit,
+    showDock: Boolean,
+    onShowDockChange: (Boolean) -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
@@ -258,6 +268,24 @@ fun CustomizeSheet(
                 onClick = onOpenQuickAccessSettings
             ) {
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+            }
+
+            // ヘッダー・DOCKの表示切り替え（非表示にすると、その分ウィジェットのエリアが広がる）
+            CustomizeRow(
+                icon = Icons.Outlined.VerticalAlignTop,
+                title = "ヘッダーの表示",
+                description = "非表示にすると、この画面は長押しメニューなどから開けます",
+                onClick = { onShowHeaderChange(!showHeader) }
+            ) {
+                CyberSwitch(checked = showHeader, onCheckedChange = onShowHeaderChange)
+            }
+            CustomizeRow(
+                icon = Icons.Outlined.VerticalAlignBottom,
+                title = "DOCK の表示",
+                description = "非表示にすると、その分ウィジェットのエリアが広がります",
+                onClick = { onShowDockChange(!showDock) }
+            ) {
+                CyberSwitch(checked = showDock, onCheckedChange = onShowDockChange)
             }
 
             // 「+ ADD WIDGET」タイルの表示切り替え（非表示でも、何もないところの長押しメニューから追加できる）
