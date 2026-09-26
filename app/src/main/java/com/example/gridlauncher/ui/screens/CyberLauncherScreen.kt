@@ -163,7 +163,7 @@ private tailrec fun Context.findActivity(): Activity = when (this) {
 /** ウィジェット種類のうち、常に1個までしか同時配置できないもの（それ以外は複数配置できる）。 */
 private val SingleInstanceWidgetPanels = setOf(
     WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS,
-    WidgetPanel.CLOCK, WidgetPanel.BATTERY
+    WidgetPanel.CLOCK, WidgetPanel.BATTERY, WidgetPanel.NOW_PLAYING
 )
 
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
@@ -426,9 +426,17 @@ fun CyberLauncherScreen() {
     var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
-    // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）
-    var showHeader by remember { mutableStateOf(prefs.getBoolean("show_header", true)) }
-    var showDock by remember { mutableStateOf(prefs.getBoolean("show_dock", true)) }
+    // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）。
+    // 画面の向きごとに保存する（向きごとの値が未設定なら、向きで分ける前の共通の設定を引き継ぐ）
+    val orientationSuffix = if (isPortrait) "portrait" else "landscape"
+    val showHeaderKey = "show_header_$orientationSuffix"
+    val showDockKey = "show_dock_$orientationSuffix"
+    var showHeader by remember(showHeaderKey) {
+        mutableStateOf(prefs.getBoolean(showHeaderKey, prefs.getBoolean("show_header", true)))
+    }
+    var showDock by remember(showDockKey) {
+        mutableStateOf(prefs.getBoolean(showDockKey, prefs.getBoolean("show_dock", true)))
+    }
     var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
@@ -800,6 +808,8 @@ fun CyberLauncherScreen() {
         placedWidgets = newWidgets
         savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
     }
+    // NOW PLAYINGウィジェットをホーム画面に置いているときは、ヘッダーには再生中メディアを表示しない
+    val headerNowPlaying = nowPlaying.takeIf { placedWidgets.none { it.type == WidgetPanel.NOW_PLAYING } }
     var showWidgetTypeSelector by remember { mutableStateOf(false) } // 「+ ADD WIDGET」タップ時（種類選択待ち）
     var showAppWidgetPicker by remember { mutableStateOf(false) } // 「＋ 外部ウィジェットを追加」タップ時（プレビュー付き一覧表示中）
 
@@ -1043,12 +1053,12 @@ fun CyberLauncherScreen() {
                 showHeader = showHeader,
                 onShowHeaderChange = { visible ->
                     showHeader = visible
-                    prefs.edit { putBoolean("show_header", visible) }
+                    prefs.edit { putBoolean(showHeaderKey, visible) }
                 },
                 showDock = showDock,
                 onShowDockChange = { visible ->
                     showDock = visible
-                    prefs.edit { putBoolean("show_dock", visible) }
+                    prefs.edit { putBoolean(showDockKey, visible) }
                 },
                 shareDockAcrossOrientations = shareDockAcrossOrientations,
                 onShareDockAcrossOrientationsChange = ::setShareDockAcrossOrientations,
@@ -1458,20 +1468,20 @@ fun CyberLauncherScreen() {
                     if (isPortrait && screenWidthDp < 600) {
                         // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                         HeaderSectionPortrait(
-                            nowPlaying = nowPlaying,
+                            nowPlaying = headerNowPlaying,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     } else if (isPortrait) {
                         // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                         HeaderSectionPortrait(
-                            nowPlaying = nowPlaying,
+                            nowPlaying = headerNowPlaying,
                             isLarge = true,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     } else {
                         // 横画面（ランドスケープ/メイン画面）のレイアウト
                         HeaderSectionLandscape(
-                            nowPlaying = nowPlaying,
+                            nowPlaying = headerNowPlaying,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     }
@@ -1568,6 +1578,11 @@ fun CyberLauncherScreen() {
                             modifier = boxModifier,
                             showBorder = WidgetPanel.BATTERY !in hiddenWidgetPanels,
                             onCoreClick = { showCustomizeSheet = true }
+                        )
+                        WidgetPanel.NOW_PLAYING -> NowPlayingSection(
+                            info = nowPlaying,
+                            modifier = boxModifier,
+                            showBorder = WidgetPanel.NOW_PLAYING !in hiddenWidgetPanels
                         )
                         WidgetPanel.QUICK_ACCESS -> QuickAccessSection(
                             modifier = boxModifier,

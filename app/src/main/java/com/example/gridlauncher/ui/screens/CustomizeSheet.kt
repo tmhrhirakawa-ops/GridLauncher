@@ -88,13 +88,13 @@ import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
  * @param onUseOriginalIconColorsChange アイコン配色のスイッチが切り替えられたときのコールバック。
  * @param onOpenAppListSettings 「APP LISTの詳細設定」がタップされたときのコールバック（APP LISTの設定画面を開く）。
  * @param onOpenQuickAccessSettings 「QUICK ACCESSの詳細設定」がタップされたときのコールバック（QUICK ACCESSの設定画面を開く）。
- * @param showHeader ヘッダー（時刻・バッテリーなど）を表示しているかどうか。
+ * @param showHeader ヘッダー（時刻・バッテリーなど）を表示しているかどうか（今の画面の向きのもの）。
  * @param onShowHeaderChange ヘッダーの表示スイッチが切り替えられたときのコールバック。
- * @param showDock DOCKを表示しているかどうか。
+ * @param showDock DOCKを表示しているかどうか（今の画面の向きのもの）。
  * @param onShowDockChange DOCKの表示スイッチが切り替えられたときのコールバック。
  * @param shareDockAcrossOrientations 縦画面と横画面でDOCKに同じアプリの並びを使うかどうか。
  * @param onShareDockAcrossOrientationsChange 上記のスイッチが切り替えられたときのコールバック。
- * @param dockSlotsPerPageDOCKの1ページに並べるアイコン数（今の画面の向きのもの）。
+ * @param dockSlotsPerPage DOCKの1ページに並べるアイコン数（今の画面の向きのもの）。
  * @param onDockSlotsPerPageChange 上記が変更されたときのコールバック。
  * @param dockPageCount DOCKのページ数（今の画面の向きのもの）。
  * @param dockMinPageCount DOCKのアプリが入っているページ数（これより少なくはできない）。
@@ -169,6 +169,7 @@ fun CustomizeSheet(
     val windowInfo = LocalWindowInfo.current
     // DOCKの並びは画面の向きごとの設定なので、どちらの向きの設定かを表示する
     val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+    val orientationLabel = if (isPortrait) "縦画面" else "横画面"
     val maxContentHeight = with(LocalDensity.current) { windowInfo.containerSize.height.toDp() } * 0.75f
 
     ModalBottomSheet(
@@ -297,7 +298,7 @@ fun CustomizeSheet(
             // ヘッダー・DOCKの表示切り替え（非表示にすると、その分ウィジェットのエリアが広がる）
             CustomizeRow(
                 icon = Icons.Outlined.VerticalAlignTop,
-                title = "ヘッダーの表示",
+                title = "ヘッダーの表示（$orientationLabel）",
                 description = "非表示にすると、この画面は長押しメニューなどから開けます",
                 onClick = { onShowHeaderChange(!showHeader) }
             ) {
@@ -307,7 +308,7 @@ fun CustomizeSheet(
             CustomizeCard {
                 CustomizeRowContent(
                     icon = Icons.Outlined.VerticalAlignBottom,
-                    title = "DOCK の表示",
+                    title = "DOCK の表示（$orientationLabel）",
                     description = "非表示にすると、その分ウィジェットのエリアが広がります",
                     modifier = Modifier.clickable { onShowDockChange(!showDock) }
                 ) {
@@ -335,7 +336,7 @@ fun CustomizeSheet(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                "今の画面の向き（${if (isPortrait) "縦画面" else "横画面"}）の設定です",
+                                "今の画面の向き（$orientationLabel）の設定です",
                                 fontFamily = CyberFont,
                                 fontSize = 10.sp,
                                 color = colors.text.copy(alpha = 0.5f)
