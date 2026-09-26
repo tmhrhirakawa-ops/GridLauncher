@@ -24,14 +24,18 @@ import com.example.gridlauncher.util.OnboardingSteps
  * 「設定済みです」と表示される。
  *
  * @param resumeSignal 設定画面から戻ってきた際に各項目の充足状況を再判定させるためのキー。
+ * @param onOpenSettings 「設定を開く」で設定画面を開く直前に呼ばれるコールバック。
+ * @param onDismiss シートが閉じられるときのコールバック。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MissingPermissionsSheet(
     resumeSignal: Int,
+    onOpenSettings: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val launchStepSettings = rememberOnboardingStepLauncher()
     val colors = LocalCyberColors.current
 
     ModalBottomSheet(
@@ -83,7 +87,10 @@ fun MissingPermissionsSheet(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Button(
-                        onClick = { context.startActivity(step.settingsIntent(context)) },
+                        onClick = {
+                            onOpenSettings()
+                            launchStepSettings(step)
+                        },
                         enabled = !satisfied,
                         colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
                     ) {

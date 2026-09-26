@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -735,7 +736,10 @@ fun CyberLauncherScreen() {
     // オンボーディング完了後も、未設定の権限/設定があればプロセス起動につき1回だけ
     // ボトムシートで知らせる（ホーム画面に戻るたびに毎回出ると煩わしいため、
     // ON_RESUMEではなくプロセス起動時のみをトリガーにする）
-    var showMissingPermissionsSheet by remember { mutableStateOf(false) }
+    var showMissingPermissionsSheet by rememberSaveable { mutableStateOf(false) }
+    // シートから設定画面を開いたかどうか。デフォルトのホームアプリを変えると、システムがホーム画面を
+    // 起動し直す（ホームボタンと同じIntentが届く）ため、戻ってきた直後の1回はシートを閉じずに残す
+    var missingPermissionsSettingsOpened by rememberSaveable { mutableStateOf(false) }
     var missingPermissionsResumeSignal by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         if (!MissingPermissionsSheetState.shownThisProcess) {
@@ -760,7 +764,11 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             MissingPermissionsSheet(
                 resumeSignal = missingPermissionsResumeSignal,
-                onDismiss = { showMissingPermissionsSheet = false }
+                onOpenSettings = { missingPermissionsSettingsOpened = true },
+                onDismiss = {
+                    showMissingPermissionsSheet = false
+                    missingPermissionsSettingsOpened = false
+                }
             )
         }
     }
@@ -835,7 +843,13 @@ fun CyberLauncherScreen() {
         showQuickAccessSettings = false
         showGridLinesSheet = false
         pendingQuickActionMove = null
-        showMissingPermissionsSheet = false
+        // 未設定項目のシートから設定画面を開いて戻ってきたとき（ホームアプリの変更でホーム画面が
+        // 起動し直されたとき）は、シートを閉じずに残す
+        if (missingPermissionsSettingsOpened) {
+            missingPermissionsSettingsOpened = false
+        } else {
+            showMissingPermissionsSheet = false
+        }
         showPowerPermissionRationale = false
         homeMenuOffset = null
         openFolderId = null

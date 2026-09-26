@@ -16,13 +16,18 @@ import androidx.annotation.RequiresApi
  * @property title ステップのタイトル。
  * @property description 何のためにこの設定が必要かの説明文。
  * @property isSatisfied 現在この設定が既に済んでいるかどうかを判定する関数。
- * @property settingsIntent 「設定を開く」がタップされたときに起動するIntent。
+ * @property settingsIntent 「設定を開く」がタップされたときに起動するIntent。結果を受け取る形式
+ *   （startActivityForResult）で起動すること（RoleManagerの確認ダイアログは、そうしないと
+ *   呼び出し元が分からず何も表示せずに終了してしまう）。
+ * @property fallbackIntent [settingsIntent]から戻ってもまだ設定が済んでいないときに開くIntent。
+ *   nullなら何もしない。
  */
 data class OnboardingStepInfo(
     val title: String,
     val description: String,
     val isSatisfied: (Context) -> Boolean,
-    val settingsIntent: (Context) -> Intent
+    val settingsIntent: (Context) -> Intent,
+    val fallbackIntent: ((Context) -> Intent)? = null
 )
 
 val OnboardingSteps = listOf(
@@ -33,7 +38,10 @@ val OnboardingSteps = listOf(
             val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
             context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName == context.packageName
         },
-        settingsIntent = { context -> homeRoleRequestIntent(context) }
+        settingsIntent = { context -> homeRoleRequestIntent(context) },
+        // 確認ダイアログで過去に2回断っているなど、システムがダイアログを出さずに拒否した場合は、
+        // 端末の「ホームアプリ」の設定画面から選んでもらう
+        fallbackIntent = { Intent(Settings.ACTION_HOME_SETTINGS) }
     ),
     OnboardingStepInfo(
         title = "通知へのアクセスを許可",
