@@ -51,68 +51,67 @@ fun HeaderSectionLandscape(
     val timeString = timeFormat.format(Date(currentTime))
     val dateString = dateFormat.format(Date(currentTime)).uppercase()
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text(timeString, fontFamily = CyberFont, fontSize = 42.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(6.dp).background(LocalCyberColors.current.accent))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+    // 時刻を左端、MAIN TERMINALを画面幅の中央、バッテリーを右端に置く。再生中メディアは
+    // バッテリーの左に置き、表示されてもヘッダーの高さ（＝下のウィジェットのエリア）は変えない。
+    // 再生中メディアと重なる場合はMAIN TERMINALを左へ寄せる（HeaderLayout参照）
+    HeaderLayout(
+        alignTop = false,
+        nowPlayingGap = 16.dp,
+        // 再生中メディアの出し入れのアニメーションに合わせて、MAIN TERMINALも一緒にスライドさせる
+        nowPlayingProgress = { nowPlayingDisplay.scale },
+        start = {
+            Column {
+                Text(timeString, fontFamily = CyberFont, fontSize = 42.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(6.dp).background(LocalCyberColors.current.accent))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(dateString, fontFamily = CyberFont, fontSize = 12.sp, color = LocalCyberColors.current.text.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+                }
             }
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("SYSTEM ONLINE", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
-            Text("MAIN TERMINAL", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text, letterSpacing = 2.sp)
-            Text("TOKYO // MAIN TERMINAL", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f))
-        }
-        
-        // バッテリー残量とシステムステータスのUI
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 消えるときはその場で左右から中央へ縮むように消滅させる
-            if (nowPlayingDisplay.keepInLayout) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+        },
+        center = { MainTerminalTitle() },
+        end = {
+            // バッテリー残量とシステムステータスのUI
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
+                    Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                // バッテリーのサークルインジケーター（ZZZ風の円形UI）
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp)) {
+                    CircularProgressIndicator(
+                        progress = { batteryLevel / 100f },
+                        color = LocalCyberColors.current.accent,
+                        trackColor = LocalCyberColors.current.border,
+                        strokeWidth = 6.dp,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    // 真ん中の青い歯車（タップするとカスタマイズ画面がボトムシートで開く）
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "Menu",
+                            tint = LocalCyberColors.current.core,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clickable(onClick = onCoreClick)
+                        )
+                    }
+                }
+            }
+        },
+        // 消えるときはその場で左右から中央へ縮むように消滅させる
+        nowPlaying = nowPlayingDisplay.displayed?.takeIf { nowPlayingDisplay.keepInLayout }?.let { info ->
+            {
+                NowPlayingWidget(
+                    info = info,
                     modifier = Modifier.graphicsLayer {
                         scaleX = nowPlayingDisplay.scale
                         alpha = nowPlayingDisplay.scale
                     }
-                ) {
-                    nowPlayingDisplay.displayed?.let { info -> NowPlayingWidget(info = info) }
-                    Spacer(modifier = Modifier.width(16.dp))
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("BATTERY", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold)
-                Text("$batteryLevel%", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            // バッテリーのサークルインジケーター（ZZZ風の円形UI）
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp)) {
-                CircularProgressIndicator(
-                    progress = { batteryLevel / 100f },
-                    color = LocalCyberColors.current.accent,
-                    trackColor = LocalCyberColors.current.border,
-                    strokeWidth = 6.dp,
-                    modifier = Modifier.fillMaxSize()
                 )
-                // 真ん中の青い歯車（タップするとカスタマイズ画面がボトムシートで開く）
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "Menu",
-                        tint = LocalCyberColors.current.core,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clickable(onClick = onCoreClick)
-                    )
-                }
             }
         }
-    }
+    )
 }
-
