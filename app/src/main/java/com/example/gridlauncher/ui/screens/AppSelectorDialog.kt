@@ -1,20 +1,15 @@
 package com.example.gridlauncher.ui.screens
 
-import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.AppInfo
-import com.example.gridlauncher.ui.components.AppCard
+import com.example.gridlauncher.ui.components.AppGridTile
+import com.example.gridlauncher.ui.components.AppTileGrid
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 
@@ -62,28 +57,18 @@ fun AppSelectorDialog(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
             )
             
-            // アプリ一覧グリッド (AllAppsDrawerと同じデザイン)
-            val configuration = LocalConfiguration.current
-            val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(if (isPortrait) 3 else 5), // 縦画面なら3列、横画面なら5列
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize().consumeUpwardSheetFling()
-            ) {
-                items(filteredApps) { appInfo ->
-                    AppCard(
-                        name = appInfo.label,
-                        packageName = appInfo.packageName,
-                        isMonochrome = appInfo.iconIsMonochrome,
-                        useOriginalIconColors = useOriginalIconColors,
-                        icon = appInfo.icon,
-                        modifier = Modifier.aspectRatio(2.5f), // ACCESS GRIDの比率に近い形
-                        onClick = {
-                            onAppSelected(appInfo.packageName)
-                        }
-                    )
-                }
+            // アプリ一覧（AllAppsDrawerと同じく、インストールした順に並べる）
+            AppTileGrid(
+                apps = filteredApps,
+                resetKey = searchQuery,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            ) { appInfo, tileModifier ->
+                AppGridTile(
+                    app = appInfo,
+                    useOriginalIconColors = useOriginalIconColors,
+                    modifier = tileModifier,
+                    onClick = { onAppSelected(appInfo.packageName) }
+                )
             }
         }
     }

@@ -121,6 +121,7 @@ import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
 import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
+import com.example.gridlauncher.util.sortedByInstallOrder
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
 import com.example.gridlauncher.util.saveSlotGridPageCount
 import com.example.gridlauncher.util.saveSlotGridSize
@@ -251,7 +252,7 @@ fun CyberLauncherScreen() {
                     Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REPLACED -> {
                         val updated = resolveInstalledApp(context.packageManager, packageName)
                         if (updated != null) {
-                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedBy { it.label }
+                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedByInstallOrder()
                         }
                     }
                 }

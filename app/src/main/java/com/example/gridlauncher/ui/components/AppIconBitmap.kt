@@ -11,8 +11,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.loadOriginalIconBitmap
 import com.example.gridlauncher.util.toDuotoneImageBitmap
 
-/** 加工済みアイコンのキャッシュの上限（バイト）。128px四方のARGBアイコンで約120個分。 */
-private const val ICON_CACHE_MAX_BYTES = 8 * 1024 * 1024
+/** 加工済みアイコンのキャッシュの上限（バイト）。160px四方のARGBアイコンで約120個分。 */
+private const val ICON_CACHE_MAX_BYTES = 12 * 1024 * 1024
 
 /**
  * 加工済みアプリアイコンのキャッシュ。同じアプリがグリッド・ドック・アプリドロワーなど複数の

@@ -47,13 +47,13 @@ fun toDuotoneImageBitmap(drawable: Drawable, isMonochrome: Boolean, accent: Colo
 /**
  * アイコン加工処理で扱う一辺の最大ピクセル数。
  *
- * グリッド/ドックでの実際の表示サイズは24〜28dp程度だが、[Drawable.getIntrinsicWidth]は
+ * グリッド/ドックでの実際の表示サイズは24〜28dp程度（ALL APPS・SELECT APPでは最大40dp）だが、[Drawable.getIntrinsicWidth]は
  * 高密度端末では100〜400px超になることがある。表示に対して不必要に高い解像度のまま
  * ピクセル単位の加工（[toFlatTintedImageBitmap] / [toLightnessDuotoneImageBitmap]）を行うと、
  * CPU時間とBitmapのメモリ使用量の両方を無駄に消費してしまうため、事前にこのサイズへ
  * ダウンサンプリングしてから加工する。
  */
-private const val MAX_ICON_PROCESSING_SIZE = 128
+private const val MAX_ICON_PROCESSING_SIZE = 160
 
 /**
  * ウィジェットのプレビュー画像加工処理で扱う一辺の最大ピクセル数。
@@ -276,7 +276,7 @@ fun loadWidgetPreviewBitmap(context: Context, info: AppWidgetProviderInfo): Imag
  * 起動可能なすべてのインストール済みアプリのリストを取得します。
  *
  * @param packageManager 照会する [PackageManager] のインスタンス。
- * @return ラベルのアルファベット順でソートされた [AppInfo] のリスト。
+ * @return インストールした順（[sortedByInstallOrder]）に並べた [AppInfo] のリスト。
  */
 fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val intent = Intent(Intent.ACTION_MAIN, null)
@@ -285,14 +285,30 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
 
     return resolvedInfos.map { resolveInfo ->
         val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
+        val packageName = resolveInfo.activityInfo.packageName
         AppInfo(
             label = resolveInfo.loadLabel(packageManager).toString(),
-            packageName = resolveInfo.activityInfo.packageName,
+            packageName = packageName,
             icon = icon,
-            iconIsMonochrome = isMonochrome
+            iconIsMonochrome = isMonochrome,
+            firstInstallTime = firstInstallTimeOf(packageManager, packageName)
         )
-    }.sortedBy { it.label }
+    }.sortedByInstallOrder()
 }
+
+/**
+ * アプリをインストールした順（古いものが先）に並べる。同時刻のもの（端末に最初から入っている
+ * アプリなど）は名前順にする。
+ */
+fun List<AppInfo>.sortedByInstallOrder(): List<AppInfo> =
+    sortedWith(compareBy<AppInfo> { it.firstInstallTime }.thenBy { it.label })
+
+private fun firstInstallTimeOf(packageManager: PackageManager, packageName: String): Long =
+    try {
+        packageManager.getPackageInfo(packageName, 0).firstInstallTime
+    } catch (_: PackageManager.NameNotFoundException) {
+        0L
+    }
 
 /**
  * 単一パッケージだけを対象に [AppInfo] を解決します。
@@ -318,7 +334,8 @@ fun resolveInstalledApp(packageManager: PackageManager, packageName: String): Ap
         label = resolveInfo.loadLabel(packageManager).toString(),
         packageName = resolveInfo.activityInfo.packageName,
         icon = icon,
-        iconIsMonochrome = isMonochrome
+        iconIsMonochrome = isMonochrome,
+        firstInstallTime = firstInstallTimeOf(packageManager, resolveInfo.activityInfo.packageName)
     )
 }
 

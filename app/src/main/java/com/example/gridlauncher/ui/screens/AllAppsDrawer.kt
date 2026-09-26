@@ -4,9 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items as lazyListItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -15,14 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.AppInfo
-import com.example.gridlauncher.ui.components.AppCard
+import com.example.gridlauncher.ui.components.AppGridTile
+import com.example.gridlauncher.ui.components.AppTileGrid
 import com.example.gridlauncher.ui.components.DockAppCard
 import com.example.gridlauncher.ui.drag.AppDragItem
 import com.example.gridlauncher.ui.drag.AppDragPayload
@@ -33,7 +29,6 @@ import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.getFrequentApps
 import com.example.gridlauncher.util.hasUsageStatsPermission
-import android.content.res.Configuration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -149,33 +144,24 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIcon
             // 全アプリのグリッド
             Text("ALL APPS // NODES", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.accent)
             Spacer(modifier = Modifier.height(8.dp))
-            val configuration = LocalConfiguration.current
-            val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(if (isPortrait) 3 else 5), // 縦画面なら3列、横画面なら5列
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize().consumeUpwardSheetFling()
-            ) {
-                items(filteredApps) { appInfo ->
-                    AppCard(
-                        name = appInfo.label,
-                        packageName = appInfo.packageName,
-                        isMonochrome = appInfo.iconIsMonochrome,
-                        useOriginalIconColors = useOriginalIconColors,
-                        icon = appInfo.icon,
-                        modifier = Modifier
-                            .aspectRatio(2.5f) // ACCESS GRIDの比率に近い形
-                            .appDragSource { AppDragPayload(AppDragSource.Drawer, AppDragItem.App(appInfo)) },
-                        onClick = {
-                            val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
-                            if (launchIntent != null) {
-                                context.startActivity(launchIntent)
-                                onDismiss()
-                            }
-                        },
-                    )
-                }
+            // インストールした順に並べる（検索したら先頭に戻す）
+            AppTileGrid(
+                apps = filteredApps,
+                resetKey = searchQuery,
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            ) { appInfo, tileModifier ->
+                AppGridTile(
+                    app = appInfo,
+                    useOriginalIconColors = useOriginalIconColors,
+                    modifier = tileModifier.appDragSource { AppDragPayload(AppDragSource.Drawer, AppDragItem.App(appInfo)) },
+                    onClick = {
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(appInfo.packageName)
+                        if (launchIntent != null) {
+                            context.startActivity(launchIntent)
+                            onDismiss()
+                        }
+                    }
+                )
             }
         }
     }
