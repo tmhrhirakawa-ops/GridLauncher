@@ -63,7 +63,6 @@ import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.LocalHomePressedSignal
-import com.example.gridlauncher.ui.components.AddSlotChoiceDialog
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
@@ -373,7 +372,6 @@ fun CyberLauncherScreen() {
 
     var appSelectorTarget by remember { mutableStateOf<String?>(null) } // "grid" または "dock"
     var targetIndex by remember { mutableStateOf<Int?>(null) } // 追加する位置（インデックス）を保持
-    var addSlotChoiceIndex by remember { mutableStateOf<Int?>(null) } // グリッドの空きスロットタップ時（アプリ/フォルダ選択待ち）
     var openFolderId by remember { mutableStateOf<String?>(null) } // 中身を表示中のフォルダ
     // ポップアップを閉じるアニメーション中もフォルダの中身を表示し続けるため、openFolderIdが
     // nullになった後も直前に表示していたフォルダの情報を保持しておく
@@ -549,8 +547,8 @@ fun CyberLauncherScreen() {
         }
 
         // フォルダの中から取り出して中身が1つだけになったフォルダは、フォルダをやめて
-        // 残ったアプリそのものの表示に戻す（空のフォルダを作ってからアプリを入れていく手順を
-        // 妨げないよう、取り出したときだけ判定する）
+        // 残ったアプリそのものの表示に戻す（フォルダの中の空きスロットにアプリを追加していく
+        // ときなどは判定せず、取り出したときだけ判定する）
         if (source is AppDragSource.FolderSlot) {
             val remaining = editedFolders[source.folderId]?.packageNames?.filter { it.isNotEmpty() }
             val folderSlotIndex = grid.indexOf(folderSlotValue(source.folderId))
@@ -764,7 +762,6 @@ fun CyberLauncherScreen() {
         openFolderId = null
         appSelectorTarget = null
         targetIndex = null
-        addSlotChoiceIndex = null
         quickActionAddIndex = null
         appSlotPickerInstanceId = null
         pendingAppSlotRemoval = null
@@ -1072,32 +1069,6 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // グリッドの空きスロットタップ時、「アプリを追加」か「フォルダを作成」かを選ばせる
-    addSlotChoiceIndex?.let { index ->
-        CompositionLocalProvider(LocalCyberColors provides colors) {
-            AddSlotChoiceDialog(
-                onDismiss = { addSlotChoiceIndex = null },
-                onAddApp = {
-                    appSelectorTarget = "grid"
-                    targetIndex = index
-                    addSlotChoiceIndex = null
-                },
-                onCreateFolder = {
-                    val folder = createFolder(prefs, "新しいフォルダ")
-                    folders = folders + (folder.id to folder)
-                    val newPackages = gridPackages.toMutableList()
-                    while (newPackages.size <= index) {
-                        newPackages.add("")
-                    }
-                    newPackages[index] = folderSlotValue(folder.id)
-                    gridPackages = newPackages
-                    prefs.edit { putString(gridAppsKey, newPackages.joinToString(",")) }
-                    addSlotChoiceIndex = null
-                }
-            )
-        }
-    }
-
     // QUICK ACCESSの空きスロットタップ時、追加するボタンの種類を選ばせる
     quickActionAddIndex?.let { index ->
         val usedActions = quickActionSlots.filterNotNull().toSet()
@@ -1398,7 +1369,11 @@ fun CyberLauncherScreen() {
                                     accessGridPageSize = pageSize
                                 },
                                 useOriginalIconColors = useOriginalIconColors,
-                                onAddClick = { index -> addSlotChoiceIndex = index },
+                                onAddClick = { index ->
+                                    // 空きスロットはそのままアプリ選択を開く（フォルダはアプリ同士を重ねて作る）
+                                    appSelectorTarget = "grid"
+                                    targetIndex = index
+                                },
                                 onFolderClick = { folderItem -> openFolderId = folderItem.folder.id }
                             )
                         }
