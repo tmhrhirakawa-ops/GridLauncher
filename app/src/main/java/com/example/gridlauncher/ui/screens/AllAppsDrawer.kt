@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.ui.components.AppGridTile
 import com.example.gridlauncher.ui.components.AppTileGrid
+import com.example.gridlauncher.ui.components.SearchableSheetHeader
 import com.example.gridlauncher.ui.components.DockAppCard
 import com.example.gridlauncher.ui.drag.AppDragItem
 import com.example.gridlauncher.ui.drag.AppDragPayload
@@ -68,20 +69,9 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIcon
             .alpha(if (isDraggingFromDrawer) 0f else 1f)
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-            // 検索バー
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("SEARCH APPS...", fontFamily = CyberFont, fontSize = 14.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f)) },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = CyberFont, color = LocalCyberColors.current.text),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = LocalCyberColors.current.accent,
-                    unfocusedBorderColor = LocalCyberColors.current.border,
-                    cursorColor = LocalCyberColors.current.accent
-                ),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
-            )
+            // ヘッダー（タイトルと、右上の虫眼鏡で開く検索ボックス）
+            SearchableSheetHeader(title = "ALL APPS", query = searchQuery, onQueryChange = { searchQuery = it })
+            Spacer(modifier = Modifier.height(16.dp))
 
             // よく使うアプリ（検索していないときのみ表示）
             if (searchQuery.isEmpty()) {
