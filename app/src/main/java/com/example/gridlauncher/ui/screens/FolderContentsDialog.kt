@@ -61,6 +61,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param useOriginalIconColors trueの場合、アプリアイコンをアクセントカラーのデュオトーン
  *   加工をせず、本来の色のまま表示する。
+ * @param activeNotifications 通知（またはアプリバッジ）が来ているアプリのパッケージ名と件数のマップ。
+ *   中のアプリの右上の通知の点を点灯させるのに使う。
  * @param animatedVisibilityScope 呼び出し元の`AnimatedVisibility`のスコープ（共有要素アニメーションに使用）。
  * @param onDismiss ポップアップが閉じられるときのコールバック。
  * @param onRename フォルダ名が変更されたときのコールバック。
@@ -74,6 +76,7 @@ fun SharedTransitionScope.FolderContentsDialog(
     allApps: List<AppInfo>,
     isWallpaperMode: Boolean = false,
     useOriginalIconColors: Boolean = false,
+    activeNotifications: Map<String, Int> = emptyMap(),
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDismiss: () -> Unit,
     onRename: (String) -> Unit,
@@ -207,6 +210,7 @@ fun SharedTransitionScope.FolderContentsDialog(
                                     isMonochrome = appInfo.iconIsMonochrome,
                                     isWallpaperMode = isWallpaperMode,
                                     useOriginalIconColors = useOriginalIconColors,
+                                    notificationCount = activeNotifications[appInfo.packageName] ?: 0,
                                     modifier = slotModifier.appDragSource {
                                         AppDragPayload(AppDragSource.FolderSlot(folder.id, index), AppDragItem.App(appInfo))
                                     },

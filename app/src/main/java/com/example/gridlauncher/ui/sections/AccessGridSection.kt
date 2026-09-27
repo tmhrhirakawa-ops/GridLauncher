@@ -254,6 +254,7 @@ fun SharedTransitionScope.AccessGridSection(
                                                     visible = item.folder.id != openFolderId
                                                 ),
                                             isWallpaperMode = isWallpaperMode,
+                                            hasNotification = item.folder.packageNames.any { (activeNotifications[it] ?: 0) > 0 },
                                             onClick = { onFolderClick(item) }
                                         )
                                     }

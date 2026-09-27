@@ -1745,6 +1745,7 @@ fun CyberLauncherScreen() {
                     allApps = allApps,
                     isWallpaperMode = isWallpaperMode,
                     useOriginalIconColors = useOriginalIconColors,
+                    activeNotifications = activeNotifications,
                     animatedVisibilityScope = this,
                     onDismiss = { openFolderId = null },
                     onRename = { newName ->

@@ -6,7 +6,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -31,7 +30,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param modifier レイアウトに適用するModifier。
  * @param packageName アプリのパッケージ名。デュオトーン加工のキャッシュキーに使用。
  * @param isMonochrome [icon]がモノクロレイヤー由来かどうか。デュオトーン加工方法の選択に使う。
- * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
+ * @param notificationCount 通知（またはアプリバッジ）の件数。右上の点を、1以上なら点灯、0なら消灯で表示する。
+ *   nullの場合は点自体を表示しない（通知を扱わないアプリドロワー・フォルダの中など）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param useOriginalIconColors trueの場合、アクセントカラーのデュオトーン加工をせず、
  *   アプリ本来の色のアイコンをそのまま表示する。
@@ -46,7 +46,7 @@ fun DockAppCard(
     modifier: Modifier = Modifier,
     packageName: String = "",
     isMonochrome: Boolean = false,
-    notificationCount: Int = 0,
+    notificationCount: Int? = null,
     isWallpaperMode: Boolean = false,
     useOriginalIconColors: Boolean = false,
     onClick: () -> Unit,
@@ -89,26 +89,12 @@ fun DockAppCard(
                 )
             }
             
-            if (notificationCount > 0) {
-                val label = if (notificationCount > 99) "99+" else notificationCount.toString()
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(2.dp)
-                        .defaultMinSize(minWidth = 14.dp, minHeight = 14.dp)
-                        .border(1.dp, LocalCyberColors.current.accent, RoundedCornerShape(3.dp))
-                        .padding(horizontal = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        fontFamily = CyberFont,
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = LocalCyberColors.current.accent,
-                        maxLines = 1
-                    )
-                }
+            // 通知の点（常に表示し、通知が来ているときだけ点灯させる）
+            if (notificationCount != null) {
+                NotificationDot(
+                    isActive = notificationCount > 0,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(1.dp)
+                )
             }
         }
     }
