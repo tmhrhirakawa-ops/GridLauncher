@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
@@ -304,6 +305,16 @@ fun CyberLauncherScreen() {
 
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    // ナビゲーションバーが占有している領域（3ボタンナビなら約48dp、ジェスチャーナビなら横棒の分だけ、
+    // ジェスチャーのヒントを消していれば0）。固定の余白ではなく、これに合わせて画面端の余白を決める
+    val navigationBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val layoutDirection = LocalLayoutDirection.current
+    // 画面下端の余白。ナビゲーションバーがあるときは、その上に少しだけ隙間を空ける（デザイン上の余白を
+    // 足すと3ボタンナビで空きすぎるため）。ないとき（ジェスチャーのヒント非表示など）はデザイン上の余白にする
+    val bottomScreenPadding = maxOf(
+        if (isPortrait) 16.dp else 24.dp,
+        navigationBarPadding.calculateBottomPadding() + 4.dp
+    )
 
     // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。APP LISTの設定画面で切り替える。
     // 縦画面・横画面を切り替えても意図せず引き継がれないよう、それぞれ別に記憶する。
@@ -1482,9 +1493,11 @@ fun CyberLauncherScreen() {
                     .fillMaxSize()
                     .padding(
                         top = if (isPortrait) 32.dp else 40.dp,
-                        start = if (isPortrait) 16.dp else 32.dp,
-                        end = if (isPortrait) 16.dp else 32.dp,
-                        bottom = if (isPortrait) 16.dp else 24.dp
+                        // ナビゲーションバー（3ボタンナビ・ジェスチャーナビの横棒。横画面では左右に出ることも
+                        // ある）と重ならないよう、実際に占有している分だけ余白を足す
+                        start = (if (isPortrait) 16.dp else 32.dp) + navigationBarPadding.calculateStartPadding(layoutDirection),
+                        end = (if (isPortrait) 16.dp else 32.dp) + navigationBarPadding.calculateEndPadding(layoutDirection),
+                        bottom = bottomScreenPadding
                     )
             ) {
                 // ヘッダー（カスタマイズ画面で非表示にでき、その分ウィジェットのエリアが広がる）
@@ -1694,9 +1707,6 @@ fun CyberLauncherScreen() {
                         }
                     )
                 }
-
-                // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
-                Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
             }
 
             // 長押しメニュー。長押し位置はこのSurface内の座標なので、Surfaceの直下に置く
@@ -1769,7 +1779,7 @@ fun CyberLauncherScreen() {
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (isPortrait) 90.dp else 70.dp)
+                    .padding(bottom = bottomScreenPadding + if (isPortrait) 42.dp else 6.dp)
                     .onGloballyPositioned { coordinates -> deleteZoneBoundsInRoot = coordinates.boundsInRoot() }
             ) {
                 DeleteWidgetDropZone(isActive = isDraggedWidgetOverDeleteZone)
