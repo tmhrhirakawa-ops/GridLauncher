@@ -14,8 +14,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,6 +25,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -47,6 +53,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -57,6 +64,9 @@ import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.findFreeGridSlot
+import com.example.gridlauncher.util.pullOutOfStack
+import com.example.gridlauncher.util.stackOnto
+import kotlinx.coroutines.delay
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -101,6 +111,11 @@ data class ResizeConstraints(
  * リアルタイムに表示する。ガイドは他のウィジェットと重ならない、直近で確定可能だった位置に
  * 固定され続けるため、指を重なる位置へ動かしてもガイドはそこへ追従しない。指を離すと、常に
  * このガイドの位置・サイズで確定する。
+ *
+ * ウィジェット同士は重ねて「スタック」にできる（[PlacedWidget.stackId]）。移動ドラッグ中に別の
+ * ウィジェットの上で少し止めると重ね先が光り、指を離すとそこへ重なる。スタックは1つの枠として
+ * 表示し、横スワイプで1枚ずつ切り替える。編集モードでは、本体のドラッグで今表示している1枚を
+ * 取り出し、上部中央のつまみのドラッグでスタックごと移動する（詳しくは[WidgetSlot]）。
  *
  * @param columns グリッドの列数。
  * @param rows グリッドの行数。
@@ -174,10 +189,16 @@ fun SharedTransitionScope.WidgetCanvas(
     modifier: Modifier = Modifier,
     content: @Composable SharedTransitionScope.(WidgetPanel, Int, Int, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
 ) {
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    // キャンバスのルート座標系での左上。ドラッグ中の指の位置（ルート座標）から、その下にある
+    // ウィジェットを求めるのに使う
+    var canvasTopLeftInRoot by remember { mutableStateOf(Offset.Zero) }
+    BoxWithConstraints(modifier = modifier.fillMaxSize().onGloballyPositioned { canvasTopLeftInRoot = it.boundsInRoot().topLeft }) {
         val cellWidth = maxWidth / columns
         val cellHeight = maxHeight / rows
         val resolvedIconCellSizes = iconCellSizes(cellWidth, cellHeight)
+        val density = LocalDensity.current
+        val cellWidthPx = with(density) { cellWidth.toPx() }
+        val cellHeightPx = with(density) { cellHeight.toPx() }
 
         // 呼び出し側（新規ウィジェット追加時のサイズ決定など）がセル1つ分の実サイズ（dp）を
         // 知りたい場合があるが、それを測れるのはこのBoxWithConstraintsの中だけなので、
@@ -186,31 +207,102 @@ fun SharedTransitionScope.WidgetCanvas(
             onCellSizeMeasured(cellWidth, cellHeight)
         }
 
-        placedWidgets.forEach { widget ->
-            key(widget.instanceKey) {
-                val otherWidgets = remember(placedWidgets) { placedWidgets.filter { it.instanceKey != widget.instanceKey } }
-                // AppWidgetManagerへの問い合わせを毎フレーム走らせないよう、インスタンスごとに一度だけ解決する
-                val resolvedResizeConstraints = remember(widget.instanceKey) { resizeConstraints(widget) }
-                val resolvedHideTopRightCorner = remember(widget.instanceKey) { hideTopRightCorner(widget) }
+        // 移動ドラッグ中の指の下にある、別のウィジェット（スタック）のgroupKey。そこで少し止めると
+        // （[StackHoverDelayMillis]）重ねる準備ができた状態になり、指を離すとスタックになる
+        var stackHoverKey by remember { mutableStateOf<String?>(null) }
+        var isStackHoverArmed by remember { mutableStateOf(false) }
+        LaunchedEffect(stackHoverKey) {
+            isStackHoverArmed = false
+            if (stackHoverKey != null) {
+                delay(StackHoverDelayMillis)
+                isStackHoverArmed = true
+            }
+        }
+        // スタックに重ねた直後に、重ねたウィジェットのページを表示させるための要求（stackId→instanceKey）
+        val stackPageRequests = remember { mutableStateMapOf<Int, String>() }
+
+        // 単体のウィジェットはそれぞれ1つ、スタックはメンバー全員で1つの枠として扱う（並び順を保つ）
+        val groups = remember(placedWidgets) { placedWidgets.groupBy { it.groupKey } }
+
+        // ルート座標の位置の下にある、[excludeKey]以外のまとまりのgroupKey
+        fun groupKeyAt(rootPosition: Offset, excludeKey: String): String? {
+            val local = rootPosition - canvasTopLeftInRoot
+            val col = local.x / cellWidthPx
+            val row = local.y / cellHeightPx
+            return groups.entries.firstOrNull { (key, members) ->
+                val rect = members.first()
+                key != excludeKey && col >= rect.col && col < rect.col + rect.colSpan && row >= rect.row && row < rect.row + rect.rowSpan
+            }?.key
+        }
+
+        groups.forEach { (groupKey, members) ->
+            key(groupKey) {
+                val base = members.first()
+                val isStack = members.size > 1
+                val otherWidgets = remember(placedWidgets, groupKey) { placedWidgets.filter { it.groupKey != groupKey } }
+                // AppWidgetManagerへの問い合わせを毎フレーム走らせないよう、メンバーが変わったときだけ解決する。
+                // スタックでは、全員が収まるよう最小サイズは一番大きいもの、最大サイズは一番小さいものに合わせる
+                val memberKeys = members.map { it.instanceKey }
+                val resolvedResizeConstraints = remember(memberKeys) { mergeResizeConstraints(members.map(resizeConstraints)) }
+                val resolvedHideTopRightCorner = remember(memberKeys) { members.any(hideTopRightCorner) }
+
+                // スタックの表示中のページ（重ねた直後は、重ねたウィジェットのページから表示する）。
+                // 端から先へスワイプすると反対の端に戻るよう（ループ）、ページは十分な数だけ仮想的に並べ、
+                // 実際のメンバーは「ページ番号をメンバー数で割った余り」で決める。最初は真ん中あたりから始める
+                val requestedKey = if (base.stackId >= 0) stackPageRequests[base.stackId] else null
+                val pagerState = rememberPagerState(
+                    initialPage = loopStartPage(members.size) + memberKeys.indexOf(requestedKey).coerceAtLeast(0),
+                    pageCount = { if (members.size > 1) StackLoopPageCount else 1 }
+                )
+                LaunchedEffect(requestedKey, memberKeys) {
+                    val requestedIndex = memberKeys.indexOf(requestedKey)
+                    if (requestedIndex >= 0) {
+                        // 今のページから一番近い、そのメンバーのページへ移る
+                        val current = pagerState.currentPage
+                        val target = current - current.mod(members.size) + requestedIndex
+                        if (current != target) pagerState.scrollToPage(target)
+                        stackPageRequests.remove(base.stackId)
+                    }
+                }
+                val currentIndex = pagerState.currentPage.mod(members.size)
+                val currentMember = members.getOrElse(currentIndex) { base }
+
                 WidgetSlot(
-                    widget = widget,
+                    widget = base,
                     columns = columns,
                     rows = rows,
                     cellWidth = cellWidth,
                     cellHeight = cellHeight,
                     isWidgetEditMode = isWidgetEditMode,
                     otherWidgets = otherWidgets,
-                    iconCellSize = resolvedIconCellSizes[widget.type],
+                    stackMembers = members,
+                    currentMember = currentMember,
+                    // スタックはアイコン単位ではなく、キャンバスのセル単位でリサイズする
+                    iconCellSize = if (isStack) null else resolvedIconCellSizes[base.type],
                     resizeConstraints = resolvedResizeConstraints,
                     hideTopRightCorner = resolvedHideTopRightCorner,
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
+                    isStackTargetArmed = { isStackHoverArmed && stackHoverKey != null },
+                    onFingerMoved = { rootPosition -> stackHoverKey = rootPosition?.let { groupKeyAt(it, groupKey) } },
                     onMoved = { newCol, newRow ->
-                        onLayoutChange(placedWidgets.map { if (it.instanceKey == widget.instanceKey) it.copy(col = newCol, row = newRow) else it })
+                        onLayoutChange(placedWidgets.map { if (it.groupKey == groupKey) it.copy(col = newCol, row = newRow) else it })
+                    },
+                    onPulledOut = { newCol, newRow ->
+                        onLayoutChange(placedWidgets.pullOutOfStack(currentMember.instanceKey, newCol, newRow))
+                    },
+                    onStackDrop = { isPullOut ->
+                        val target = stackHoverKey
+                        if (target != null) {
+                            val draggedKeys = if (isPullOut) setOf(currentMember.instanceKey) else memberKeys.toSet()
+                            val (stacked, stackId) = placedWidgets.stackOnto(draggedKeys, target)
+                            if (stackId >= 0) stackPageRequests[stackId] = draggedKeys.first()
+                            onLayoutChange(stacked)
+                        }
                     },
                     onResized = { newCol, newRow, newColSpan, newRowSpan ->
                         onLayoutChange(
                             placedWidgets.map {
-                                if (it.instanceKey == widget.instanceKey) {
+                                if (it.groupKey == groupKey) {
                                     it.copy(col = newCol, row = newRow, colSpan = newColSpan, rowSpan = newRowSpan)
                                 } else it
                             }
@@ -218,10 +310,69 @@ fun SharedTransitionScope.WidgetCanvas(
                     },
                     onWidgetLongClick = onWidgetLongClick,
                     onExitWidgetEditMode = onExitWidgetEditMode,
-                    onDragStateChanged = { dragging, overDeleteZone -> onWidgetDragStateChanged(widget, dragging, overDeleteZone) },
-                    onRequestDeleteConfirm = { onRequestDeleteConfirm(widget) }
+                    onDragStateChanged = { dragging, overDeleteZone, isPullOut ->
+                        when {
+                            isPullOut -> onWidgetDragStateChanged(currentMember, dragging, overDeleteZone)
+                            // スタックごと動かしている間は削除できないため、削除ゾーンも出さない
+                            isStack -> onWidgetDragStateChanged(base, false, false)
+                            else -> onWidgetDragStateChanged(base, dragging, overDeleteZone)
+                        }
+                    },
+                    onRequestDeleteConfirm = { isPullOut -> onRequestDeleteConfirm(if (isPullOut) currentMember else base) }
                 ) { liveColSpan, liveRowSpan, boxModifier, isResizing ->
-                    content(widget.type, widget.appWidgetId, widget.instanceId, liveColSpan, liveRowSpan, resolvedIconCellSizes[widget.type], boxModifier, isResizing)
+                    if (!isStack) {
+                        content(base.type, base.appWidgetId, base.instanceId, liveColSpan, liveRowSpan, resolvedIconCellSizes[base.type], boxModifier, isResizing)
+                    } else {
+                        Box(modifier = boxModifier) {
+                            // 横スワイプで1枚ずつ切り替える（端から先へスワイプすると反対の端に戻る）。
+                            // 編集モード中は移動・取り出しのドラッグを優先するため止める。
+                            // 前後のページは作ったまま保持して切り替えを軽くするが、ループでは同じメンバーの
+                            // ページが何度も現れるため、同じウィジェットを同時に2つ作らない範囲（メンバー数の
+                            // 半分未満）にとどめる（外部ウィジェットは同時に2つ作ると片方が更新されなくなる）
+                            HorizontalPager(
+                                state = pagerState,
+                                userScrollEnabled = !isWidgetEditMode,
+                                beyondViewportPageCount = (members.size - 1) / 2,
+                                modifier = Modifier.fillMaxSize()
+                            ) { page ->
+                                val member = members[page.mod(members.size)]
+                                content(member.type, member.appWidgetId, member.instanceId, liveColSpan, liveRowSpan, resolvedIconCellSizes[member.type], Modifier.fillMaxSize(), isResizing)
+                            }
+                            StackPageIndicator(
+                                pageCount = members.size,
+                                currentPage = currentIndex,
+                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 重ねる先のハイライト。指が乗っている間は薄く、重ねる準備ができたら強く光らせて「STACK」と表示する
+        stackHoverKey?.let { hoverKey -> groups[hoverKey]?.first() }?.let { target ->
+            val colors = LocalCyberColors.current
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .offset(x = cellWidth * target.col, y = cellHeight * target.row)
+                    .size(cellWidth * target.colSpan, cellHeight * target.rowSpan)
+                    .padding(4.dp)
+                    .border(2.dp, colors.accent.copy(alpha = if (isStackHoverArmed) 1f else 0.4f), RoundedCornerShape(6.dp))
+                    .background(colors.accent.copy(alpha = if (isStackHoverArmed) 0.2f else 0.06f), RoundedCornerShape(6.dp))
+            ) {
+                if (isStackHoverArmed) {
+                    Text(
+                        "STACK",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.onAccent,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.accent)
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
                 }
             }
         }
@@ -258,6 +409,76 @@ private val ResizeHandleTouchSize = 56.dp
 /** リサイズハンドルの見た目のブラケットのサイズ。[ResizeHandleTouchSize]とは独立して見た目を保つ。 */
 private val ResizeHandleVisualSize = 40.dp
 
+/** スタックの上部中央の、スタックごと移動するつまみのタッチ領域（幅・上端からの高さ）。 */
+private val GripTouchWidth = 96.dp
+private val GripTouchHeight = 32.dp
+
+/** 別のウィジェットの上で、重ねる準備ができるまで指を止めておく時間。 */
+private const val StackHoverDelayMillis = 400L
+
+/**
+ * ループするスタックの仮想的なページ数。端に届かないよう十分大きく取り、真ん中あたりから始める
+ * （1ページずつ手でめくる限り、実用上は端に届かない）。
+ */
+private const val StackLoopPageCount = 100_000
+
+/** ループするスタックで、先頭のメンバー（余りが0）になる真ん中あたりのページ。 */
+private fun loopStartPage(memberCount: Int): Int {
+    if (memberCount <= 1) return 0
+    val middle = StackLoopPageCount / 2
+    return middle - middle.mod(memberCount)
+}
+
+/**
+ * スタックのメンバーそれぞれのリサイズ制約をまとめる。全員が収まるよう、最小サイズは一番大きいもの、
+ * 最大サイズは一番小さいものに合わせ、リサイズできる方向は全員が対応している方向だけにする。
+ */
+private fun mergeResizeConstraints(constraints: List<ResizeConstraints>): ResizeConstraints {
+    if (constraints.size == 1) return constraints.first()
+    val mins = constraints.mapNotNull { it.minSize }
+    val maxes = constraints.mapNotNull { it.maxSize }
+    val horizontal = constraints.all { it.axes == ResizeAxes.BOTH || it.axes == ResizeAxes.HORIZONTAL }
+    val vertical = constraints.all { it.axes == ResizeAxes.BOTH || it.axes == ResizeAxes.VERTICAL }
+    return ResizeConstraints(
+        minSize = if (mins.isEmpty()) null else DpSize(mins.maxOf { it.width }, mins.maxOf { it.height }),
+        maxSize = if (maxes.isEmpty()) null else DpSize(maxes.minOf { it.width }, maxes.minOf { it.height }),
+        axes = when {
+            horizontal && vertical -> ResizeAxes.BOTH
+            horizontal -> ResizeAxes.HORIZONTAL
+            vertical -> ResizeAxes.VERTICAL
+            else -> ResizeAxes.NONE
+        }
+    )
+}
+
+/** スタックの下端に出す、何枚目を表示しているかを示す小さな点。 */
+@Composable
+private fun StackPageIndicator(pageCount: Int, currentPage: Int, modifier: Modifier = Modifier) {
+    val colors = LocalCyberColors.current
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
+        for (page in 0 until pageCount) {
+            Box(
+                modifier = Modifier
+                    .size(if (page == currentPage) 5.dp else 4.dp)
+                    .clip(CircleShape)
+                    .background(if (page == currentPage) colors.accent else colors.border)
+            )
+        }
+    }
+}
+
+/**
+ * キャンバス上の1つの枠（単体のウィジェット、またはスタック）。
+ *
+ * スタックの場合、本体のドラッグは「今表示している1枚（[currentMember]）の取り出し」になり、
+ * 上部中央のつまみ（[GripTouchWidth]×[GripTouchHeight]の範囲）のドラッグでスタックごと移動する。
+ * 移動・取り出しのドラッグ中に別のウィジェットの上で少し止めると（[isStackTargetArmed]）、
+ * 指を離したときにそこへ重ねる（[onStackDrop]）。
+ *
+ * @param widget 位置・サイズの基準になるウィジェット（スタックなら先頭のメンバー）。
+ * @param stackMembers この枠に含まれるウィジェット（単体なら[widget]のみ）。
+ * @param currentMember スタックで今表示しているメンバー（単体なら[widget]）。
+ */
 @Composable
 private fun WidgetSlot(
     widget: PlacedWidget,
@@ -267,20 +488,27 @@ private fun WidgetSlot(
     cellHeight: Dp,
     isWidgetEditMode: Boolean,
     otherWidgets: List<PlacedWidget>,
+    stackMembers: List<PlacedWidget>,
+    currentMember: PlacedWidget,
     iconCellSize: Pair<Float, Float>?,
     resizeConstraints: ResizeConstraints,
     hideTopRightCorner: Boolean,
     deleteZoneBoundsInRoot: Rect?,
+    isStackTargetArmed: () -> Boolean,
+    onFingerMoved: (rootPosition: Offset?) -> Unit,
     onMoved: (col: Float, row: Float) -> Unit,
+    onPulledOut: (col: Float, row: Float) -> Unit,
+    onStackDrop: (isPullOut: Boolean) -> Unit,
     onResized: (col: Float, row: Float, colSpan: Float, rowSpan: Float) -> Unit,
     onWidgetLongClick: () -> Unit,
     onExitWidgetEditMode: () -> Unit,
-    onDragStateChanged: (dragging: Boolean, overDeleteZone: Boolean) -> Unit,
-    onRequestDeleteConfirm: () -> Unit,
+    onDragStateChanged: (dragging: Boolean, overDeleteZone: Boolean, isPullOut: Boolean) -> Unit,
+    onRequestDeleteConfirm: (isPullOut: Boolean) -> Unit,
     content: @Composable (colSpan: Float, rowSpan: Float, modifier: Modifier, isResizing: Boolean) -> Unit
 ) {
     val colors = LocalCyberColors.current
     val density = LocalDensity.current
+    val isStack = stackMembers.size > 1
 
     // ドラッグ中（確定前）のライブプレビュー用オフセット（生のドラッグ量。指の動きをそのまま積算する）
     var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
@@ -289,6 +517,10 @@ private fun WidgetSlot(
     var activeCorner by remember { mutableStateOf<ResizeCorner?>(null) }
     // 移動ドラッグ中、指が「ここにドラッグして削除」ゾーンの上にあるかどうか
     var isOverDeleteZone by remember { mutableStateOf(false) }
+    // スタックから今表示している1枚を取り出すドラッグ中かどうか（スタックごとの移動ならfalse）
+    var isPullOut by remember { mutableStateOf(false) }
+    // 取り出しで、置ける場所（他のウィジェットにもスタック自身にも重ならない位置）が一度でも見つかったか
+    var hasValidPullOutPosition by remember { mutableStateOf(false) }
     // スナップ先ガイドが指すべき、直近で確定可能だった（＝他のウィジェットと重ならない）位置・
     // サイズ。ドラッグ中に指が重なる位置へ入っても、ここは最後に有効だった値のまま動かさない
     // （＝ガイドが「最終的にここへスナップされる」場所に固定され続ける）。ドラッグ開始時に
@@ -405,33 +637,54 @@ private fun WidgetSlot(
     val guideRowSpan = if (isResizing) lastValidResizeRowSpan else widget.rowSpan
 
     val onMoveDragEnd: () -> Unit = {
-        if (isOverDeleteZone) {
-            onRequestDeleteConfirm()
-        } else {
-            onMoved(lastValidMoveCol, lastValidMoveRow)
+        when {
+            isOverDeleteZone -> onRequestDeleteConfirm(isPullOut)
+            isStackTargetArmed() -> onStackDrop(isPullOut)
+            // 取り出しは、置ける場所が見つからなかった場合はスタックに残したままにする
+            isPullOut -> if (hasValidPullOutPosition) onPulledOut(lastValidMoveCol, lastValidMoveRow)
+            else -> onMoved(lastValidMoveCol, lastValidMoveRow)
         }
         dragOffsetPx = Offset.Zero
         isOverDeleteZone = false
-        onDragStateChanged(false, false)
+        onFingerMoved(null)
+        onDragStateChanged(false, false, isPullOut)
+        isPullOut = false
     }
     // ウィジェット全域が移動のドラッグ判定になる（四隅のリサイズハンドルの範囲を除く）。
-    // 以前は上部の専用バーだけが移動ハンドルだったが、当たり判定が狭すぎたため本体全域に変更した
-    val onBodyDragStart: () -> Unit = {
+    // 以前は上部の専用バーだけが移動ハンドルだったが、当たり判定が狭すぎたため本体全域に変更した。
+    // スタックでは、上部中央のつまみからならスタックごとの移動、それ以外からなら今の1枚の取り出しになる
+    val onBodyDragStart: (downPosition: Offset) -> Unit = { downPosition ->
+        val boxWidthPx = widgetBoxCoordinates?.size?.width?.toFloat() ?: 0f
+        val isOnGrip = with(density) {
+            kotlin.math.abs(downPosition.x - boxWidthPx / 2) <= GripTouchWidth.toPx() / 2 && downPosition.y <= GripTouchHeight.toPx()
+        }
+        isPullOut = isStack && !isOnGrip
+        hasValidPullOutPosition = false
         lastValidMoveCol = widget.col
         lastValidMoveRow = widget.row
-        onDragStateChanged(true, false)
+        onDragStateChanged(true, false, isPullOut)
     }
     val onBodyDrag: (position: Offset, amount: Offset) -> Unit = { position, amount ->
         dragOffsetPx += amount
         val candidate = snappedMoveCandidate(dragOffsetPx)
-        if (otherWidgets.none { it.overlaps(candidate) }) {
+        if (isPullOut) {
+            // 取り出した1枚は、スタックに残る他のメンバーとも重ならない場所にだけ置ける
+            val blockers = otherWidgets + stackMembers.filter { it.instanceKey != currentMember.instanceKey }
+            if (blockers.none { it.overlaps(candidate) }) {
+                lastValidMoveCol = candidate.col
+                lastValidMoveRow = candidate.row
+                hasValidPullOutPosition = true
+            }
+        } else if (otherWidgets.none { it.overlaps(candidate) }) {
             lastValidMoveCol = candidate.col
             lastValidMoveRow = candidate.row
         }
         val rootPosition = widgetBoxCoordinates?.localToRoot(position)
-        isOverDeleteZone = deleteZoneBoundsInRoot != null && rootPosition != null &&
+        onFingerMoved(rootPosition)
+        // スタックごとの移動では削除しない（削除はスタックから1枚ずつ取り出して行う）
+        isOverDeleteZone = (!isStack || isPullOut) && deleteZoneBoundsInRoot != null && rootPosition != null &&
             deleteZoneBoundsInRoot.contains(rootPosition)
-        onDragStateChanged(true, isOverDeleteZone)
+        onDragStateChanged(true, isOverDeleteZone, isPullOut)
     }
     val currentOnMoveDragEnd = rememberUpdatedState(onMoveDragEnd)
     val currentOnBodyDragStart = rememberUpdatedState(onBodyDragStart)
@@ -441,10 +694,25 @@ private fun WidgetSlot(
     val currentOnExitWidgetEditMode = rememberUpdatedState(onExitWidgetEditMode)
     val appDragState = LocalAppDragState.current
 
-    // スナップ先ガイド（破線枠。ドラッグ中のみ表示。削除ゾーンの上にいる間は移動先の意味が
-    // なくなるため隠す）。直近で有効だった位置に固定し続けるため常に確定可能な位置を指しており、
-    // 警告色は不要
-    if (isDragging && !isOverDeleteZone) {
+    // スタックから1枚を取り出している間は、元の位置に残りのメンバーがあることを示す
+    if (isPullOut && isMoving) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .offset(x = cellWidth * widget.col, y = cellHeight * widget.row)
+                .size(width = cellWidth * widget.colSpan, height = cellHeight * widget.rowSpan)
+                .padding(4.dp)
+                .border(1.dp, colors.border, RoundedCornerShape(6.dp))
+                .background(colors.panel.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+        ) {
+            Text("STACK // ${stackMembers.size - 1}", fontFamily = CyberFont, fontSize = 10.sp, color = colors.text.copy(alpha = 0.5f))
+        }
+    }
+
+    // スナップ先ガイド（破線枠。ドラッグ中のみ表示。削除ゾーンの上にいる間や、別のウィジェットに
+    // 重ねようとしている間は移動先の意味がなくなるため隠す。取り出しで置ける場所がまだない間も隠す）。
+    // 直近で有効だった位置に固定し続けるため常に確定可能な位置を指しており、警告色は不要
+    if (isDragging && !isOverDeleteZone && !(isMoving && isStackTargetArmed()) && !(isPullOut && !hasValidPullOutPosition)) {
         Box(
             modifier = Modifier
                 .offset(x = cellWidth * guideCol, y = cellHeight * guideRow)
@@ -494,7 +762,7 @@ private fun WidgetSlot(
             // または長押し（タイムアウト到達）と判断した瞬間にだけconsumeし、以降のイベントを
             // ウィジェット側が奪い取る。子のMainパス処理より必ず先に観測できるため、子の
             // クリック判定に先を越されることはない
-            .pointerInput(widget.instanceKey, isWidgetEditMode) {
+            .pointerInput(widget.instanceKey) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
 
@@ -514,7 +782,7 @@ private fun WidgetSlot(
                             totalDistance += delta.getDistance()
                             if (!dragStarted && totalDistance >= touchSlop) {
                                 dragStarted = true
-                                currentOnBodyDragStart.value()
+                                currentOnBodyDragStart.value(down.position)
                             }
                             if (dragStarted) {
                                 change.consume()
@@ -536,22 +804,30 @@ private fun WidgetSlot(
                         if (downScreen != null && appDragState?.isOverDragSource(downScreen) == true) {
                             return@awaitEachGesture
                         }
-                        val downTime = down.uptimeMillis
+                        // 指を止めたままでも長押しと判定できるよう、イベントを待つのではなく時間切れで判定する
+                        // （時間内に指が離れた・動いた・中身が処理した場合は長押しではない）
                         val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
-                        var isLongPress = false
-                        while (true) {
-                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            if (change.isConsumed) break
-                            if (change.uptimeMillis - downTime >= longPressTimeoutMillis) {
-                                change.consume()
-                                isLongPress = true
-                                break
+                        val isLongPress = withTimeoutOrNull(longPressTimeoutMillis) {
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                                if (change.isConsumed || !change.pressed) return@withTimeoutOrNull false
+                                // 指が動いた場合は長押しではなくスワイプ（スタックや中身のページ切り替えなど）とみなす
+                                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                                    return@withTimeoutOrNull false
+                                }
                             }
-                            if (!change.pressed) break
-                        }
+                            @Suppress("UNREACHABLE_CODE")
+                            false
+                        } == null
                         if (isLongPress) {
                             currentOnWidgetLongClick.value()
+                            // 指を離すまでのイベントは消費し、中身（ボタンなど）のタップとして扱われないようにする
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                event.changes.forEach { it.consume() }
+                                if (event.changes.none { it.pressed }) break
+                            }
                         }
                     }
                 }
@@ -561,12 +837,13 @@ private fun WidgetSlot(
 
         if (isWidgetEditMode) {
             // 移動グリップ（上部中央、見た目のみ。ドラッグ判定自体はウィジェット全域が持つため、
-            // このグリップ自体には当たり判定を持たせていない）
+            // このグリップ自体には当たり判定を持たせていない）。スタックでは、ここからのドラッグだけが
+            // スタックごとの移動になるため、目立つよう幅を広げる
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 4.dp)
-                    .width(28.dp)
+                    .width(if (isStack) 48.dp else 28.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(colors.accent.copy(alpha = 0.8f))

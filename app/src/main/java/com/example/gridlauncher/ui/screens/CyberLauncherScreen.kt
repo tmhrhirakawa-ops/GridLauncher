@@ -125,6 +125,7 @@ import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
 import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.sortedByInstallOrder
+import com.example.gridlauncher.util.normalizeStacks
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
 import com.example.gridlauncher.util.saveSlotGridPageCount
 import com.example.gridlauncher.util.saveSlotGridSize
@@ -829,8 +830,10 @@ fun CyberLauncherScreen() {
 
     var placedWidgets by remember(widgetLayoutMode) { mutableStateOf(loadPlacedWidgets(prefs, widgetLayoutMode)) }
     fun updatePlacedWidgets(newWidgets: List<PlacedWidget>) {
-        placedWidgets = newWidgets
-        savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
+        // 削除などでメンバーが1つだけになったスタックは、普通のウィジェットに戻す
+        val normalized = newWidgets.normalizeStacks()
+        placedWidgets = normalized
+        savePlacedWidgets(prefs, widgetLayoutMode, normalized)
     }
     // NOW PLAYINGウィジェットをホーム画面に置いているときは、ヘッダーには再生中メディアを表示しない
     val headerNowPlaying = nowPlaying.takeIf { placedWidgets.none { it.type == WidgetPanel.NOW_PLAYING } }
@@ -841,6 +844,18 @@ fun CyberLauncherScreen() {
     // 種類ごとの固定サイズではなく実際の推奨サイズ（dp）に応じたセル数で配置するために使う
     // （画面モードが変わるとグリッド寸法自体が変わるため、モードごとに保持し直す）
     var canvasCellSize by remember(widgetLayoutMode) { mutableStateOf<DpSize?>(null) }
+    // ホーム画面全体（長押しを検出する背景のSurface）と、ウィジェットキャンバスのルート座標系での範囲。
+    // 背景の長押しの位置にウィジェットがあるかどうかの判定に使う
+    var homeSurfaceBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
+    var widgetCanvasBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
+    // 背景のSurface内の位置[offset]に、配置済みのウィジェットがあるかどうか
+    fun isOverPlacedWidget(offset: Offset): Boolean {
+        val cellSize = canvasCellSize ?: return false
+        val local = offset + homeSurfaceBoundsInRoot.topLeft - widgetCanvasBoundsInRoot.topLeft
+        val col = local.x / with(density) { cellSize.width.toPx() }
+        val row = local.y / with(density) { cellSize.height.toPx() }
+        return placedWidgets.any { col >= it.col && col < it.col + it.colSpan && row >= it.row && row < it.row + it.rowSpan }
+    }
     // 外部ウィジェットが、許容する最小サイズでもこの画面のグリッドに入り切らなかった
     // （または配置しようとした時点で空きがなかった）ことを知らせるエラーダイアログの表示状態
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
@@ -1463,6 +1478,7 @@ fun CyberLauncherScreen() {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .onGloballyPositioned { homeSurfaceBoundsInRoot = it.boundsInRoot() }
                 .pointerInput(Unit) {
                     detectDragGestures { change, dragAmount ->
                         // Y方向（縦）の移動量がマイナス（上方向）に一定以上でドロワーを表示
@@ -1480,9 +1496,14 @@ fun CyberLauncherScreen() {
                         onTap = { isWidgetEditMode = false },
                         // 何もないところの長押しで、ウィジェット追加・カスタマイズのメニューを表示
                         onLongPress = { offset ->
-                            isWidgetEditMode = false
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            homeMenuOffset = offset
+                            // ウィジェットの上の長押しはウィジェット側が編集モードに入るので、ここでは
+                            // メニューを出さない（指がほとんど動かないと、ウィジェット側が長押しを
+                            // 横取りする前にこちらの長押しの時間切れが来てしまうため、位置で判定する）
+                            if (!isOverPlacedWidget(offset)) {
+                                isWidgetEditMode = false
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                homeMenuOffset = offset
+                            }
                         }
                     )
                 },
@@ -1571,7 +1592,9 @@ fun CyberLauncherScreen() {
                         isDraggedWidgetOverDeleteZone = overDeleteZone
                     },
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .onGloballyPositioned { widgetCanvasBoundsInRoot = it.boundsInRoot() }
                 ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
                     // アクセントカラー2に設定されたウィジェットだけ、配色のaccentを差し替えて描画する
                     CompositionLocalProvider(LocalCyberColors provides if (type in accent2WidgetPanels) colors2 else colors) {

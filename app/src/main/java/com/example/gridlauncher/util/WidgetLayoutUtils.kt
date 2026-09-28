@@ -65,9 +65,9 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
     return stored.split(";").mapNotNull { entry ->
         val parts = entry.split(":")
         // 6フィールド目（appWidgetId）はAPPWIDGET対応、7フィールド目（instanceId）はAPP SLOT
-        // 対応で後から追加したもの。5/6フィールドの旧形式もそのまま読めるようにし、既存の
-        // 配置がリセットされないようにする
-        if (parts.size !in 5..7) return@mapNotNull null
+        // 対応、8フィールド目（stackId）はウィジェットのスタック対応で後から追加したもの。
+        // フィールドの少ない旧形式もそのまま読めるようにし、既存の配置がリセットされないようにする
+        if (parts.size !in 5..8) return@mapNotNull null
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
         val col = parts[1].toFloatOrNull() ?: return@mapNotNull null
         val row = parts[2].toFloatOrNull() ?: return@mapNotNull null
@@ -75,13 +75,14 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
         val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
         val appWidgetId = if (parts.size >= 6) (parts[5].toIntOrNull() ?: -1) else -1
         val instanceId = if (parts.size >= 7) (parts[6].toIntOrNull() ?: -1) else -1
-        PlacedWidget(type = type, appWidgetId = appWidgetId, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
-    }
+        val stackId = if (parts.size >= 8) (parts[7].toIntOrNull() ?: -1) else -1
+        PlacedWidget(type = type, appWidgetId = appWidgetId, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan, stackId = stackId)
+    }.normalizeStacks()
 }
 
 /** 指定した画面モードのウィジェット配置をSharedPreferencesに保存する。 */
 fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets: List<PlacedWidget>) {
-    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}" }
+    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}:${it.stackId}" }
     prefs.edit { putString(widgetLayoutKey(mode), serialized) }
 }
 
