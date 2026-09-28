@@ -126,6 +126,8 @@ import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.sortedByInstallOrder
 import com.example.gridlauncher.util.normalizeStacks
+import com.example.gridlauncher.util.loadStackAutoRotateSettings
+import com.example.gridlauncher.util.saveStackAutoRotateSettings
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
 import com.example.gridlauncher.util.saveSlotGridPageCount
 import com.example.gridlauncher.util.saveSlotGridSize
@@ -442,6 +444,8 @@ fun CyberLauncherScreen() {
     var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
+    // ウィジェットスタックの自動切り替え（オンオフと間隔。カスタマイズ画面で変更する）
+    var stackAutoRotate by remember { mutableStateOf(loadStackAutoRotateSettings(prefs)) }
     // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）。
     // 画面の向きごとに保存する（向きごとの値が未設定なら、向きで分ける前の共通の設定を引き継ぐ）
     val orientationSuffix = if (isPortrait) "portrait" else "landscape"
@@ -1122,6 +1126,11 @@ fun CyberLauncherScreen() {
                     showAddWidgetTile = visible
                     prefs.edit { putBoolean("show_add_widget_tile", visible) }
                 },
+                stackAutoRotate = stackAutoRotate,
+                onStackAutoRotateChange = { settings ->
+                    stackAutoRotate = settings
+                    saveStackAutoRotateSettings(prefs, settings)
+                },
                 hiddenPanels = hiddenWidgetPanels,
                 onSetAllBorders = { visible -> setAllWidgetBorders(visible) },
                 onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) },
@@ -1592,6 +1601,7 @@ fun CyberLauncherScreen() {
                         isDraggedWidgetOverDeleteZone = overDeleteZone
                     },
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
+                    stackAutoRotateIntervalMillis = stackAutoRotate.takeIf { it.enabled }?.let { it.intervalSeconds * 1000L },
                     modifier = Modifier
                         .weight(1f)
                         .onGloballyPositioned { widgetCanvasBoundsInRoot = it.boundsInRoot() }

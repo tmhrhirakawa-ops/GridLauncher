@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.VerticalAlignBottom
 import androidx.compose.material.icons.outlined.VerticalAlignTop
+import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -71,6 +72,9 @@ import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.HeaderTitle
 import com.example.gridlauncher.util.DOCK_MIN_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
+import com.example.gridlauncher.util.StackAutoRotateIntervalOptions
+import com.example.gridlauncher.util.StackAutoRotateSettings
+import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
 
 /**
  * バッテリーコア（歯車アイコン）のタップで開く、ランチャーの見た目をカスタマイズするボトムシート。
@@ -107,6 +111,8 @@ import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
  * @param onDockPageCountChange DOCKのページ数が変更されたときのコールバック。
  * @param showAddWidgetTile ホーム画面の空き領域に「+ ADD WIDGET」タイルを表示しているかどうか。
  * @param onShowAddWidgetTileChange 「+ ADD WIDGET」の表示スイッチが切り替えられたときのコールバック。
+ * @param stackAutoRotate ウィジェットスタックの自動切り替えの設定（オンオフと間隔）。
+ * @param onStackAutoRotateChange 上記が変更されたときのコールバック。
  * @param hiddenPanels 枠線を非表示にしているウィジェットの集合。
  * @param onSetAllBorders 全ウィジェットの枠線を一括で表示/非表示にするときのコールバック（true=表示）。
  * @param onTogglePanelBorder 個別のウィジェットの枠線が切り替えられたときのコールバック。
@@ -145,6 +151,8 @@ fun CustomizeSheet(
     onDockPageCountChange: (Int) -> Unit,
     showAddWidgetTile: Boolean,
     onShowAddWidgetTileChange: (Boolean) -> Unit,
+    stackAutoRotate: StackAutoRotateSettings,
+    onStackAutoRotateChange: (StackAutoRotateSettings) -> Unit,
     hiddenPanels: Set<WidgetPanel>,
     onSetAllBorders: (Boolean) -> Unit,
     onTogglePanelBorder: (WidgetPanel) -> Unit,
@@ -424,6 +432,42 @@ fun CustomizeSheet(
                 CyberSwitch(checked = showAddWidgetTile, onCheckedChange = onShowAddWidgetTileChange)
             }
 
+            // ウィジェットスタック（重ねたウィジェット）の自動切り替えのオンオフと間隔
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.ViewCarousel,
+                    title = "スタックの自動切り替え",
+                    description = "重ねたウィジェットを、一定の間隔で次に切り替えます",
+                    modifier = Modifier.clickable { onStackAutoRotateChange(stackAutoRotate.copy(enabled = !stackAutoRotate.enabled)) }
+                ) {
+                    CyberSwitch(
+                        checked = stackAutoRotate.enabled,
+                        onCheckedChange = { onStackAutoRotateChange(stackAutoRotate.copy(enabled = it)) }
+                    )
+                }
+                AnimatedVisibility(visible = stackAutoRotate.enabled, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column {
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        Column(
+                            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("切り替えの間隔", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                StackAutoRotateIntervalOptions.forEach { seconds ->
+                                    IntervalOption(
+                                        label = stackAutoRotateIntervalLabel(seconds),
+                                        selected = seconds == stackAutoRotate.intervalSeconds,
+                                        onClick = { onStackAutoRotateChange(stackAutoRotate.copy(intervalSeconds = seconds)) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // グリッド線（ウィジェットの枠線）の編集
             GridLinesCard(
                 hiddenPanels = hiddenPanels,
@@ -492,6 +536,30 @@ internal fun CustomizeRow(
             description = description,
             modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
             trailing = trailing
+        )
+    }
+}
+
+/** 自動切り替えの間隔の選択肢1つ分。選ばれているものはアクセントカラーで塗りつぶす。 */
+@Composable
+private fun IntervalOption(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = LocalCyberColors.current
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, if (selected) colors.accent else colors.border, RoundedCornerShape(4.dp))
+            .background(if (selected) colors.accent else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            fontFamily = CyberFont,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) colors.onAccent else colors.text.copy(alpha = 0.7f),
+            maxLines = 1
         )
     }
 }

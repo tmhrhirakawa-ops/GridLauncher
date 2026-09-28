@@ -1,6 +1,8 @@
 package com.example.gridlauncher.ui.sections
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
@@ -58,6 +60,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.drag.LocalAppDragState
@@ -151,6 +156,9 @@ data class ResizeConstraints(
  *   バック（対象の[PlacedWidget]、ドラッグ中かどうか、現在[deleteZoneBoundsInRoot]の上にいるか
  *   どうか）。呼び出し側はこれを使って「ここにドラッグして削除」ゾーンの表示・非表示や、
  *   ホバー中のハイライトを切り替えられる。
+ * @param stackAutoRotateIntervalMillis スタックを自動で次のウィジェットに切り替える間隔（ミリ秒）。
+ *   nullなら自動では切り替えない。ホーム画面が見えている間だけ切り替え、手でスワイプしたら
+ *   そこから数え直す。ウィジェット編集モード中は止める。
  * @param onRequestDeleteConfirm 移動ドラッグの指を[deleteZoneBoundsInRoot]内で離したときの
  *   コールバック（対象の[PlacedWidget]）。呼び出し側はここで削除確認ダイアログを表示する想定で、
  *   実際の削除は呼び出し側が[onLayoutChange]で行う。
@@ -186,6 +194,7 @@ fun SharedTransitionScope.WidgetCanvas(
     onExitWidgetEditMode: () -> Unit,
     onWidgetDragStateChanged: (widget: PlacedWidget, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
     onRequestDeleteConfirm: (PlacedWidget) -> Unit = {},
+    stackAutoRotateIntervalMillis: Long? = null,
     modifier: Modifier = Modifier,
     content: @Composable SharedTransitionScope.(WidgetPanel, Int, Int, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
 ) {
@@ -265,6 +274,23 @@ fun SharedTransitionScope.WidgetCanvas(
                     }
                 }
                 val currentIndex = pagerState.currentPage.mod(members.size)
+
+                // 自動切り替え。ページが変わる（手でスワイプした場合も含む）たびに数え直し、
+                // ホーム画面が見えている間（ライフサイクルがSTARTED以上）だけ動かす
+                if (isStack && stackAutoRotateIntervalMillis != null && !isWidgetEditMode) {
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    LaunchedEffect(pagerState.settledPage, stackAutoRotateIntervalMillis, lifecycleOwner) {
+                        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                            delay(stackAutoRotateIntervalMillis)
+                            if (!pagerState.isScrollInProgress) {
+                                pagerState.animateScrollToPage(
+                                    pagerState.currentPage + 1,
+                                    animationSpec = tween(durationMillis = StackAutoRotateAnimationMillis, easing = FastOutSlowInEasing)
+                                )
+                            }
+                        }
+                    }
+                }
                 val currentMember = members.getOrElse(currentIndex) { base }
 
                 WidgetSlot(
@@ -415,6 +441,9 @@ private val GripTouchHeight = 32.dp
 
 /** 別のウィジェットの上で、重ねる準備ができるまで指を止めておく時間。 */
 private const val StackHoverDelayMillis = 400L
+
+/** 自動切り替えで次のウィジェットへスライドするアニメーションの長さ（手でのスワイプより、ゆっくり見せる）。 */
+private const val StackAutoRotateAnimationMillis = 900
 
 /**
  * ループするスタックの仮想的なページ数。端に届かないよう十分大きく取り、真ん中あたりから始める
