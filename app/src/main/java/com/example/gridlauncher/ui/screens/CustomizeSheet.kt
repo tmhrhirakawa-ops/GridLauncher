@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.VerticalAlignBottom
 import androidx.compose.material.icons.outlined.VerticalAlignTop
 import androidx.compose.material.icons.outlined.ViewCarousel
 import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +62,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.billing.ProManager
+import com.example.gridlauncher.ui.components.ProBadge
 import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
@@ -117,6 +120,10 @@ import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
  * @param onSetAllBorders 全ウィジェットの枠線を一括で表示/非表示にするときのコールバック（true=表示）。
  * @param onTogglePanelBorder 個別のウィジェットの枠線が切り替えられたときのコールバック。
  * @param onOpenPowerMenu 電源メニューボタンがタップされたときのコールバック。
+ * @param isPro PROを購入済みかどうか。PROでない場合、PROの機能には鍵つきのマークを付け、
+ *   使おうとすると[onRequirePro]でPRO解放の案内を出す。
+ * @param onRequirePro PROの機能を使おうとしたときのコールバック（使おうとした機能の名前。
+ *   空文字なら機能を指定せずにPROの案内を出す）。
  * @param onDismiss シートが閉じられるときのコールバック。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,12 +164,29 @@ fun CustomizeSheet(
     onSetAllBorders: (Boolean) -> Unit,
     onTogglePanelBorder: (WidgetPanel) -> Unit,
     onOpenPowerMenu: () -> Unit,
+    isPro: Boolean,
+    onRequirePro: (featureName: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val colors = LocalCyberColors.current
     var colorPickerTarget by remember { mutableStateOf<Int?>(null) } // パレットで編集中のアクセントカラー（1 or 2）
     var showPanelAccents by remember { mutableStateOf(false) }
+
+    // PROの機能（DOCKの詳細設定・スタックの自動切り替え）は、PROでない場合は変えずにPRO解放の案内を出す
+    // （初期の状態＝縦横で同じ並び・自動切り替えオフに戻す操作と、ページ数を減らす操作は誰でもできる）
+    val gatedShareDockChange: (Boolean) -> Unit = { share ->
+        if (share || isPro) onShareDockAcrossOrientationsChange(share) else onRequirePro("DOCK の縦横別々の並び")
+    }
+    val gatedDockSlotsPerPageChange: (Int) -> Unit = { count ->
+        if (isPro) onDockSlotsPerPageChange(count) else onRequirePro("DOCK の1ページのアイコン数")
+    }
+    val gatedDockPageCountChange: (Int) -> Unit = { count ->
+        if (count < dockPageCount || isPro) onDockPageCountChange(count) else onRequirePro("DOCK のページ数")
+    }
+    val gatedStackAutoRotateChange: (StackAutoRotateSettings) -> Unit = { settings ->
+        if (!settings.enabled || isPro) onStackAutoRotateChange(settings) else onRequirePro("スタックの自動切り替え")
+    }
 
     colorPickerTarget?.let { target ->
         val isAccent2 = target == 2
@@ -173,6 +197,8 @@ fun CustomizeSheet(
             onUseOriginalIconColorsChange = onUseOriginalIconColorsChange,
             title = "ACCENT COLOR $target",
             defaultColor = if (isAccent2) DefaultAccentColor2 else DefaultAccentColor,
+            isPro = isPro,
+            onRequirePro = { onRequirePro("パレットでの自由な色選び") },
             onDismiss = { colorPickerTarget = null }
         )
     }
@@ -205,6 +231,9 @@ fun CustomizeSheet(
         ) {
             Text("CUSTOMIZE // SYSTEM CONFIG", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.accent)
             Spacer(modifier = Modifier.height(2.dp))
+
+            // PRO（有料機能の買い切り解放）の状態と購入画面への入口
+            ProStatusCard(isPro = isPro, onOpenPro = { onRequirePro("") })
 
             // 壁紙の変更（端末標準の壁紙選択画面を開く）
             CustomizeRow(
@@ -247,16 +276,25 @@ fun CustomizeSheet(
                     title = "アクセントカラー",
                     description = "1・2をタップしてパレットで色を変えます"
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AccentSwatchButton(label = "1", color = accentColor, onClick = { colorPickerTarget = 1 })
-                        AccentSwatchButton(label = "2", color = accentColor2, onClick = { colorPickerTarget = 2 })
+                        // アクセントカラー2はPROの機能
+                        Box {
+                            AccentSwatchButton(
+                                label = "2",
+                                color = accentColor2,
+                                onClick = { if (isPro) colorPickerTarget = 2 else onRequirePro("アクセントカラー2") }
+                            )
+                            if (!isPro) ProBadge(modifier = Modifier.align(Alignment.BottomCenter))
+                        }
                     }
                 }
                 Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                // ウィジェットごとの配色（アクセントカラー1・2のどちらを使うか）はPROの機能
                 ExpandHeader(
-                    label = "ウィジェットごとに設定",
+                    label = if (isPro) "ウィジェットごとに設定" else "ウィジェットごとに設定（PRO）",
                     expanded = showPanelAccents,
-                    onToggle = { showPanelAccents = !showPanelAccents }
+                    onToggle = { if (isPro) showPanelAccents = !showPanelAccents else onRequirePro("ウィジェットごとの配色") }
                 )
                 AnimatedVisibility(visible = showPanelAccents, enter = expandVertically(), exit = shrinkVertically()) {
                     Column(
@@ -338,7 +376,8 @@ fun CustomizeSheet(
                                     color = colors.text,
                                     modifier = Modifier.weight(1f)
                                 )
-                                if (headerTitle != HeaderTitle.Default) {
+                                ProBadgeIfLocked(isPro)
+                                if (isPro && headerTitle != HeaderTitle.Default) {
                                     Text(
                                         "元に戻す",
                                         fontFamily = CyberFont,
@@ -351,9 +390,18 @@ fun CustomizeSheet(
                                     )
                                 }
                             }
-                            HeaderTitleField(label = "上段", value = headerTitle.top) { onHeaderTitleChange(headerTitle.copy(top = it)) }
-                            HeaderTitleField(label = "中段", value = headerTitle.main) { onHeaderTitleChange(headerTitle.copy(main = it)) }
-                            HeaderTitleField(label = "下段", value = headerTitle.bottom) { onHeaderTitleChange(headerTitle.copy(bottom = it)) }
+                            // 文字の書き換えはPROの機能。PROでない場合は入力欄を触れなくし、タップでPRO解放の案内を出す
+                            val shownTitle = if (isPro) headerTitle else HeaderTitle.Default
+                            Box {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    HeaderTitleField(label = "上段", value = shownTitle.top, enabled = isPro) { onHeaderTitleChange(headerTitle.copy(top = it)) }
+                                    HeaderTitleField(label = "中段", value = shownTitle.main, enabled = isPro) { onHeaderTitleChange(headerTitle.copy(main = it)) }
+                                    HeaderTitleField(label = "下段", value = shownTitle.bottom, enabled = isPro) { onHeaderTitleChange(headerTitle.copy(bottom = it)) }
+                                }
+                                if (!isPro) {
+                                    Box(modifier = Modifier.matchParentSize().clickable { onRequirePro("ヘッダー中央の文字の書き換え") })
+                                }
+                            }
                         }
                     }
                 }
@@ -380,34 +428,40 @@ fun CustomizeSheet(
                             } else {
                                 "縦画面と横画面で別々に並べます（オンにすると今の向きの並びにそろえます）"
                             },
-                            modifier = Modifier.clickable { onShareDockAcrossOrientationsChange(!shareDockAcrossOrientations) }
+                            modifier = Modifier.clickable { gatedShareDockChange(!shareDockAcrossOrientations) }
                         ) {
-                            CyberSwitch(checked = shareDockAcrossOrientations, onCheckedChange = onShareDockAcrossOrientationsChange)
+                            ProBadgeIfLocked(isPro)
+                            CyberSwitch(checked = shareDockAcrossOrientations, onCheckedChange = gatedShareDockChange)
                         }
                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
                         Column(
                             modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                "今の画面の向き（$orientationLabel）の設定です",
-                                fontFamily = CyberFont,
-                                fontSize = 10.sp,
-                                color = colors.text.copy(alpha = 0.5f)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "今の画面の向き（$orientationLabel）の設定です",
+                                    fontFamily = CyberFont,
+                                    fontSize = 10.sp,
+                                    color = colors.text.copy(alpha = 0.5f),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                // アイコン数・ページ数の変更はPROの機能
+                                if (!isPro) ProBadge()
+                            }
                             StepperRow(
                                 label = "1ページのアイコン数",
                                 value = dockSlotsPerPage,
                                 min = DOCK_MIN_SLOTS_PER_PAGE,
                                 max = DOCK_MAX_SLOTS_PER_PAGE,
-                                onChange = onDockSlotsPerPageChange
+                                onChange = gatedDockSlotsPerPageChange
                             )
                             StepperRow(
                                 label = "ページ数",
                                 value = dockPageCount,
                                 min = dockMinPageCount,
                                 max = SLOT_GRID_MAX_PAGES,
-                                onChange = onDockPageCountChange
+                                onChange = gatedDockPageCountChange
                             )
                             if (dockMinPageCount > 1) {
                                 Text(
@@ -438,11 +492,12 @@ fun CustomizeSheet(
                     icon = Icons.Outlined.ViewCarousel,
                     title = "スタックの自動切り替え",
                     description = "重ねたウィジェットを、一定の間隔で次に切り替えます",
-                    modifier = Modifier.clickable { onStackAutoRotateChange(stackAutoRotate.copy(enabled = !stackAutoRotate.enabled)) }
+                    modifier = Modifier.clickable { gatedStackAutoRotateChange(stackAutoRotate.copy(enabled = !stackAutoRotate.enabled)) }
                 ) {
+                    ProBadgeIfLocked(isPro)
                     CyberSwitch(
                         checked = stackAutoRotate.enabled,
-                        onCheckedChange = { onStackAutoRotateChange(stackAutoRotate.copy(enabled = it)) }
+                        onCheckedChange = { gatedStackAutoRotateChange(stackAutoRotate.copy(enabled = it)) }
                     )
                 }
                 AnimatedVisibility(visible = stackAutoRotate.enabled, enter = expandVertically(), exit = shrinkVertically()) {
@@ -458,7 +513,7 @@ fun CustomizeSheet(
                                     IntervalOption(
                                         label = stackAutoRotateIntervalLabel(seconds),
                                         selected = seconds == stackAutoRotate.intervalSeconds,
-                                        onClick = { onStackAutoRotateChange(stackAutoRotate.copy(intervalSeconds = seconds)) },
+                                        onClick = { gatedStackAutoRotateChange(stackAutoRotate.copy(intervalSeconds = seconds)) },
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -498,6 +553,45 @@ fun CustomizeSheet(
                     },
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * PRO（有料機能の買い切り解放）の状態を示すカード。未購入ならタップでPRO解放の案内を開く。
+ * デバッグビルドでは、Google Play に商品を登録しなくても動作を確かめられるよう、
+ * 開発用にPROの状態を切り替えるスイッチも出す。
+ */
+@Composable
+private fun ProStatusCard(isPro: Boolean, onOpenPro: () -> Unit) {
+    val colors = LocalCyberColors.current
+    CustomizeCard {
+        CustomizeRowContent(
+            icon = Icons.Outlined.WorkspacePremium,
+            title = if (isPro) "GRIDLAUNCHER PRO // 解放済み" else "GRIDLAUNCHER PRO",
+            description = if (isPro) "すべての機能が使えます。ありがとうございます！" else "スタック・配色・詳細設定などの機能を解放します",
+            modifier = if (isPro) Modifier else Modifier.clickable(onClick = onOpenPro)
+        ) {
+            if (!isPro) Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+        }
+        if (ProManager.isDebugBuild()) {
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { ProManager.setDebugOverride(!isPro) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    "開発用: PRO を有効にする（デバッグビルドのみ）",
+                    fontFamily = CyberFont,
+                    fontSize = 11.sp,
+                    color = colors.text.copy(alpha = 0.7f),
+                    modifier = Modifier.weight(1f)
+                )
+                CyberSwitch(checked = isPro, onCheckedChange = { ProManager.setDebugOverride(it) })
             }
         }
     }
@@ -566,11 +660,12 @@ private fun IntervalOption(label: String, selected: Boolean, onClick: () -> Unit
 
 /** ヘッダー中央の文字1段分の入力欄。 */
 @Composable
-private fun HeaderTitleField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun HeaderTitleField(label: String, value: String, enabled: Boolean = true, onValueChange: (String) -> Unit) {
     val colors = LocalCyberColors.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         label = { Text(label, fontFamily = CyberFont, fontSize = 11.sp) },
         singleLine = true,
         textStyle = TextStyle(fontFamily = CyberFont, fontSize = 13.sp, color = colors.text),

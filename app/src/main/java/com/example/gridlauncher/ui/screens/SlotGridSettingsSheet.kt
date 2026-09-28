@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.ProBadge
 import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.QuickButtonStyle
 import com.example.gridlauncher.ui.theme.CyberFont
@@ -70,6 +72,9 @@ import com.example.gridlauncher.util.SlotGridSize
  * @param pageCount 指定しているページ数。
  * @param minPageCount 中身が入っているページ数（これより少なくはできない）。
  * @param onPageCountChange ページ数が変更されたときのコールバック。
+ * @param isPro PROを購入済みかどうか。PROでない場合、縦横で別々の並び・並びの手動指定・
+ *   ページ数の追加はできず、[onRequirePro]でPRO解放の案内を出す。
+ * @param onRequirePro PROの機能を使おうとしたときのコールバック（使おうとした機能の名前）。
  * @param onDismiss シートが閉じられるときのコールバック。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,11 +94,26 @@ fun SlotGridSettingsSheet(
     pageCount: Int,
     minPageCount: Int,
     onPageCountChange: (Int) -> Unit,
+    isPro: Boolean = true,
+    onRequirePro: (featureName: String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val colors = LocalCyberColors.current
     val isAuto = gridSize == null
     val shownSize = gridSize ?: autoGridSize
+
+    // 詳細な並びの設定（縦横で別々の並び・並びの手動指定・ページ数の追加）はPROの機能。
+    // PROでない場合は変えずにPRO解放の案内を出す（初期の状態＝縦横で同じ・AUTOに戻す操作と、
+    // ページ数を減らす操作は誰でもできる）
+    val gatedShareChange: (Boolean) -> Unit = { share ->
+        if (share || isPro) onShareAcrossOrientationsChange(share) else onRequirePro("$title の縦横別々の並び")
+    }
+    val gatedGridSizeChange: (SlotGridSize?) -> Unit = { size ->
+        if (size == null || isPro) onGridSizeChange(size) else onRequirePro("$title の並びの手動指定")
+    }
+    val gatedPageCountChange: (Int) -> Unit = { count ->
+        if (count < pageCount || isPro) onPageCountChange(count) else onRequirePro("$title のページ数")
+    }
 
     // 画面の小さい端末でシートが上端に届くと、スワイプで閉じられなくなるため
     // （CustomizeSheetと同じ理由）、中身の高さに上限を設けてスクロールさせる
@@ -163,9 +183,10 @@ fun SlotGridSettingsSheet(
                 } else {
                     "縦画面と横画面で別々に並べます（オンにすると今の向きの並びにそろえます）"
                 },
-                onClick = { onShareAcrossOrientationsChange(!shareAcrossOrientations) }
+                onClick = { gatedShareChange(!shareAcrossOrientations) }
             ) {
-                CyberSwitch(checked = shareAcrossOrientations, onCheckedChange = onShareAcrossOrientationsChange)
+                ProBadgeIfLocked(isPro)
+                CyberSwitch(checked = shareAcrossOrientations, onCheckedChange = gatedShareChange)
             }
 
             // スロットの並び（AUTO、または列数×行数を指定）
@@ -185,14 +206,15 @@ fun SlotGridSettingsSheet(
                         .fillMaxWidth()
                         .clickable {
                             // AUTOをオフにしたときは、今の並びから調整を始められるようにする
-                            onGridSizeChange(if (isAuto) autoGridSize ?: SlotGridSize(3, 3) else null)
+                            gatedGridSizeChange(if (isAuto) autoGridSize ?: SlotGridSize(3, 3) else null)
                         }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Text("AUTO", fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.text, modifier = Modifier.weight(1f))
+                    ProBadgeIfLocked(isPro)
                     CyberSwitch(
                         checked = isAuto,
-                        onCheckedChange = { auto -> onGridSizeChange(if (auto) null else autoGridSize ?: SlotGridSize(3, 3)) }
+                        onCheckedChange = { auto -> gatedGridSizeChange(if (auto) null else autoGridSize ?: SlotGridSize(3, 3)) }
                     )
                 }
                 AnimatedVisibility(visible = !isAuto && gridSize != null, enter = expandVertically(), exit = shrinkVertically()) {
@@ -206,14 +228,14 @@ fun SlotGridSettingsSheet(
                             value = size.columns,
                             min = SLOT_GRID_MIN_SPAN,
                             max = SLOT_GRID_MAX_SPAN,
-                            onChange = { onGridSizeChange(size.copy(columns = it)) }
+                            onChange = { gatedGridSizeChange(size.copy(columns = it)) }
                         )
                         StepperRow(
                             label = "縦（行）",
                             value = size.rows,
                             min = SLOT_GRID_MIN_SPAN,
                             max = SLOT_GRID_MAX_SPAN,
-                            onChange = { onGridSizeChange(size.copy(rows = it)) }
+                            onChange = { gatedGridSizeChange(size.copy(rows = it)) }
                         )
                     }
                 }
@@ -226,16 +248,25 @@ fun SlotGridSettingsSheet(
                     title = "ページ数",
                     description = if (minPageCount > 1) "${itemName}が入っている${minPageCount}ページより少なくはできません" else "横スワイプで切り替えるページの数"
                 ) {
+                    ProBadgeIfLocked(isPro)
                     Stepper(
                         value = pageCount,
                         min = minPageCount,
                         max = SLOT_GRID_MAX_PAGES,
-                        onChange = onPageCountChange
+                        onChange = gatedPageCountChange
                     )
                 }
             }
         }
     }
+}
+
+/** PROでない場合だけ、スイッチなどの左にPROのマークを出す（PROなら何も表示しない）。 */
+@Composable
+internal fun ProBadgeIfLocked(isPro: Boolean) {
+    if (isPro) return
+    ProBadge()
+    Spacer(modifier = Modifier.width(8.dp))
 }
 
 /** ラベルと、−/＋で値を増減するステッパーを並べた行。 */

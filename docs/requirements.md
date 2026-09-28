@@ -92,6 +92,9 @@
 - [ ] データセーフティフォームの入力（すべて端末内処理、外部送信なしである旨を明記）
 - [ ] `applicationId` を `com.example.gridlauncher` から固有のIDへ変更（公開後は変更不可のため必須）
 - [ ] `compileSdk`/`targetSdk = 37` が提出時点で正式リリース版のSDKであることの確認
+- [ ] PRO解放の買い切り商品（アプリ内アイテム）を、ID `gridlauncher_pro` で Play Console に登録して価格を設定
+  （`billing/ProManager.kt` の `PRO_PRODUCT_ID`。未登録の間は購入画面を開けず「今は購入できません」と表示する）
+- [ ] 課金のテスト用に、ライセンステスターの登録と内部テストトラックへのアップロード
 
 ## 8. 既知の技術的負債
 

@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.screens.CyberLauncherScreen
 import com.example.gridlauncher.ui.theme.GridLauncherTheme
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Google Play に接続し、PRO（有料機能の解放）の購入状態と価格を取得する
+        ProManager.init(this)
         enableEdgeToEdge()
         setContent {
             GridLauncherTheme {
@@ -30,6 +33,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // 他の端末での購入や払い戻しを反映するため、ホーム画面に戻るたびに購入状態を取り直す
+    override fun onResume() {
+        super.onResume()
+        ProManager.refreshPurchases()
     }
 
     // ランチャー（launchMode="singleTask"）を表示中、または他のアプリを使用中にホームボタンが

@@ -156,6 +156,9 @@ data class ResizeConstraints(
  *   バック（対象の[PlacedWidget]、ドラッグ中かどうか、現在[deleteZoneBoundsInRoot]の上にいるか
  *   どうか）。呼び出し側はこれを使って「ここにドラッグして削除」ゾーンの表示・非表示や、
  *   ホバー中のハイライトを切り替えられる。
+ * @param canStack ウィジェットを重ねて新しくスタックにできるかどうか（PROの機能）。falseの場合、
+ *   重ねようとして指を離すと、重ねずに[onStackLocked]を呼ぶ（既存のスタックの表示・取り出しはできる）。
+ * @param onStackLocked [canStack]がfalseのときに、重ねようとしたときのコールバック（PRO解放の案内を出す）。
  * @param stackAutoRotateIntervalMillis スタックを自動で次のウィジェットに切り替える間隔（ミリ秒）。
  *   nullなら自動では切り替えない。ホーム画面が見えている間だけ切り替え、手でスワイプしたら
  *   そこから数え直す。ウィジェット編集モード中は止める。
@@ -195,6 +198,8 @@ fun SharedTransitionScope.WidgetCanvas(
     onWidgetDragStateChanged: (widget: PlacedWidget, dragging: Boolean, overDeleteZone: Boolean) -> Unit = { _, _, _ -> },
     onRequestDeleteConfirm: (PlacedWidget) -> Unit = {},
     stackAutoRotateIntervalMillis: Long? = null,
+    canStack: Boolean = true,
+    onStackLocked: () -> Unit = {},
     modifier: Modifier = Modifier,
     content: @Composable SharedTransitionScope.(WidgetPanel, Int, Int, Float, Float, Pair<Float, Float>?, Modifier, Boolean) -> Unit
 ) {
@@ -318,7 +323,10 @@ fun SharedTransitionScope.WidgetCanvas(
                     },
                     onStackDrop = { isPullOut ->
                         val target = stackHoverKey
-                        if (target != null) {
+                        if (!canStack) {
+                            // スタックはPROの機能。重ねずに元の位置へ戻し、PRO解放の案内を出す
+                            onStackLocked()
+                        } else if (target != null) {
                             val draggedKeys = if (isPullOut) setOf(currentMember.instanceKey) else memberKeys.toSet()
                             val (stacked, stackId) = placedWidgets.stackOnto(draggedKeys, target)
                             if (stackId >= 0) stackPageRequests[stackId] = draggedKeys.first()
@@ -389,7 +397,8 @@ fun SharedTransitionScope.WidgetCanvas(
             ) {
                 if (isStackHoverArmed) {
                     Text(
-                        "STACK",
+                        // PROを購入していない場合は、離すとPRO解放の案内になることを示す
+                        if (canStack) "STACK" else "STACK // PRO",
                         fontFamily = CyberFont,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,

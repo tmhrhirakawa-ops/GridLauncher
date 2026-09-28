@@ -64,8 +64,10 @@ import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
+import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AppActionDialog
+import com.example.gridlauncher.ui.components.ProUpgradeDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
@@ -86,6 +88,7 @@ import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.DockLayout
+import com.example.gridlauncher.util.HeaderTitle
 import com.example.gridlauncher.util.loadHeaderTitle
 import com.example.gridlauncher.util.saveHeaderTitle
 import com.example.gridlauncher.util.loadDockLayout
@@ -173,6 +176,12 @@ private val SingleInstanceWidgetPanels = setOf(
     WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS,
     WidgetPanel.CLOCK, WidgetPanel.BATTERY, WidgetPanel.NOW_PLAYING
 )
+
+/** PROを購入していないと追加できないウィジェットの種類。 */
+private val ProOnlyWidgetPanels = setOf(WidgetPanel.NOW_PLAYING)
+
+/** PROを購入していない場合に配置できる、外部ウィジェットの数。 */
+private const val FreeAppWidgetLimit = 2
 
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
 private val AppSlotIconOnlyTargetSize = DpSize(60.dp, 60.dp)
@@ -283,6 +292,17 @@ fun CyberLauncherScreen() {
     // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
     var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
     val colors2 = colors.copy(accent = accentColor2)
+
+    // PRO（有料機能の買い切り解放）を購入済みかどうか。未購入でPROの機能を使おうとしたときは、
+    // その機能の名前を[proPromptFeature]に入れて、PRO解放の案内（購入画面）を表示する
+    val isPro by ProManager.isPro.collectAsState()
+    var proPromptFeature by remember { mutableStateOf<String?>(null) }
+    // PROならtrueを返す。未購入ならPRO解放の案内を出してfalseを返す
+    fun requirePro(featureName: String): Boolean {
+        if (isPro) return true
+        proPromptFeature = featureName
+        return false
+    }
 
     // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
     // 最適化除外・使用状況アクセスへの案内）。完了するまでは、それ以降のメインUI用の状態
@@ -874,6 +894,7 @@ fun CyberLauncherScreen() {
         if (homePressedSignal == 0) return@LaunchedEffect
         showAllAppsDrawer = false
         showCustomizeSheet = false
+        proPromptFeature = null
         showAppListSettings = false
         showQuickAccessSettings = false
         showGridLinesSheet = false
@@ -1139,6 +1160,9 @@ fun CyberLauncherScreen() {
                         showPowerPermissionRationale = true
                     }
                 },
+                isPro = isPro,
+                // 空文字（PROのカードから）のときは、機能を指定せずにPROの案内を出す
+                onRequirePro = { feature -> if (feature.isEmpty()) proPromptFeature = "" else requirePro(feature) },
                 onDismiss = { showCustomizeSheet = false }
             )
         }
@@ -1299,8 +1323,10 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             WidgetTypeSelectorDialog(
                 availableWidgets = availableWidgets,
+                lockedWidgets = if (isPro) emptySet() else ProOnlyWidgetPanels,
                 onDismiss = { showWidgetTypeSelector = false },
-                onSelect = { type ->
+                onSelect = select@{ type ->
+                    if (type in ProOnlyWidgetPanels && !requirePro("${type.label} ウィジェット")) return@select
                     val isAppSlot = type == WidgetPanel.APP_SLOT_ICON_ONLY || type == WidgetPanel.APP_SLOT_NAMED
                     val cellSize = canvasCellSize
                     val slot = if (isAppSlot && cellSize != null) {
@@ -1330,7 +1356,12 @@ fun CyberLauncherScreen() {
                     }
                     showWidgetTypeSelector = false
                 },
-                onSelectExternal = {
+                onSelectExternal = external@{
+                    // 外部ウィジェットは無料では[FreeAppWidgetLimit]個まで
+                    val appWidgetCount = placedWidgets.count { it.type == WidgetPanel.APPWIDGET }
+                    if (appWidgetCount >= FreeAppWidgetLimit && !requirePro("外部ウィジェットを${FreeAppWidgetLimit + 1}個以上配置")) {
+                        return@external
+                    }
                     showWidgetTypeSelector = false
                     showAppWidgetPicker = true
                 }
@@ -1362,6 +1393,8 @@ fun CyberLauncherScreen() {
                     accessGridPageCount = count
                     saveSlotGridPageCount(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode, count)
                 },
+                isPro = isPro,
+                onRequirePro = { requirePro(it) },
                 onDismiss = { showAppListSettings = false }
             )
         }
@@ -1395,6 +1428,8 @@ fun CyberLauncherScreen() {
                     quickAccessPageCount = count
                     saveSlotGridPageCount(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode, count)
                 },
+                isPro = isPro,
+                onRequirePro = { requirePro(it) },
                 onDismiss = { showQuickAccessSettings = false }
             )
         }
@@ -1536,14 +1571,14 @@ fun CyberLauncherScreen() {
                         // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
-                            title = headerTitle,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     } else if (isPortrait) {
                         // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
-                            title = headerTitle,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             isLarge = true,
                             onCoreClick = { showCustomizeSheet = true }
                         )
@@ -1551,7 +1586,7 @@ fun CyberLauncherScreen() {
                         // 横画面（ランドスケープ/メイン画面）のレイアウト
                         HeaderSectionLandscape(
                             nowPlaying = headerNowPlaying,
-                            title = headerTitle,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     }
@@ -1601,13 +1636,15 @@ fun CyberLauncherScreen() {
                         isDraggedWidgetOverDeleteZone = overDeleteZone
                     },
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
-                    stackAutoRotateIntervalMillis = stackAutoRotate.takeIf { it.enabled }?.let { it.intervalSeconds * 1000L },
+                    stackAutoRotateIntervalMillis = stackAutoRotate.takeIf { it.enabled && isPro }?.let { it.intervalSeconds * 1000L },
+                    canStack = isPro,
+                    onStackLocked = { requirePro("ウィジェットのスタック") },
                     modifier = Modifier
                         .weight(1f)
                         .onGloballyPositioned { widgetCanvasBoundsInRoot = it.boundsInRoot() }
                 ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
                     // アクセントカラー2に設定されたウィジェットだけ、配色のaccentを差し替えて描画する
-                    CompositionLocalProvider(LocalCyberColors provides if (type in accent2WidgetPanels) colors2 else colors) {
+                    CompositionLocalProvider(LocalCyberColors provides if (isPro && type in accent2WidgetPanels) colors2 else colors) {
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -1830,6 +1867,14 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // PROの機能を使おうとしたとき（またはカスタマイズ画面のPROの項目から）の、PRO解放の案内と購入画面。
+    // 機能の名前が空の場合は、機能を指定せずにPROの案内だけを出す
+    proPromptFeature?.let { feature ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            ProUpgradeDialog(featureName = feature.ifEmpty { null }, onDismiss = { proPromptFeature = null })
+        }
+    }
+
     pendingDeleteWidget?.let { widget ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
             val widgetLabel = when (widget.type) {

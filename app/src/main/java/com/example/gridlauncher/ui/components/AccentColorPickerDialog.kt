@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -105,6 +106,8 @@ fun AccentColorPickerDialog(
     onUseOriginalIconColorsChange: (Boolean) -> Unit,
     title: String = "ACCENT COLOR",
     defaultColor: Color = DefaultAccentColor,
+    isPro: Boolean = true,
+    onRequirePro: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val colors = LocalCyberColors.current
@@ -149,36 +152,65 @@ fun AccentColorPickerDialog(
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
-                    ColorWheel(
-                        color = currentColor,
-                        onColorChange = onColorSelected,
-                        modifier = Modifier.fillMaxWidth(0.8f)
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
+                    // カラーサークル・明度での自由な色選びはPROの機能。PROでない場合は薄く表示して触れなくし、
+                    // タップでPRO解放の案内を出す（下のプリセット・最近使った色からは誰でも選べる）
+                    Box(contentAlignment = Alignment.Center) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.fillMaxWidth().alpha(if (isPro) 1f else 0.3f)
+                        ) {
+                            ColorWheel(
+                                color = currentColor,
+                                onColorChange = onColorSelected,
+                                modifier = Modifier.fillMaxWidth(0.8f)
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
 
-                    val hsv = remember(currentColor) {
-                        val arr = FloatArray(3)
-                        android.graphics.Color.colorToHSV(currentColor.toArgb(), arr)
-                        arr
+                            val hsv = remember(currentColor) {
+                                val arr = FloatArray(3)
+                                android.graphics.Color.colorToHSV(currentColor.toArgb(), arr)
+                                arr
+                            }
+                            val hue = hsv[0]
+                            val saturation = hsv[1]
+                            val brightness = hsv[2]
+
+                            // 明度インジケータ（このHue・彩度における V=0[黒]〜V=1[最大輝度]）
+                            Text("明度", fontFamily = CyberFont, fontSize = 9.sp, color = colors.text.copy(alpha = 0.6f), modifier = Modifier.align(Alignment.Start))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            ColorSlider(
+                                value = brightness,
+                                trackColors = listOf(
+                                    Color.Black,
+                                    Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, 1f)))
+                                ),
+                                onValueChange = { newVal ->
+                                    onColorSelected(Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, newVal))))
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        if (!isPro) {
+                            Box(modifier = Modifier.matchParentSize().clickable(onClick = onRequirePro))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                ProBadge()
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("で自由に色を選べます", fontFamily = CyberFont, fontSize = 11.sp, color = colors.text)
+                            }
+                        }
                     }
-                    val hue = hsv[0]
-                    val saturation = hsv[1]
-                    val brightness = hsv[2]
 
-                    // 明度インジケータ（このHue・彩度における V=0[黒]〜V=1[最大輝度]）
-                    Text("明度", fontFamily = CyberFont, fontSize = 9.sp, color = colors.text.copy(alpha = 0.6f), modifier = Modifier.align(Alignment.Start))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    ColorSlider(
-                        value = brightness,
-                        trackColors = listOf(
-                            Color.Black,
-                            Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, 1f)))
-                        ),
-                        onValueChange = { newVal ->
-                            onColorSelected(Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, newVal))))
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    // プリセット（誰でも選べる、おすすめの色）
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(
+                        "プリセット",
+                        fontFamily = CyberFont,
+                        fontSize = 9.sp,
+                        color = colors.text.copy(alpha = 0.6f),
+                        modifier = Modifier.align(Alignment.Start)
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ColorSwatches(swatches = PresetAccentColors, currentColor = currentColor, onColorSelected = onColorSelected)
 
                     if (recentColors.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(18.dp))
@@ -190,34 +222,7 @@ fun AccentColorPickerDialog(
                             modifier = Modifier.align(Alignment.Start)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        val swatchSize = 24.dp
-                        val swatchSpacing = 10.dp
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            // 横幅に入るだけ1行に並べ、入り切らない分だけ次の行へ折り返す
-                            val maxPerRow = ((maxWidth + swatchSpacing) / (swatchSize + swatchSpacing)).toInt().coerceAtLeast(1)
-                            val columns = min(maxPerRow, recentColors.size)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                recentColors.chunked(columns).forEach { rowColors ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(swatchSpacing)) {
-                                        rowColors.forEach { swatch ->
-                                            val isSelected = swatch.toArgb() == currentColor.toArgb()
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(swatchSize)
-                                                    .clip(CircleShape)
-                                                    .background(swatch)
-                                                    .border(
-                                                        width = if (isSelected) 2.dp else 0.dp,
-                                                        color = if (isSelected) colors.text else Color.Transparent,
-                                                        shape = CircleShape
-                                                    )
-                                                    .clickable { onColorSelected(swatch) }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        ColorSwatches(swatches = recentColors, currentColor = currentColor, onColorSelected = onColorSelected)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -255,6 +260,51 @@ fun AccentColorPickerDialog(
                             fontSize = 12.sp,
                             color = colors.text.copy(alpha = 0.7f),
                             modifier = Modifier.clickable(onClick = dismissAndRemember)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** パレットのプリセット（PROでなくても選べる、おすすめのアクセントカラー）。 */
+private val PresetAccentColors = listOf(
+    DefaultAccentColor,
+    DefaultAccentColor2,
+    Color(0xFFFF2BD6), // マゼンタ
+    Color(0xFF39FF14), // ネオングリーン
+    Color(0xFFFFE600), // イエロー
+    Color(0xFFFF3B4E), // レッド
+    Color(0xFF9D4DFF), // バイオレット
+    Color(0xFF2E7DFF)  // ブルー
+)
+
+/** 色の丸い見本を、横幅に入るだけ1行に並べ、入り切らない分だけ次の行へ折り返して表示する。 */
+@Composable
+private fun ColorSwatches(swatches: List<Color>, currentColor: Color, onColorSelected: (Color) -> Unit) {
+    val colors = LocalCyberColors.current
+    val swatchSize = 24.dp
+    val swatchSpacing = 10.dp
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val maxPerRow = ((maxWidth + swatchSpacing) / (swatchSize + swatchSpacing)).toInt().coerceAtLeast(1)
+        val columns = min(maxPerRow, swatches.size).coerceAtLeast(1)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            swatches.chunked(columns).forEach { rowColors ->
+                Row(horizontalArrangement = Arrangement.spacedBy(swatchSpacing)) {
+                    rowColors.forEach { swatch ->
+                        val isSelected = swatch.toArgb() == currentColor.toArgb()
+                        Box(
+                            modifier = Modifier
+                                .size(swatchSize)
+                                .clip(CircleShape)
+                                .background(swatch)
+                                .border(
+                                    width = if (isSelected) 2.dp else 0.dp,
+                                    color = if (isSelected) colors.text else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable { onColorSelected(swatch) }
                         )
                     }
                 }
