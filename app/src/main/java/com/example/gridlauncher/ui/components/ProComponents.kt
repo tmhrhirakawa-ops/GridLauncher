@@ -45,6 +45,7 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
 private val ProFeatureList = listOf(
     "テーマ（配色・フォントのプリセット）とフォントの変更",
     "設定のバックアップ・復元",
+    "ホーム画面のジェスチャーへの動作の割り当て",
     "ウィジェットのスタックと自動切り替え",
     "アクセントカラー2・ウィジェットごとの配色・パレットでの自由な色選び",
     "ヘッダー中央の文字の書き換え",

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Gesture
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Image
@@ -67,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.components.ProBadge
+import com.example.gridlauncher.ui.components.GestureActionPickerDialog
 import com.example.gridlauncher.ui.components.consumeUpwardSheetFling
 import com.example.gridlauncher.model.WidgetPanel
 import com.example.gridlauncher.ui.components.AccentColorPickerDialog
@@ -89,6 +91,10 @@ import com.example.gridlauncher.ui.theme.ThemePreset
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.HeaderTitle
+import com.example.gridlauncher.util.AccessibilityServiceStatus
+import com.example.gridlauncher.util.GestureAction
+import com.example.gridlauncher.util.GestureBinding
+import com.example.gridlauncher.util.HomeGesture
 import com.example.gridlauncher.util.DOCK_MIN_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.SLOT_GRID_MAX_PAGES
 import com.example.gridlauncher.util.StackAutoRotateIntervalOptions
@@ -144,6 +150,12 @@ import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
  *   使おうとすると[onRequirePro]でPRO解放の案内を出す。
  * @param onRequirePro PROの機能を使おうとしたときのコールバック（使おうとした機能の名前。
  *   空文字なら機能を指定せずにPROの案内を出す）。
+ * @param gestureBindings ホーム画面のジェスチャーへのアクションの割り当て。
+ * @param onGestureBindingChange ジェスチャーの割り当てが変更されたときのコールバック。
+ * @param onPickGestureApp ジェスチャーに「アプリを起動」が選ばれたときのコールバック（起動するアプリを選ばせる）。
+ * @param appLabel パッケージ名からアプリ名を返す関数（「アプリを起動」の表示に使う）。
+ * @param accessibilityStatus アクセシビリティサービスの状態（ジェスチャーの通知パネル・画面オフなどに必要）。
+ * @param onOpenAccessibilitySettings アクセシビリティサービスの「設定を開く」がタップされたときのコールバック。
  * @param onExportBackup 「バックアップ・復元」の「書き出す」がタップされたときのコールバック。
  * @param onImportBackup 「バックアップ・復元」の「読み込む」がタップされたときのコールバック。
  * @param onDismiss シートが閉じられるときのコールバック。
@@ -192,6 +204,12 @@ fun CustomizeSheet(
     onOpenPowerMenu: () -> Unit,
     isPro: Boolean,
     onRequirePro: (featureName: String) -> Unit,
+    gestureBindings: Map<HomeGesture, GestureBinding>,
+    onGestureBindingChange: (HomeGesture, GestureBinding) -> Unit,
+    onPickGestureApp: (HomeGesture) -> Unit,
+    appLabel: (packageName: String) -> String?,
+    accessibilityStatus: AccessibilityServiceStatus,
+    onOpenAccessibilitySettings: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onDismiss: () -> Unit
@@ -200,6 +218,21 @@ fun CustomizeSheet(
     val colors = LocalCyberColors.current
     var colorPickerTarget by remember { mutableStateOf<Int?>(null) } // パレットで編集中のアクセントカラー（1 or 2）
     var showPanelAccents by remember { mutableStateOf(false) }
+    // 割り当てるアクションを選んでいるジェスチャー（選ぶダイアログの表示中のみ）
+    var editingGesture by remember { mutableStateOf<HomeGesture?>(null) }
+    editingGesture?.let { gesture ->
+        GestureActionPickerDialog(
+            gesture = gesture,
+            current = gestureBindings[gesture]?.action ?: GestureAction.NONE,
+            isAccessibilityEnabled = accessibilityStatus == AccessibilityServiceStatus.ENABLED,
+            onSelect = { action ->
+                editingGesture = null
+                // 「アプリを起動」は、起動するアプリを呼び出し側で選ばせる
+                if (action == GestureAction.LAUNCH_APP) onPickGestureApp(gesture) else onGestureBindingChange(gesture, GestureBinding(action))
+            },
+            onDismiss = { editingGesture = null }
+        )
+    }
 
     // PROの機能（DOCKの詳細設定・スタックの自動切り替え）は、PROでない場合は変えずにPRO解放の案内を出す
     // （初期の状態＝縦横で同じ並び・自動切り替えオフに戻す操作と、ページ数を減らす操作は誰でもできる）
@@ -612,6 +645,80 @@ fun CustomizeSheet(
                 onSetAllBorders = onSetAllBorders,
                 onTogglePanelBorder = onTogglePanelBorder
             )
+
+            // ホーム画面のジェスチャー（上下スワイプ・ダブルタップ）に割り当てるアクション。PROの機能
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.Gesture,
+                    title = "ジェスチャー",
+                    description = "ホーム画面の何もないところでの操作に、動作を割り当てます"
+                ) {
+                    ProBadgeIfLocked(isPro)
+                }
+                Column(modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp)) {
+                    HomeGesture.entries.forEach { gesture ->
+                        val binding = gestureBindings[gesture] ?: GestureBinding(GestureAction.NONE)
+                        val actionLabel = if (binding.action == GestureAction.LAUNCH_APP) {
+                            "起動: ${binding.packageName?.let(appLabel) ?: "（アプリ未選択）"}"
+                        } else binding.action.label
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { if (isPro) editingGesture = gesture else onRequirePro("ジェスチャーの割り当て") }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Text(gesture.label, fontFamily = CyberFont, fontSize = 12.sp, color = colors.text, modifier = Modifier.weight(1f))
+                            Text(actionLabel, fontFamily = CyberFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = colors.accent, maxLines = 1)
+                            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                // 通知パネル・画面オフなどの動作に必要な、アクセシビリティサービスの状態（使えないときは設定画面への導線を出す）
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "アクセシビリティサービス",
+                            fontFamily = CyberFont,
+                            fontSize = 11.sp,
+                            color = colors.text.copy(alpha = 0.7f),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            when (accessibilityStatus) {
+                                AccessibilityServiceStatus.ENABLED -> "有効"
+                                AccessibilityServiceStatus.NOT_CONNECTED -> "オン（停止中）"
+                                AccessibilityServiceStatus.DISABLED -> "無効"
+                            },
+                            fontFamily = CyberFont,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (accessibilityStatus == AccessibilityServiceStatus.ENABLED) colors.accent else colors.text.copy(alpha = 0.6f)
+                        )
+                        if (accessibilityStatus != AccessibilityServiceStatus.ENABLED) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IntervalOption(
+                                label = "設定を開く",
+                                selected = false,
+                                onClick = onOpenAccessibilitySettings,
+                                modifier = Modifier.width(88.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        when (accessibilityStatus) {
+                            AccessibilityServiceStatus.ENABLED -> "通知パネル・画面オフなどの動作が使えます"
+                            AccessibilityServiceStatus.NOT_CONNECTED -> "設定ではオンですが動いていません。一度オフにしてからオンにし直してください"
+                            AccessibilityServiceStatus.DISABLED -> "通知パネル・画面オフなどの動作を使うには、有効にしてください"
+                        },
+                        fontFamily = CyberFont,
+                        fontSize = 9.sp,
+                        color = colors.text.copy(alpha = 0.5f)
+                    )
+                }
+            }
 
             // 設定のバックアップ（ファイルへ書き出す）と復元（ファイルから読み込む）。PROの機能
             CustomizeCard {

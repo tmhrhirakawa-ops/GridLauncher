@@ -126,9 +126,19 @@ import com.example.gridlauncher.util.quickActionsKeyFor
 import com.example.gridlauncher.util.saveShareQuickActionsAcrossOrientations
 import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
+import com.example.gridlauncher.util.performSystemActionOrRequestPermission
+import com.example.gridlauncher.util.AccessibilityServiceStatus
+import com.example.gridlauncher.util.accessibilityServiceStatus
+import com.example.gridlauncher.util.DefaultGestureBindings
+import com.example.gridlauncher.util.GestureAction
+import com.example.gridlauncher.util.GestureBinding
+import com.example.gridlauncher.util.HomeGesture
+import com.example.gridlauncher.util.loadGestureBindings
+import com.example.gridlauncher.util.saveGestureBinding
 import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.sortedByInstallOrder
+import kotlinx.coroutines.delay
 import com.example.gridlauncher.util.normalizeStacks
 import com.example.gridlauncher.util.LauncherBackup
 import com.example.gridlauncher.util.loadStackAutoRotateSettings
@@ -512,7 +522,44 @@ fun CyberLauncherScreen() {
     }
     // ヘッダー中央（横画面・縦画面（大））に表示する3段の文字（カスタマイズ画面で書き換える）
     var headerTitle by remember { mutableStateOf(loadHeaderTitle(prefs)) }
-    var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
+    var showPowerPermissionRationale by remember { mutableStateOf(false) } // アクセシビリティサービスの権限案内
+    // 上の権限案内で、何をするためにアクセシビリティサービスが必要なのか（例: 電源メニュー（電源を切る/再起動）を開く）
+    var accessibilityRationaleReason by remember { mutableStateOf("電源メニュー（電源を切る/再起動）を開く") }
+
+    // ホーム画面のジェスチャー（上下スワイプ・ダブルタップ）への、アクションの割り当て。
+    // 割り当ての変更はPROの機能で、PROでない場合は初期の割り当て（上スワイプで ALL APPS）で動く
+    var gestureBindings by remember { mutableStateOf(loadGestureBindings(prefs)) }
+    val activeGestureBindings = if (isPro) gestureBindings else DefaultGestureBindings
+    val isDoubleTapAssigned = activeGestureBindings[HomeGesture.DOUBLE_TAP]?.action != GestureAction.NONE
+    var gestureAppPickerTarget by remember { mutableStateOf<HomeGesture?>(null) } // 起動するアプリを選んでいるジェスチャー
+    // ジェスチャーに割り当てたアクションを実行する
+    fun runHomeGesture(gesture: HomeGesture) {
+        // 割り当ては、実行するこの時点の最新の状態から読む（関数の外で計算した値を使うと、ジェスチャーの
+        // 検出処理が持っている古い関数が、変更前の割り当てで動いてしまうため）
+        val bindings = if (isPro) gestureBindings else DefaultGestureBindings
+        val binding = bindings[gesture] ?: return
+        val action = binding.action
+        if (action == GestureAction.NONE) return
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        when (action) {
+            GestureAction.NONE -> Unit
+            GestureAction.ALL_APPS -> showAllAppsDrawer = true
+            GestureAction.CUSTOMIZE -> showCustomizeSheet = true
+            GestureAction.LAUNCH_APP -> binding.packageName
+                ?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                ?.let { context.startActivity(it) }
+            else -> action.globalAction?.let { globalAction ->
+                // 通知パネル・画面オフなどは、アクセシビリティサービスで行う（無効なら有効化を案内する）
+                performSystemActionOrRequestPermission(context, globalAction) {
+                    accessibilityRationaleReason = "ジェスチャーで「${action.label}」"
+                    showPowerPermissionRationale = true
+                }
+            }
+        }
+    }
+    // ジェスチャーの検出（pointerInput）は一度だけ起動するため、常に最新の割り当てで実行できるようにする
+    // （関数の参照はComposeが使い回すことがあるため、毎回新しいラムダで包んで渡す）
+    val currentRunHomeGesture = rememberUpdatedState<(HomeGesture) -> Unit> { gesture -> runHomeGesture(gesture) }
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
     // APP SLOT（単体ウィジェット）ごとに割り当てられているアプリ。画面モードをまたいで共有する
@@ -815,6 +862,19 @@ fun CyberLauncherScreen() {
     // 起動し直す（ホームボタンと同じIntentが届く）ため、戻ってきた直後の1回はシートを閉じずに残す
     var missingPermissionsSettingsOpened by rememberSaveable { mutableStateOf(false) }
     var missingPermissionsResumeSignal by remember { mutableIntStateOf(0) }
+    // アクセシビリティサービスの状態（カスタマイズ画面のジェスチャーの欄に表示する）。設定画面から戻って
+    // きたとき（ON_RESUME）に取り直す。サービスの接続は少し遅れることがあるため、少し待ってからもう一度確かめる
+    val initialAccessibilityStatus = remember { accessibilityServiceStatus(context) }
+    val accessibilityStatus by produceState(initialAccessibilityStatus, missingPermissionsResumeSignal) {
+        value = accessibilityServiceStatus(context)
+        delay(1000)
+        value = accessibilityServiceStatus(context)
+    }
+    fun openAccessibilitySettings() {
+        context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        })
+    }
     LaunchedEffect(Unit) {
         if (!MissingPermissionsSheetState.shownThisProcess) {
             MissingPermissionsSheetState.shownThisProcess = true
@@ -928,6 +988,7 @@ fun CyberLauncherScreen() {
         showAllAppsDrawer = false
         showCustomizeSheet = false
         proPromptFeature = null
+        gestureAppPickerTarget = null
         showAppListSettings = false
         showQuickAccessSettings = false
         showGridLinesSheet = false
@@ -1224,6 +1285,7 @@ fun CyberLauncherScreen() {
                 onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) },
                 onOpenPowerMenu = {
                     openPowerMenuOrRequestPermission(context) {
+                        accessibilityRationaleReason = "電源メニュー（電源を切る/再起動）を開く"
                         showPowerPermissionRationale = true
                     }
                 },
@@ -1231,6 +1293,21 @@ fun CyberLauncherScreen() {
                 // 空文字（PROのカードから）のときは、機能を指定せずにPROの案内を出す
                 onRequirePro = { feature -> if (feature.isEmpty()) proPromptFeature = "" else requirePro(feature) },
                 // 設定のバックアップ・復元（PROの機能）
+                // ホーム画面のジェスチャーの割り当て（PROの機能。PROでない場合は初期の割り当てを表示する）
+                gestureBindings = activeGestureBindings,
+                onGestureBindingChange = { gesture, binding ->
+                    gestureBindings = gestureBindings + (gesture to binding)
+                    saveGestureBinding(prefs, gesture, binding)
+                    // アクセシビリティサービスが必要な動作を割り当てたのに、まだ使えない状態なら、その場で案内する
+                    if (binding.action.globalAction != null && accessibilityServiceStatus(context) != AccessibilityServiceStatus.ENABLED) {
+                        accessibilityRationaleReason = "ジェスチャーで「${binding.action.label}」"
+                        showPowerPermissionRationale = true
+                    }
+                },
+                onPickGestureApp = { gesture -> gestureAppPickerTarget = gesture },
+                accessibilityStatus = accessibilityStatus,
+                onOpenAccessibilitySettings = ::openAccessibilitySettings,
+                appLabel = { packageName -> appsByPackage[packageName]?.label },
                 onExportBackup = {
                     if (requirePro("設定のバックアップ")) backupExportLauncher.launch(LauncherBackup.suggestedFileName())
                 },
@@ -1243,15 +1320,22 @@ fun CyberLauncherScreen() {
     }
 
     if (showPowerPermissionRationale) {
+        // 設定ではオンなのに動いていない場合（アプリの更新直後などに起きる）は、オフ→オンでの直し方を案内する
+        val isEnabledButNotConnected = remember {
+            accessibilityServiceStatus(context) == AccessibilityServiceStatus.NOT_CONNECTED
+        }
         CompositionLocalProvider(LocalCyberColors provides colors) {
             PermissionRationaleDialog(
-                message = "電源メニュー（電源を切る/再起動）を開くには、GridLauncherのアクセシビリティサービスを有効にしてください。",
+                message = if (isEnabledButNotConnected) {
+                    "${accessibilityRationaleReason}には、GridLauncherのアクセシビリティサービスが必要です。" +
+                        "設定ではオンになっていますが、動いていません。設定画面で一度オフにしてから、オンにし直してください。"
+                } else {
+                    "${accessibilityRationaleReason}には、GridLauncherのアクセシビリティサービスを有効にしてください。" +
+                        "（すでにオンなのに動かない場合は、一度オフにしてからオンにし直してください）"
+                },
                 onConfirm = {
                     showPowerPermissionRationale = false
-                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
+                    openAccessibilitySettings()
                 },
                 onDismiss = { showPowerPermissionRationale = false }
             )
@@ -1598,20 +1682,35 @@ fun CyberLauncherScreen() {
                 .fillMaxSize()
                 .onGloballyPositioned { homeSurfaceBoundsInRoot = it.boundsInRoot() }
                 .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        // Y方向（縦）の移動量がマイナス（上方向）に一定以上でドロワーを表示
-                        if (dragAmount.y < -20) {
-                            showAllAppsDrawer = true
-                            change.consume()
-                        } else {
-                            isWidgetEditMode = false
+                    // 上下のスワイプ（1回のドラッグにつき1回だけ、割り当てたアクションを実行する）
+                    var swipeHandled = false
+                    detectDragGestures(onDragStart = { swipeHandled = false }) { change, dragAmount ->
+                        // Y方向（縦）の移動量が一定以上なら、上スワイプ・下スワイプとみなす
+                        when {
+                            swipeHandled -> Unit
+                            dragAmount.y < -20 -> {
+                                swipeHandled = true
+                                currentRunHomeGesture.value(HomeGesture.SWIPE_UP)
+                                change.consume()
+                            }
+                            dragAmount.y > 20 -> {
+                                swipeHandled = true
+                                currentRunHomeGesture.value(HomeGesture.SWIPE_DOWN)
+                                change.consume()
+                            }
+                            else -> isWidgetEditMode = false
                         }
                     }
                 }
-                .pointerInput(Unit) {
+                // ダブルタップに何か割り当てているときだけ検出する（検出すると、1回のタップの判定が
+                // ダブルタップの待ち時間の分だけ遅れるため）
+                .pointerInput(isDoubleTapAssigned) {
                     detectTapGestures(
                         // 空白タップで編集モード解除
                         onTap = { isWidgetEditMode = false },
+                        onDoubleTap = if (isDoubleTapAssigned) {
+                            { currentRunHomeGesture.value(HomeGesture.DOUBLE_TAP) }
+                        } else null,
                         // 何もないところの長押しで、ウィジェット追加・カスタマイズのメニューを表示
                         onLongPress = { offset ->
                             // ウィジェットの上の長押しはウィジェット側が編集モードに入るので、ここでは
@@ -1940,6 +2039,23 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // ジェスチャーに「アプリを起動」を割り当てるときの、起動するアプリの選択
+    gestureAppPickerTarget?.let { gesture ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppSelectorDialog(
+                allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
+                onDismiss = { gestureAppPickerTarget = null },
+                onAppSelected = { packageName ->
+                    val binding = GestureBinding(GestureAction.LAUNCH_APP, packageName)
+                    gestureBindings = gestureBindings + (gesture to binding)
+                    saveGestureBinding(prefs, gesture, binding)
+                    gestureAppPickerTarget = null
+                }
+            )
+        }
+    }
+
     // 復元の確認（今の設定がすべて置き換わるため）
     pendingRestoreUri?.let { uri ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
