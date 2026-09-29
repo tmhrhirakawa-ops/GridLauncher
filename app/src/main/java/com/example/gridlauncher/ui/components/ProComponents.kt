@@ -43,6 +43,7 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
 
 /** PROで使える機能の一覧（購入画面に表示する）。 */
 private val ProFeatureList = listOf(
+    "テーマ（配色・フォントのプリセット）とフォントの変更",
     "ウィジェットのスタックと自動切り替え",
     "アクセントカラー2・ウィジェットごとの配色・パレットでの自由な色選び",
     "ヘッダー中央の文字の書き換え",

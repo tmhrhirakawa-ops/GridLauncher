@@ -15,6 +15,8 @@ import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.screens.CyberLauncherScreen
 import com.example.gridlauncher.ui.theme.GridLauncherTheme
+import com.example.gridlauncher.ui.theme.applyCyberFont
+import com.example.gridlauncher.ui.theme.loadCyberFontOption
 import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 
 class MainActivity : ComponentActivity() {
@@ -25,6 +27,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Google Play に接続し、PRO（有料機能の解放）の購入状態と価格を取得する
         ProManager.init(this)
+        // 起動直後の最初の表示から、選んでいるフォント（PROの機能）で描く
+        if (ProManager.isPro.value) {
+            applyCyberFont(loadCyberFontOption(getSharedPreferences("cyber_launcher", MODE_PRIVATE)))
+        }
         enableEdgeToEdge()
         setContent {
             GridLauncherTheme {

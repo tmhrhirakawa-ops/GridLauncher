@@ -279,20 +279,6 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // テーマ判定（SharedPreferencesから取得、なければシステム設定）
-    val systemDark = isSystemInDarkTheme()
-    var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
-    // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
-    var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
-    val colors = (if (isDarkTheme) {
-        CyberColors(DarkBgColor, DarkPanelColor, DarkAccentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
-    } else {
-        CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
-    }).copy(accent = accentColor)
-    // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
-    var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
-    val colors2 = colors.copy(accent = accentColor2)
-
     // PRO（有料機能の買い切り解放）を購入済みかどうか。未購入でPROの機能を使おうとしたときは、
     // その機能の名前を[proPromptFeature]に入れて、PRO解放の案内（購入画面）を表示する
     val isPro by ProManager.isPro.collectAsState()
@@ -302,6 +288,51 @@ fun CyberLauncherScreen() {
         if (isPro) return true
         proPromptFeature = featureName
         return false
+    }
+
+    // テーマ判定（SharedPreferencesから取得、なければシステム設定）
+    val systemDark = isSystemInDarkTheme()
+    var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
+    // テーマ（配色・フォントのプリセット）と、フォント。どちらもPROの機能で、PROでない場合は
+    // 従来どおりの配色（ライト/ダーク）と標準のフォントを使う
+    var themePreset by remember { mutableStateOf(loadThemePreset(prefs)) }
+    var cyberFontOption by remember { mutableStateOf(loadCyberFontOption(prefs)) }
+    val activeThemePreset = if (isPro) themePreset else ThemePreset.STANDARD
+    val activeFontOption = if (isPro) cyberFontOption else CyberFontOption.SHARE_TECH_MONO
+    LaunchedEffect(activeFontOption) { applyCyberFont(activeFontOption) }
+    // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
+    var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
+    val colors = (activeThemePreset.colors ?: if (isDarkTheme) {
+        CyberColors(DarkBgColor, DarkPanelColor, DarkAccentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
+    } else {
+        CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
+    }).copy(accent = accentColor)
+    // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
+    var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
+    val colors2 = colors.copy(accent = accentColor2)
+
+    // テーマを切り替える。テーマのアクセントカラー1・2とフォントも一緒に設定する（あとから個別に変えられる）
+    fun selectThemePreset(preset: ThemePreset) {
+        themePreset = preset
+        saveThemePreset(prefs, preset)
+        accentColor = preset.accent
+        accentColor2 = preset.accent2
+        cyberFontOption = preset.font
+        prefs.edit {
+            putInt("accent_color", preset.accent.toArgb())
+            putInt("accent_color_2", preset.accent2.toArgb())
+        }
+        saveCyberFontOption(prefs, preset.font)
+    }
+    // ライト/ダークを切り替える。プリセットのテーマ（ダーク系の固定の配色）を使っている場合は、
+    // 従来どおりの配色（STANDARD）に戻してから切り替える
+    fun setDarkTheme(dark: Boolean) {
+        if (themePreset != ThemePreset.STANDARD) {
+            themePreset = ThemePreset.STANDARD
+            saveThemePreset(prefs, ThemePreset.STANDARD)
+        }
+        isDarkTheme = dark
+        prefs.edit { putBoolean("is_dark_theme", dark) }
     }
 
     // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
@@ -1090,9 +1121,13 @@ fun CyberLauncherScreen() {
                     prefs.edit { putBoolean("is_wallpaper_mode", enabled) }
                 },
                 isDarkTheme = isDarkTheme,
-                onDarkThemeChange = { dark ->
-                    isDarkTheme = dark
-                    prefs.edit { putBoolean("is_dark_theme", dark) }
+                onDarkThemeChange = { dark -> setDarkTheme(dark) },
+                themePreset = activeThemePreset,
+                onThemePresetChange = { preset -> selectThemePreset(preset) },
+                fontOption = activeFontOption,
+                onFontOptionChange = { font ->
+                    cyberFontOption = font
+                    saveCyberFontOption(prefs, font)
                 },
                 accentColor = accentColor,
                 onAccentColorChange = { color ->
@@ -1717,9 +1752,8 @@ fun CyberLauncherScreen() {
                                 quickAccessPageSize = pageSize
                             },
                             onThemeToggle = {
-                                val newTheme = !isDarkTheme
-                                isDarkTheme = newTheme
-                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                                // プリセットのテーマを使っている場合は、従来の配色に戻したうえでライト/ダークを切り替える
+                                setDarkTheme(if (activeThemePreset == ThemePreset.STANDARD) !isDarkTheme else false)
                             },
                             onAccentColorChange = { color ->
                                 accentColor = color

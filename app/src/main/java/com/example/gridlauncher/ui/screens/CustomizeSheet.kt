@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.VerticalAlignBottom
 import androidx.compose.material.icons.outlined.VerticalAlignTop
@@ -70,6 +72,19 @@ import com.example.gridlauncher.ui.components.AccentColorPickerDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.theme.CyberFont
+import com.example.gridlauncher.ui.theme.CyberColors
+import com.example.gridlauncher.ui.theme.CyberFontOption
+import com.example.gridlauncher.ui.theme.DarkBgColor
+import com.example.gridlauncher.ui.theme.DarkBorderColor
+import com.example.gridlauncher.ui.theme.DarkCoreColor
+import com.example.gridlauncher.ui.theme.DarkPanelColor
+import com.example.gridlauncher.ui.theme.DarkTextColor
+import com.example.gridlauncher.ui.theme.LightBgColor
+import com.example.gridlauncher.ui.theme.LightBorderColor
+import com.example.gridlauncher.ui.theme.LightCoreColor
+import com.example.gridlauncher.ui.theme.LightPanelColor
+import com.example.gridlauncher.ui.theme.LightTextColor
+import com.example.gridlauncher.ui.theme.ThemePreset
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.DOCK_MAX_SLOTS_PER_PAGE
 import com.example.gridlauncher.util.HeaderTitle
@@ -88,6 +103,10 @@ import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
  * @param onWallpaperModeChange 壁紙透過スイッチが切り替えられたときのコールバック。
  * @param isDarkTheme ダークテーマかどうか。
  * @param onDarkThemeChange テーマが選択されたときのコールバック（true=ダーク）。
+ * @param themePreset 使っているテーマ（配色・フォントのプリセット）。
+ * @param onThemePresetChange テーマが選択されたときのコールバック。
+ * @param fontOption 使っているフォント。
+ * @param onFontOptionChange フォントが選択されたときのコールバック。
  * @param accentColor 現在のアクセントカラー1。
  * @param onAccentColorChange カラーパレットでアクセントカラー1が選択されたときのコールバック。
  * @param accentColor2 現在のアクセントカラー2。
@@ -133,6 +152,10 @@ fun CustomizeSheet(
     onWallpaperModeChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
     onDarkThemeChange: (Boolean) -> Unit,
+    themePreset: ThemePreset,
+    onThemePresetChange: (ThemePreset) -> Unit,
+    fontOption: CyberFontOption,
+    onFontOptionChange: (CyberFontOption) -> Unit,
     accentColor: Color,
     onAccentColorChange: (Color) -> Unit,
     accentColor2: Color,
@@ -260,13 +283,68 @@ fun CustomizeSheet(
                 CyberSwitch(checked = isWallpaperMode, onCheckedChange = onWallpaperModeChange)
             }
 
-            // テーマ切り替え
-            CustomizeRow(
-                icon = if (isDarkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
-                title = "テーマ",
-                description = if (isDarkTheme) "ダーク" else "ライト"
-            ) {
-                ThemeSegmentedToggle(isDarkTheme = isDarkTheme, onDarkThemeChange = onDarkThemeChange)
+            // テーマ（配色・フォントのプリセット）とライト/ダークの切り替え。プリセットはPROの機能
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = if (isDarkTheme || themePreset != ThemePreset.STANDARD) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                    title = "テーマ",
+                    description = when {
+                        themePreset != ThemePreset.STANDARD -> "${themePreset.label}（ライト/ダークを選ぶと STANDARD に戻ります）"
+                        isDarkTheme -> "STANDARD // ダーク"
+                        else -> "STANDARD // ライト"
+                    }
+                ) {
+                    ThemeSegmentedToggle(
+                        isDarkTheme = isDarkTheme || themePreset != ThemePreset.STANDARD,
+                        onDarkThemeChange = onDarkThemeChange
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                ) {
+                    ThemePreset.entries.forEach { preset ->
+                        ThemePresetOption(
+                            preset = preset,
+                            isDarkTheme = isDarkTheme,
+                            selected = preset == themePreset,
+                            locked = !isPro && preset != ThemePreset.STANDARD,
+                            onClick = {
+                                if (preset == ThemePreset.STANDARD || isPro) onThemePresetChange(preset) else onRequirePro("テーマ（${preset.label}）")
+                            }
+                        )
+                    }
+                }
+            }
+
+            // フォント（アプリ全体の英数字のフォント）。SHARE TECH MONO以外はPROの機能
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.TextFields,
+                    title = "フォント",
+                    description = "${fontOption.label}（日本語は端末の標準フォントで表示します）"
+                ) {}
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                ) {
+                    CyberFontOption.entries.forEach { font ->
+                        FontOptionChip(
+                            font = font,
+                            selected = font == fontOption,
+                            locked = !isPro && font != CyberFontOption.SHARE_TECH_MONO,
+                            onClick = {
+                                if (font == CyberFontOption.SHARE_TECH_MONO || isPro) onFontOptionChange(font) else onRequirePro("フォント（${font.label}）")
+                            }
+                        )
+                    }
+                }
             }
 
             // アクセントカラー1・2の変更と、ウィジェットごとにどちらを使うかの選択
@@ -631,6 +709,72 @@ internal fun CustomizeRow(
             modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
             trailing = trailing
         )
+    }
+}
+
+/**
+ * テーマの選択肢1つ分。そのテーマの背景に、アクセントカラー1・2の帯と、テーマのフォントで書いた名前を
+ * 小さく並べて、見た目が分かるようにする（STANDARDは今のライト/ダークの配色で表示する）。
+ */
+@Composable
+private fun ThemePresetOption(
+    preset: ThemePreset,
+    isDarkTheme: Boolean,
+    selected: Boolean,
+    locked: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = LocalCyberColors.current
+    val previewColors = preset.colors ?: if (isDarkTheme) {
+        CyberColors(DarkBgColor, DarkPanelColor, preset.accent, DarkTextColor, DarkBorderColor, DarkCoreColor)
+    } else {
+        CyberColors(LightBgColor, LightPanelColor, preset.accent, LightTextColor, LightBorderColor, LightCoreColor)
+    }
+    Box(
+        modifier = Modifier
+            .size(width = 88.dp, height = 64.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(previewColors.bg)
+            .border(if (selected) 2.dp else 1.dp, if (selected) colors.accent else previewColors.border, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(modifier = Modifier.size(width = 22.dp, height = 5.dp).background(preset.accent))
+                Box(modifier = Modifier.size(width = 12.dp, height = 5.dp).background(preset.accent2))
+            }
+            Text(
+                preset.label,
+                fontFamily = preset.font.fontFamily,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = previewColors.text,
+                maxLines = 2,
+                lineHeight = 12.sp
+            )
+        }
+        if (locked) ProBadge(modifier = Modifier.align(Alignment.BottomEnd))
+    }
+}
+
+/** フォントの選択肢1つ分。そのフォントで、時刻と名前の見本を表示する。 */
+@Composable
+private fun FontOptionChip(font: CyberFontOption, selected: Boolean, locked: Boolean, onClick: () -> Unit) {
+    val colors = LocalCyberColors.current
+    Box(
+        modifier = Modifier
+            .size(width = 96.dp, height = 56.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .border(if (selected) 2.dp else 1.dp, if (selected) colors.accent else colors.border, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Column {
+            Text("12:34", fontFamily = font.fontFamily, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.text, maxLines = 1)
+            Text(font.label, fontFamily = font.fontFamily, fontSize = 8.sp, color = colors.text.copy(alpha = 0.6f), maxLines = 1)
+        }
+        if (locked) ProBadge(modifier = Modifier.align(Alignment.TopEnd))
     }
 }
 
