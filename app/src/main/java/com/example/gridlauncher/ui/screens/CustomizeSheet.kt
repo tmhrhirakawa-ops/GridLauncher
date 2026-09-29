@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.VerticalAlignBottom
@@ -143,6 +144,8 @@ import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
  *   使おうとすると[onRequirePro]でPRO解放の案内を出す。
  * @param onRequirePro PROの機能を使おうとしたときのコールバック（使おうとした機能の名前。
  *   空文字なら機能を指定せずにPROの案内を出す）。
+ * @param onExportBackup 「バックアップ・復元」の「書き出す」がタップされたときのコールバック。
+ * @param onImportBackup 「バックアップ・復元」の「読み込む」がタップされたときのコールバック。
  * @param onDismiss シートが閉じられるときのコールバック。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -189,6 +192,8 @@ fun CustomizeSheet(
     onOpenPowerMenu: () -> Unit,
     isPro: Boolean,
     onRequirePro: (featureName: String) -> Unit,
+    onExportBackup: () -> Unit,
+    onImportBackup: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -607,6 +612,24 @@ fun CustomizeSheet(
                 onSetAllBorders = onSetAllBorders,
                 onTogglePanelBorder = onTogglePanelBorder
             )
+
+            // 設定のバックアップ（ファイルへ書き出す）と復元（ファイルから読み込む）。PROの機能
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.SettingsBackupRestore,
+                    title = "バックアップ・復元",
+                    description = "配置・配色・各種設定をファイルに保存し、別の端末や再インストール後に戻せます"
+                ) {
+                    ProBadgeIfLocked(isPro)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                ) {
+                    IntervalOption(label = "書き出す", selected = false, onClick = onExportBackup, modifier = Modifier.weight(1f))
+                    IntervalOption(label = "読み込む", selected = false, onClick = onImportBackup, modifier = Modifier.weight(1f))
+                }
+            }
 
             // 従来のコアメニューにあった、端末設定・電源メニューへの導線
             Spacer(modifier = Modifier.height(4.dp))

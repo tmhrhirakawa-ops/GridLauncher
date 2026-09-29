@@ -80,6 +80,10 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
     }.normalizeStacks()
 }
 
+/** 指定した画面モードのウィジェット配置が保存されているかどうか（未保存ならデフォルト配置を使う）。 */
+fun hasSavedWidgetLayout(prefs: SharedPreferences, mode: WidgetLayoutMode): Boolean =
+    prefs.contains(widgetLayoutKey(mode))
+
 /** 指定した画面モードのウィジェット配置をSharedPreferencesに保存する。 */
 fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets: List<PlacedWidget>) {
     val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}:${it.stackId}" }

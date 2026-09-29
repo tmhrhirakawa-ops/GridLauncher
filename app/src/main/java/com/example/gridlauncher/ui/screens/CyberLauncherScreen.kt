@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -129,6 +130,7 @@ import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.sortedByInstallOrder
 import com.example.gridlauncher.util.normalizeStacks
+import com.example.gridlauncher.util.LauncherBackup
 import com.example.gridlauncher.util.loadStackAutoRotateSettings
 import com.example.gridlauncher.util.saveStackAutoRotateSettings
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
@@ -1026,6 +1028,36 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // 設定のバックアップ（書き出し）と復元（読み込み）。ファイルの場所は端末標準のファイル選択画面で選ぶ。
+    // 復元は今の設定をすべて置き換えるため、ファイルを選んだあとに確認してから行う
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val message = LauncherBackup.export(context, uri).fold(
+            onSuccess = { "設定を書き出しました" },
+            onFailure = { "書き出せませんでした（${it.message}）" }
+        )
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingRestoreUri = uri
+    }
+    fun restoreBackup(uri: Uri) {
+        LauncherBackup.restore(context, uri).fold(
+            onSuccess = { result ->
+                val note = if (result.removedAppWidgetCount > 0) {
+                    "（この端末にない外部ウィジェット ${result.removedAppWidgetCount} 個は外しました）"
+                } else ""
+                Toast.makeText(context, "設定を読み込みました$note", Toast.LENGTH_LONG).show()
+                // すべての画面の状態を、読み込んだ設定から作り直す
+                context.findActivity().recreate()
+            },
+            onFailure = { Toast.makeText(context, "読み込めませんでした（${it.message}）", Toast.LENGTH_LONG).show() }
+        )
+    }
+
     // このアプリはBIND_APPWIDGET権限を持たない（サードパーティのランチャーは通常持てない）ため、
     // bindAppWidgetIdIfAllowedは基本的にfalseを返す。その場合はACTION_APPWIDGET_BINDで
     // システムのバインド確認ダイアログを挟む、というのが非特権ランチャーの標準的な実装方法
@@ -1198,6 +1230,13 @@ fun CyberLauncherScreen() {
                 isPro = isPro,
                 // 空文字（PROのカードから）のときは、機能を指定せずにPROの案内を出す
                 onRequirePro = { feature -> if (feature.isEmpty()) proPromptFeature = "" else requirePro(feature) },
+                // 設定のバックアップ・復元（PROの機能）
+                onExportBackup = {
+                    if (requirePro("設定のバックアップ")) backupExportLauncher.launch(LauncherBackup.suggestedFileName())
+                },
+                onImportBackup = {
+                    if (requirePro("設定の復元")) backupImportLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+                },
                 onDismiss = { showCustomizeSheet = false }
             )
         }
@@ -1901,6 +1940,39 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // 復元の確認（今の設定がすべて置き換わるため）
+    pendingRestoreUri?.let { uri ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AlertDialog(
+                onDismissRequest = { pendingRestoreUri = null },
+                containerColor = colors.panel,
+                title = { Text("設定を読み込みますか？", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text) },
+                text = {
+                    Text(
+                        "今の配置・配色・各種設定は、選んだファイルの内容にすべて置き換わります。" +
+                            "外部ウィジェットは、この端末にないものは読み込まれません。",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        color = colors.text.copy(alpha = 0.8f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingRestoreUri = null
+                        restoreBackup(uri)
+                    }) {
+                        Text("読み込む", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingRestoreUri = null }) {
+                        Text("キャンセル", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text.copy(alpha = 0.7f))
+                    }
+                }
+            )
+        }
+    }
+
     // PROの機能を使おうとしたとき（またはカスタマイズ画面のPROの項目から）の、PRO解放の案内と購入画面。
     // 機能の名前が空の場合は、機能を指定せずにPROの案内だけを出す
     proPromptFeature?.let { feature ->
