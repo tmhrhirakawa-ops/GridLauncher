@@ -256,6 +256,15 @@ fun loadOriginalIconBitmap(context: Context, packageName: String): ImageBitmap? 
 }
 
 /**
+ * [drawable]を、加工せず本来の色のまま、表示に十分な解像度まで縮小した[ImageBitmap]にします
+ * （アイコンパックのアイコンをそのまま表示するときなど）。
+ */
+fun toOriginalIconBitmap(drawable: Drawable): ImageBitmap {
+    val (width, height) = resolveProcessingSize(drawable)
+    return drawable.toBitmap(width = width, height = height, config = Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+/**
  * 外部ウィジェット選択一覧に表示する、AppWidgetのプレビュー画像を取得します。
  *
  * [AppWidgetProviderInfo.loadPreviewImage]が用意されていないウィジェット（古いアプリ等）も

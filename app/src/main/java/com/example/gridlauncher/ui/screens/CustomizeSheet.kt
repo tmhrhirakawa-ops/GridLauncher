@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddBox
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.DarkMode
@@ -114,6 +115,10 @@ import com.example.gridlauncher.util.stackAutoRotateIntervalLabel
  * @param onThemePresetChange テーマが選択されたときのコールバック。
  * @param fontOption 使っているフォント。
  * @param onFontOptionChange フォントが選択されたときのコールバック。
+ * @param iconPackLabel 使っているアイコンパックの名前（使っていなければnull）。
+ * @param onOpenIconPackPicker 「アイコンパック」がタップされたときのコールバック（選ぶ画面を開く）。
+ * @param iconPackUsePackColors アイコンパックのアイコンを本来の色のまま表示するかどうか。
+ * @param onIconPackUsePackColorsChange 上記のスイッチが切り替えられたときのコールバック。
  * @param accentColor 現在のアクセントカラー1。
  * @param onAccentColorChange カラーパレットでアクセントカラー1が選択されたときのコールバック。
  * @param accentColor2 現在のアクセントカラー2。
@@ -171,6 +176,10 @@ fun CustomizeSheet(
     onThemePresetChange: (ThemePreset) -> Unit,
     fontOption: CyberFontOption,
     onFontOptionChange: (CyberFontOption) -> Unit,
+    iconPackLabel: String?,
+    onOpenIconPackPicker: () -> Unit,
+    iconPackUsePackColors: Boolean,
+    onIconPackUsePackColorsChange: (Boolean) -> Unit,
     accentColor: Color,
     onAccentColorChange: (Color) -> Unit,
     accentColor2: Color,
@@ -381,6 +390,43 @@ fun CustomizeSheet(
                                 if (font == CyberFontOption.SHARE_TECH_MONO || isPro) onFontOptionChange(font) else onRequirePro("フォント（${font.label}）")
                             }
                         )
+                    }
+                }
+            }
+
+            // アイコンパック（Nova Launcher などに対応したもの）。PROの機能
+            CustomizeCard {
+                CustomizeRowContent(
+                    icon = Icons.Outlined.Apps,
+                    title = "アイコンパック",
+                    description = iconPackLabel ?: "なし（標準のアイコン）",
+                    modifier = Modifier.clickable(onClick = onOpenIconPackPicker)
+                ) {
+                    ProBadgeIfLocked(isPro)
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = colors.text.copy(alpha = 0.5f))
+                }
+                // アイコンパックを使っているときだけ、パックの色のまま表示するかを選べる
+                AnimatedVisibility(visible = iconPackLabel != null, enter = expandVertically(), exit = shrinkVertically()) {
+                    Column {
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onIconPackUsePackColorsChange(!iconPackUsePackColors) }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("パックの色をそのまま使う", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text)
+                                Text(
+                                    if (iconPackUsePackColors) "アイコンパック本来の色で表示します" else "アクセントカラーで加工して表示します",
+                                    fontFamily = CyberFont,
+                                    fontSize = 9.sp,
+                                    color = colors.text.copy(alpha = 0.5f)
+                                )
+                            }
+                            CyberSwitch(checked = iconPackUsePackColors, onCheckedChange = onIconPackUsePackColorsChange)
+                        }
                     }
                 }
             }

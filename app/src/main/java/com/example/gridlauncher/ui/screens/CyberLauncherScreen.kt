@@ -69,6 +69,7 @@ import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.ProUpgradeDialog
+import com.example.gridlauncher.ui.components.IconPackPickerDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
@@ -138,7 +139,12 @@ import com.example.gridlauncher.util.saveGestureBinding
 import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
 import com.example.gridlauncher.util.sortedByInstallOrder
+import com.example.gridlauncher.util.ActiveIconPack
+import com.example.gridlauncher.util.IconPackManager
+import com.example.gridlauncher.util.LoadedIconPack
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.example.gridlauncher.util.normalizeStacks
 import com.example.gridlauncher.util.LauncherBackup
 import com.example.gridlauncher.util.loadStackAutoRotateSettings
@@ -312,6 +318,20 @@ fun CyberLauncherScreen() {
     val activeThemePreset = if (isPro) themePreset else ThemePreset.STANDARD
     val activeFontOption = if (isPro) cyberFontOption else CyberFontOption.SHARE_TECH_MONO
     LaunchedEffect(activeFontOption) { applyCyberFont(activeFontOption) }
+    // アイコンパック（PROの機能。PROでない場合は使わない）。パックの読み込み（appfilter.xml の解析）は
+    // 数千件あることもあるため、メインスレッド以外で行う
+    var iconPackPackage by remember { mutableStateOf(IconPackManager.loadSelectedPackage(prefs)) }
+    var iconPackUsePackColors by remember { mutableStateOf(IconPackManager.loadUsePackColors(prefs)) }
+    val activeIconPackPackage = if (isPro) iconPackPackage else null
+    val loadedIconPack by produceState<LoadedIconPack?>(null, activeIconPackPackage) {
+        value = activeIconPackPackage?.let { packageName ->
+            withContext(Dispatchers.IO) { IconPackManager.load(context, packageName) }
+        }
+    }
+    LaunchedEffect(loadedIconPack, iconPackUsePackColors) {
+        IconPackManager.applyIconPack(loadedIconPack?.let { ActiveIconPack(it, iconPackUsePackColors) })
+    }
+    var showIconPackPicker by remember { mutableStateOf(false) }
     // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
     var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
     val colors = (activeThemePreset.colors ?: if (isDarkTheme) {
@@ -989,6 +1009,7 @@ fun CyberLauncherScreen() {
         showCustomizeSheet = false
         proPromptFeature = null
         gestureAppPickerTarget = null
+        showIconPackPicker = false
         showAppListSettings = false
         showQuickAccessSettings = false
         showGridLinesSheet = false
@@ -1221,6 +1242,20 @@ fun CyberLauncherScreen() {
                 onFontOptionChange = { font ->
                     cyberFontOption = font
                     saveCyberFontOption(prefs, font)
+                },
+                // アイコンパック（PROの機能）
+                iconPackLabel = remember(activeIconPackPackage) {
+                    activeIconPackPackage?.let { packageName ->
+                        runCatching {
+                            context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName, 0)).toString()
+                        }.getOrNull()
+                    }
+                },
+                onOpenIconPackPicker = { if (requirePro("アイコンパック")) showIconPackPicker = true },
+                iconPackUsePackColors = iconPackUsePackColors,
+                onIconPackUsePackColorsChange = { usePackColors ->
+                    iconPackUsePackColors = usePackColors
+                    IconPackManager.saveUsePackColors(prefs, usePackColors)
                 },
                 accentColor = accentColor,
                 onAccentColorChange = { color ->
@@ -2039,6 +2074,23 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // 使うアイコンパックの選択
+    if (showIconPackPicker) {
+        val iconPacks = remember { IconPackManager.installedIconPacks(context) }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            IconPackPickerDialog(
+                iconPacks = iconPacks,
+                selectedPackage = iconPackPackage,
+                onSelect = { packageName ->
+                    iconPackPackage = packageName
+                    IconPackManager.saveSelectedPackage(prefs, packageName)
+                    showIconPackPicker = false
+                },
+                onDismiss = { showIconPackPicker = false }
+            )
+        }
+    }
+
     // ジェスチャーに「アプリを起動」を割り当てるときの、起動するアプリの選択
     gestureAppPickerTarget?.let { gesture ->
         CompositionLocalProvider(LocalCyberColors provides colors) {

@@ -44,6 +44,7 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
 /** PROで使える機能の一覧（購入画面に表示する）。 */
 private val ProFeatureList = listOf(
     "テーマ（配色・フォントのプリセット）とフォントの変更",
+    "アイコンパック（Nova Launcher などに対応したもの）",
     "設定のバックアップ・復元",
     "ホーム画面のジェスチャーへの動作の割り当て",
     "ウィジェットのスタックと自動切り替え",
