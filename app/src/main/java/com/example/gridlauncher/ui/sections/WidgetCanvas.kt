@@ -440,6 +440,13 @@ private enum class ResizeCorner {
  */
 private val ResizeHandleTouchSize = 56.dp
 
+/**
+ * リサイズハンドルのタッチ領域が、ウィジェットの幅・高さに占める割合の上限。小さいウィジェットで
+ * [ResizeHandleTouchSize]のままだと四隅の判定がウィジェット全体を覆い、移動のドラッグができなくなるため、
+ * 各辺の長さのこの割合までに縮める（両端の角を合わせても中央に移動用の余白が残る）。
+ */
+private const val ResizeHandleMaxFraction = 0.3f
+
 /** リサイズハンドルの見た目のブラケットのサイズ。[ResizeHandleTouchSize]とは独立して見た目を保つ。 */
 private val ResizeHandleVisualSize = 40.dp
 
@@ -896,6 +903,9 @@ private fun WidgetSlot(
                 hideTopRightCorner -> ResizeCorner.entries.filter { it != ResizeCorner.TOP_RIGHT }
                 else -> ResizeCorner.entries
             }
+            // タッチ領域はウィジェットの大きさに合わせて縮める（外枠のpadding(4.dp)分を除いた中身の大きさが基準）
+            val handleTouchWidth = minOf(ResizeHandleTouchSize, (cellWidth * displayColSpan - 8.dp) * ResizeHandleMaxFraction)
+            val handleTouchHeight = minOf(ResizeHandleTouchSize, (cellHeight * displayRowSpan - 8.dp) * ResizeHandleMaxFraction)
             for (corner in visibleCorners) {
                 val alignment = when (corner) {
                     ResizeCorner.TOP_LEFT -> Alignment.TopStart
@@ -913,6 +923,8 @@ private fun WidgetSlot(
                 ) {
                     CornerResizeHandle(
                         corner = corner,
+                        touchWidth = handleTouchWidth,
+                        touchHeight = handleTouchHeight,
                         onDrag = { amount ->
                             if (activeCorner != corner) {
                                 // 新しいリサイズジェスチャーの開始：直近有効値をウィジェットの
@@ -950,12 +962,14 @@ private fun WidgetSlot(
 
 /**
  * ウィジェットの角につまめる、太い枠線のブラケット形のリサイズハンドル。
- * タッチ領域は見た目より大きめ（[ResizeHandleTouchSize]）に取り、角のブラケット自体は
- * [CornerBracket]で描画する。
+ * タッチ領域は見た目より大きめ（最大[ResizeHandleTouchSize]、ウィジェットが小さいときは
+ * [touchWidth]×[touchHeight]に縮める）に取り、角のブラケット自体は[CornerBracket]で描画する。
  */
 @Composable
 private fun CornerResizeHandle(
     corner: ResizeCorner,
+    touchWidth: Dp,
+    touchHeight: Dp,
     onDrag: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit
@@ -973,7 +987,7 @@ private fun CornerResizeHandle(
     }
     Box(
         modifier = Modifier
-            .size(ResizeHandleTouchSize)
+            .size(width = touchWidth, height = touchHeight)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragEnd = { currentOnDragEnd.value() },
@@ -986,7 +1000,8 @@ private fun CornerResizeHandle(
     ) {
         CornerBracket(
             corner = corner,
-            modifier = Modifier.align(bracketAlignment).size(ResizeHandleVisualSize)
+            // 見た目もタッチ領域からはみ出さないよう、短い方の辺に合わせて縮める
+            modifier = Modifier.align(bracketAlignment).size(minOf(ResizeHandleVisualSize, touchWidth, touchHeight))
         )
     }
 }
