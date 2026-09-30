@@ -36,6 +36,7 @@ import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.appDragSource
 import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
+import com.example.gridlauncher.ui.components.WidgetHeaderTitle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.SlotGridSize
@@ -138,8 +139,8 @@ fun SharedTransitionScope.AccessGridSection(
                 .size(8.dp)
                 .background(LocalCyberColors.current.accent))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("APP LIST", fontFamily = CyberFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-            Spacer(modifier = Modifier.weight(1f))
+            // 見出し（フォントによって幅が足りなければ、1行に収まるまで縮める）
+            WidgetHeaderTitle("APP LIST", fontSize = 14.sp)
             // APP LISTの設定（ICON ONLY・アイコンの並び・ページ数）を開く歯車ボタン
             Icon(
                 imageVector = Icons.Outlined.Settings,

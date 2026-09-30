@@ -275,6 +275,9 @@
 - フォント: SHARE TECH MONO（標準）・ORBITRON・VT323・RAJDHANI・AUDIOWIDE（Google Fonts・OFL。
   ライセンス文は `assets/licenses/`）。日本語は端末の標準フォントで表示。`CyberFont` は選んだフォントを返す
   （スナップショットの状態なので、切り替えるとアプリ全体が描き直される）
+- ウィジェットのヘッダーの見出し（APP LIST・CALENDAR・SYSTEM MONITOR・QUICK ACCESS・NOW PLAYING）は、
+  フォントによって幅が足りなければ、1行に収まるまで文字を縮める（最小 7sp。`WidgetHeaderTitle.kt`）。
+  右側のボタンは押し出さない
 
 ## 19. ユーティリティ (`AppUtils.kt` / `SystemStateEffects.kt` など)
 
