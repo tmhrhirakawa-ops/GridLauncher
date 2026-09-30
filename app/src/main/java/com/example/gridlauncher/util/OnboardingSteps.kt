@@ -3,7 +3,6 @@ package com.example.gridlauncher.util
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -51,14 +50,16 @@ val OnboardingSteps = listOf(
     ),
     OnboardingStepInfo(
         title = "バッテリー最適化の対象から除外",
-        description = "通知や再生中メディアの監視を安定して続けるため、バッテリー最適化の対象からGridLauncherを除外することをおすすめします。",
+        description = "通知や再生中メディアの監視を安定して続けるため、バッテリー最適化の対象からGridLauncherを除外することをおすすめします。" +
+            "開いた一覧で「すべてのアプリ」を表示し、GridLauncherを「最適化しない」にしてください。",
         isSatisfied = { context ->
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
         },
-        settingsIntent = { context ->
-            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
-        }
+        // アプリから直接「除外しますか？」を出す方法（ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS）は、
+        // Google Play のポリシーで使える用途が限られ、ホームアプリは対象外のため使わない。
+        // 端末の「バッテリー最適化」の一覧画面を開き、GridLauncher を選んでもらう（権限は不要）
+        settingsIntent = { Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
     ),
     OnboardingStepInfo(
         title = "使用状況へのアクセスを許可（任意）",

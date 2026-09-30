@@ -291,6 +291,8 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
     val intent = Intent(Intent.ACTION_MAIN, null)
     intent.addCategory(Intent.CATEGORY_LAUNCHER)
     val resolvedInfos = packageManager.queryIntentActivities(intent, 0)
+    // インストール日時は、アプリごとに問い合わせると件数分の通信になるため、一度にまとめて取る
+    val installTimes = packageManager.getInstalledPackages(0).associate { it.packageName to it.firstInstallTime }
 
     return resolvedInfos.map { resolveInfo ->
         val (icon, isMonochrome) = extractDisplayIcon(resolveInfo.loadIcon(packageManager))
@@ -300,7 +302,7 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
             packageName = packageName,
             icon = icon,
             iconIsMonochrome = isMonochrome,
-            firstInstallTime = firstInstallTimeOf(packageManager, packageName),
+            firstInstallTime = installTimes[packageName] ?: firstInstallTimeOf(packageManager, packageName),
             category = resolveInfo.activityInfo.applicationInfo.category
         )
     }.sortedByInstallOrder()

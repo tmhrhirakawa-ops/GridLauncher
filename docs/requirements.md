@@ -54,7 +54,6 @@
 | `READ_CALENDAR` | カレンダーセクションでの予定表示 | 実行時権限 |
 | `REQUEST_DELETE_PACKAGES` | アプリのアンインストール要求（システムの確認画面を表示） | 通常権限 |
 | `WRITE_SETTINGS` | QUICK ACCESS の BRIGHT による画面の明るさ変更 | 特別なアプリアクセス（設定画面から手動許可） |
-| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 通知・再生中メディアの監視を安定して続けるための、バッテリー最適化除外の案内 | 通常権限（Play Console宣言要） |
 | 通知アクセス (`BIND_NOTIFICATION_LISTENER_SERVICE`) | 各アプリの通知/バッジマーク表示、再生中メディアの表示・操作 | 特別なアプリアクセス（設定画面から手動許可） |
 | アクセシビリティサービス (`BIND_ACCESSIBILITY_SERVICE`) | 端末標準の電源メニューを開く（それ以外の用途には使わない） | 特別なアプリアクセス（設定画面から手動許可） |
 
@@ -88,7 +87,6 @@
 - [ ] 通知アクセス権限の使用申告（用途: 通知バッジ表示、再生中メディアの表示・操作）
 - [ ] `QUERY_ALL_PACKAGES` 権限の使用申告（用途: ランチャー）
 - [ ] アクセシビリティサービスの使用申告（用途: 電源メニューを開く、ジェスチャーで通知パネル・クイック設定・最近使ったアプリを開く・画面をオフにする）
-- [ ] `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` の使用理由の申告
 - [ ] データセーフティフォームの入力（すべて端末内処理、外部送信なしである旨を明記）
 - [ ] `applicationId` を `com.example.gridlauncher` から固有のIDへ変更（公開後は変更不可のため必須）
 - [ ] `compileSdk`/`targetSdk = 37` が提出時点で正式リリース版のSDKであることの確認

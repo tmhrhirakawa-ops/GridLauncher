@@ -42,7 +42,6 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.adaptiveSlotCount
 import com.example.gridlauncher.util.requiredSlotGridPages
-import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.roundToInt
 
 /** スロットがこれより狭くなるとアプリ名が読めなくなるとみなす、1スロットの最小幅。 */

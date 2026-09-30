@@ -22,7 +22,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -112,7 +111,7 @@ import com.example.gridlauncher.util.findFreeGridSlotForSize
 import com.example.gridlauncher.util.findFreeGridSlotNear
 import com.example.gridlauncher.util.folderIdFromSlotValue
 import com.example.gridlauncher.util.folderSlotValue
-import com.example.gridlauncher.util.getInstalledApps
+import com.example.gridlauncher.util.InstalledAppsCache
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
 import com.example.gridlauncher.util.loadAccent2WidgetPanels
@@ -275,7 +274,8 @@ fun CyberLauncherScreen() {
     val activity = remember(context) { context.findActivity() }
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
-    var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
+    // 画面の回転などで作り直されるたびに全アプリを読み込み直さないよう、キャッシュを使う
+    var allApps by remember { mutableStateOf(InstalledAppsCache.get(context.packageManager)) }
     AppWidgetHostManager.ensureInitialized(context)
 
     // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
@@ -307,6 +307,7 @@ fun CyberLauncherScreen() {
                         }
                     }
                 }
+                InstalledAppsCache.update(allApps)
             }
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)

@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -232,17 +233,15 @@ internal fun NowPlayingProgressBar(info: CyberNotificationListener.NowPlayingInf
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 nowElapsed = SystemClock.elapsedRealtime()
-                delay(500)
+                // 2dpの細いゲージは1秒ごとでも見た目の動きは変わらないため、更新の頻度を抑える
+                delay(1000)
             }
         }
     }
-    val livePosition = if (info.isPlaying) {
-        info.position + ((nowElapsed - info.lastPositionUpdateTime) * info.playbackSpeed).toLong()
-    } else {
-        info.position
-    }
-    val progress = (livePosition.toFloat() / info.duration.toFloat()).coerceIn(0f, 1f)
+    val accent = LocalCyberColors.current.accent
 
+    // 経過時間（nowElapsed）は描画のときにだけ読み、毎秒の更新でゲージの描き直しだけが起きるようにする
+    // （画面の組み立て（再コンポジション）からやり直さない）
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -253,14 +252,16 @@ internal fun NowPlayingProgressBar(info: CyberNotificationListener.NowPlayingInf
             .height(2.dp)
             .clip(RoundedCornerShape(1.dp))
             .background(LocalCyberColors.current.border)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(progress)
-                .fillMaxHeight()
-                .background(LocalCyberColors.current.accent)
-        )
-    }
+            .drawBehind {
+                val livePosition = if (info.isPlaying) {
+                    info.position + ((nowElapsed - info.lastPositionUpdateTime) * info.playbackSpeed).toLong()
+                } else {
+                    info.position
+                }
+                val progress = (livePosition.toFloat() / info.duration.toFloat()).coerceIn(0f, 1f)
+                drawRect(color = accent, size = Size(size.width * progress, size.height))
+            }
+    )
 }
 
 /**
