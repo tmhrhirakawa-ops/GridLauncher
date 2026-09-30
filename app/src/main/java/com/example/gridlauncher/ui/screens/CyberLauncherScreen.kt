@@ -3,14 +3,11 @@ package com.example.gridlauncher.ui.screens
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
-import android.os.Build
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,20 +17,10 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -50,14 +37,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.model.FolderInfo
@@ -71,7 +56,6 @@ import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.ProUpgradeDialog
 import com.example.gridlauncher.ui.components.AppSlotStyleDialog
 import com.example.gridlauncher.ui.components.IconPackPickerDialog
-import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
 import com.example.gridlauncher.ui.components.MissingPermissionsSheet
@@ -100,18 +84,12 @@ import com.example.gridlauncher.util.dockAppsKeyFor
 import com.example.gridlauncher.util.loadShareDockAcrossOrientations
 import com.example.gridlauncher.util.saveShareDockAcrossOrientations
 import com.example.gridlauncher.util.saveDockLayout
-import com.example.gridlauncher.util.AppWidgetConfigureResultBridge
 import com.example.gridlauncher.util.AppWidgetHostManager
 import com.example.gridlauncher.util.allocateNextAppSlotInstanceId
 import com.example.gridlauncher.util.clearAppSlotAssignment
-import com.example.gridlauncher.util.createFolder
-import com.example.gridlauncher.util.deleteFolder
 import com.example.gridlauncher.util.findFreeGridSlot
-import com.example.gridlauncher.util.findFreeGridSlotForSize
 import com.example.gridlauncher.util.findFreeGridSlotNear
 import com.example.gridlauncher.util.folderIdFromSlotValue
-import com.example.gridlauncher.util.folderSlotValue
-import com.example.gridlauncher.util.InstalledAppsCache
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
 import com.example.gridlauncher.util.loadAccent2WidgetPanels
@@ -140,14 +118,8 @@ import com.example.gridlauncher.util.HomeGesture
 import com.example.gridlauncher.util.loadGestureBindings
 import com.example.gridlauncher.util.saveGestureBinding
 import com.example.gridlauncher.util.requiredSlotGridPages
-import com.example.gridlauncher.util.resolveInstalledApp
-import com.example.gridlauncher.util.sortedByInstallOrder
-import com.example.gridlauncher.util.ActiveIconPack
 import com.example.gridlauncher.util.IconPackManager
-import com.example.gridlauncher.util.LoadedIconPack
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import com.example.gridlauncher.util.normalizeStacks
 import com.example.gridlauncher.util.LauncherBackup
 import com.example.gridlauncher.util.loadStackAutoRotateSettings
@@ -166,15 +138,6 @@ import com.example.gridlauncher.util.saveQuickButtonStyle
 import com.example.gridlauncher.util.CyberNotificationListener
 import com.example.gridlauncher.util.WidgetLayoutMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-
-/**
- * 他アプリのAppWidgetが申告する最小サイズ（[AppWidgetProviderInfo.minResizeWidth]等）を
- * 何倍まで許容するか。1.0だと申告値を厳密に守るが、大きめの最小値を申告しているウィジェットが
- * 他のランチャーに比べてかなり大きく見えてしまうため、画質が粗くなるリスクと引き換えに
- * 半分まではリサイズできるようにする。
- */
-private const val MinSizeRelaxFactor = 0.5f
 
 /**
  * [android.appwidget.AppWidgetHost.startAppWidgetConfigureActivityForResult]が要求する
@@ -188,39 +151,12 @@ private tailrec fun Context.findActivity(): Activity = when (this) {
 }
 
 /**
- * ウィジェットが実際に許容する最小サイズ（[MinSizeRelaxFactor]適用後、dp単位）を求める。
- * [com.example.gridlauncher.ui.screens.appWidgetResizeConstraints]（リサイズの下限）と
- * 新規追加時の「画面に入り切るか」判定の両方で同じ基準を使うための共通関数。
- */
-/** ウィジェット種類のうち、常に1個までしか同時配置できないもの（それ以外は複数配置できる）。 */
-private val SingleInstanceWidgetPanels = setOf(
-    WidgetPanel.ACCESS_GRID, WidgetPanel.CALENDAR, WidgetPanel.DEVICE_STATUS, WidgetPanel.QUICK_ACCESS,
-    WidgetPanel.CLOCK, WidgetPanel.BATTERY, WidgetPanel.NOW_PLAYING
-)
-
-/** PROを購入していないと追加できないウィジェットの種類。 */
-private val ProOnlyWidgetPanels = setOf(WidgetPanel.NOW_PLAYING)
-
-/** PROを購入していない場合に配置できる、外部ウィジェットの数。 */
-private const val FreeAppWidgetLimit = 2
-
-/** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
-private val AppSlotIconOnlyTargetSize = DpSize(60.dp, 60.dp)
-private val AppSlotNamedTargetSize = DpSize(140.dp, 64.dp)
-
-/**
  * 未設定の権限/設定を知らせるボトムシートを、アプリプロセスの起動につき1回だけ表示する
  * ためのフラグ。ホーム画面に戻るたびに毎回表示されると煩わしいため、画面回転等での
  * 再コンポジションをまたいでプロセスが生きている間は表示済みとして扱う。
  */
 private object MissingPermissionsSheetState {
     var shownThisProcess = false
-}
-
-private fun relaxedMinSizeDp(info: AppWidgetProviderInfo): DpSize {
-    val declaredMinWidth = if (info.minResizeWidth > 0) info.minResizeWidth else info.minWidth
-    val declaredMinHeight = if (info.minResizeHeight > 0) info.minResizeHeight else info.minHeight
-    return DpSize((declaredMinWidth * MinSizeRelaxFactor).dp, (declaredMinHeight * MinSizeRelaxFactor).dp)
 }
 
 /**
@@ -251,19 +187,6 @@ private data class PendingAppSlotDrop(
 )
 
 /**
- * ヘッダー下部に引く区切り線。全モード（横画面・縦画面（小）・縦画面（大））共通で使う。
- */
-@Composable
-private fun HeaderDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(LocalCyberColors.current.border)
-    )
-}
-
-/**
  * ランチャーのメイン画面。デバイスの向きや画面サイズに基づいて、
  * すべてのセクションのレイアウトを調整します。
  */
@@ -274,47 +197,9 @@ fun CyberLauncherScreen() {
     val activity = remember(context) { context.findActivity() }
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
-    // 画面の回転などで作り直されるたびに全アプリを読み込み直さないよう、キャッシュを使う
-    var allApps by remember { mutableStateOf(InstalledAppsCache.get(context.packageManager)) }
+    // インストール済みアプリの一覧（アプリのインストール・アンインストール・更新で、その場で更新される）
+    val allApps by rememberInstalledApps(context)
     AppWidgetHostManager.ensureInitialized(context)
-
-    // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
-    // 一覧をその場で更新する。
-    DisposableEffect(context) {
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_PACKAGE_ADDED)
-            addAction(Intent.ACTION_PACKAGE_REMOVED)
-            addAction(Intent.ACTION_PACKAGE_REPLACED)
-            addDataScheme("package")
-        }
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(receiverContext: Context, intent: Intent) {
-                // 変更があったのは1パッケージだけなので、インストール済み全アプリを再取得・
-                // 再加工するのではなく、その1件だけを差し替える（他アプリのアイコン処理を
-                // 無駄に繰り返さないため）
-                val packageName = intent.data?.schemeSpecificPart ?: return
-                when (intent.action) {
-                    Intent.ACTION_PACKAGE_REMOVED -> {
-                        // アップデートに伴う一時的なREMOVEDは無視する（続けてADDEDが届く）
-                        if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
-                            allApps = allApps.filterNot { it.packageName == packageName }
-                        }
-                    }
-                    Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REPLACED -> {
-                        val updated = resolveInstalledApp(context.packageManager, packageName)
-                        if (updated != null) {
-                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedByInstallOrder()
-                        }
-                    }
-                }
-                InstalledAppsCache.update(allApps)
-            }
-        }
-        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        onDispose {
-            context.unregisterReceiver(receiver)
-        }
-    }
 
     // PRO（有料機能の買い切り解放）を購入済みかどうか。未購入でPROの機能を使おうとしたときは、
     // その機能の名前を[proPromptFeature]に入れて、PRO解放の案内（購入画面）を表示する
@@ -327,64 +212,15 @@ fun CyberLauncherScreen() {
         return false
     }
 
-    // テーマ判定（SharedPreferencesから取得、なければシステム設定）
-    val systemDark = isSystemInDarkTheme()
-    var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
-    // テーマ（配色・フォントのプリセット）と、フォント。どちらもPROの機能で、PROでない場合は
-    // 従来どおりの配色（ライト/ダーク）と標準のフォントを使う
-    var themePreset by remember { mutableStateOf(loadThemePreset(prefs)) }
-    var cyberFontOption by remember { mutableStateOf(loadCyberFontOption(prefs)) }
-    val activeThemePreset = if (isPro) themePreset else ThemePreset.STANDARD
-    val activeFontOption = if (isPro) cyberFontOption else CyberFontOption.SHARE_TECH_MONO
-    LaunchedEffect(activeFontOption) { applyCyberFont(activeFontOption) }
-    // アイコンパック（PROの機能。PROでない場合は使わない）。パックの読み込み（appfilter.xml の解析）は
-    // 数千件あることもあるため、メインスレッド以外で行う
-    var iconPackPackage by remember { mutableStateOf(IconPackManager.loadSelectedPackage(prefs)) }
-    var iconPackUsePackColors by remember { mutableStateOf(IconPackManager.loadUsePackColors(prefs)) }
-    val activeIconPackPackage = if (isPro) iconPackPackage else null
-    val loadedIconPack by produceState<LoadedIconPack?>(null, activeIconPackPackage) {
-        value = activeIconPackPackage?.let { packageName ->
-            withContext(Dispatchers.IO) { IconPackManager.load(context, packageName) }
-        }
-    }
-    LaunchedEffect(loadedIconPack, iconPackUsePackColors) {
-        IconPackManager.applyIconPack(loadedIconPack?.let { ActiveIconPack(it, iconPackUsePackColors) })
-    }
+    // 見た目の設定（ライト/ダーク・テーマ・フォント・アクセントカラー・アイコンパック）。
+    // テーマ・フォント・アイコンパックはPROの機能で、PROでない場合は従来どおりの配色・標準のフォント・標準のアイコンを使う
+    val theme = rememberLauncherThemeState(prefs)
+    ApplyLauncherThemeEffects(context, theme, isPro)
+    val activeThemePreset = theme.activeThemePreset(isPro)
+    val activeIconPackPackage = theme.activeIconPackPackage(isPro)
     var showIconPackPicker by remember { mutableStateOf(false) }
-    // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
-    var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
-    val colors = (activeThemePreset.colors ?: if (isDarkTheme) {
-        CyberColors(DarkBgColor, DarkPanelColor, DarkAccentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
-    } else {
-        CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
-    }).copy(accent = accentColor)
-    // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
-    var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
-    val colors2 = colors.copy(accent = accentColor2)
-
-    // テーマを切り替える。テーマのアクセントカラー1・2とフォントも一緒に設定する（あとから個別に変えられる）
-    fun selectThemePreset(preset: ThemePreset) {
-        themePreset = preset
-        saveThemePreset(prefs, preset)
-        accentColor = preset.accent
-        accentColor2 = preset.accent2
-        cyberFontOption = preset.font
-        prefs.edit {
-            putInt("accent_color", preset.accent.toArgb())
-            putInt("accent_color_2", preset.accent2.toArgb())
-        }
-        saveCyberFontOption(prefs, preset.font)
-    }
-    // ライト/ダークを切り替える。プリセットのテーマ（ダーク系の固定の配色）を使っている場合は、
-    // 従来どおりの配色（STANDARD）に戻してから切り替える
-    fun setDarkTheme(dark: Boolean) {
-        if (themePreset != ThemePreset.STANDARD) {
-            themePreset = ThemePreset.STANDARD
-            saveThemePreset(prefs, ThemePreset.STANDARD)
-        }
-        isDarkTheme = dark
-        prefs.edit { putBoolean("is_dark_theme", dark) }
-    }
+    val colors = theme.colors(isPro)
+    val colors2 = colors.copy(accent = theme.accentColor2)
 
     // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
     // 最適化除外・使用状況アクセスへの案内）。完了するまでは、それ以降のメインUI用の状態
@@ -393,7 +229,7 @@ fun CyberLauncherScreen() {
     if (showOnboarding) {
         // オンボーディングの背景画像はダーク前提のデザインのため、テーマ設定にかかわらずダークの
         // 配色で表示する（アクセントカラーはユーザーの設定を使う）
-        val onboardingColors = CyberColors(DarkBgColor, DarkPanelColor, accentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
+        val onboardingColors = CyberColors(DarkBgColor, DarkPanelColor, theme.accentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
         CompositionLocalProvider(LocalCyberColors provides onboardingColors) {
             OnboardingScreen(
                 onFinish = {
@@ -640,23 +476,7 @@ fun CyberLauncherScreen() {
 
         // QUICK ACCESSのボタンは、QUICK ACCESS内での並べ替え（入れ替え）と削除のみ
         if (payload.item is AppDragItem.QuickAction) {
-            val from = (source as? AppDragSource.QuickAccess)?.index ?: return
-            val slots = quickActionSlots.toMutableList()
-            fun ensureQuickIndex(index: Int) {
-                while (slots.size <= index) slots.add(null)
-            }
-            ensureQuickIndex(from)
-            when (target) {
-                AppDropTarget.RemoveZone -> slots[from] = null
-                is AppDropTarget.QuickSlot -> {
-                    if (target.index == from) return
-                    ensureQuickIndex(target.index)
-                    val existing = slots[target.index]
-                    slots[target.index] = slots[from]
-                    slots[from] = existing
-                }
-                else -> return
-            }
+            val slots = applyQuickActionDrop(quickActionSlots, source, target) ?: return
             quickActionSlots = slots
             saveQuickActionSlots(prefs, quickActionsKey, slots)
             return
@@ -669,135 +489,14 @@ fun CyberLauncherScreen() {
             return
         }
 
-        val grid = gridPackages.toMutableList()
-        val dock = dockPackages.toMutableList()
-        val editedFolders = folders.toMutableMap()
-        fun MutableList<String>.ensureIndex(index: Int) {
-            while (size <= index) add("")
-        }
-        fun updateFolderSlot(folderId: String, index: Int, value: String) {
-            val folder = editedFolders[folderId] ?: return
-            editedFolders[folderId] = folder.copy(packageNames = folder.packageNames.toMutableList().also { it[index] = value })
-        }
-        val draggedValue = when (val item = payload.item) {
-            is AppDragItem.App -> item.appInfo.packageName
-            is AppDragItem.Folder -> folderSlotValue(item.folder.id)
-            is AppDragItem.QuickAction -> return
-        }
-        // ドラッグ元のスロットの中身を置き換える（""で空ける。入れ替えの場合は相手の値を入れる）。
-        // アプリドロワーから持ってきた場合は、元のスロットがないため何もしない
-        fun replaceSource(value: String) {
-            when (source) {
-                is AppDragSource.Grid -> { grid.ensureIndex(source.index); grid[source.index] = value }
-                is AppDragSource.Dock -> { dock.ensureIndex(source.index); dock[source.index] = value }
-                is AppDragSource.FolderSlot -> updateFolderSlot(source.folderId, source.index, value)
-                is AppDragSource.QuickAccess, AppDragSource.Drawer -> Unit
-            }
-        }
-
-        when (target) {
-            AppDropTarget.RemoveZone -> {
-                (payload.item as? AppDragItem.Folder)?.let { item ->
-                    editedFolders.remove(item.folder.id)
-                    deleteFolder(prefs, item.folder.id)
-                }
-                replaceSource("")
-            }
-            // 開いているフォルダの中での並べ替え（入れ替え）
-            is AppDropTarget.FolderSlot -> {
-                val from = source as? AppDragSource.FolderSlot ?: return
-                if (from.index == target.index) return
-                val existing = editedFolders[target.folderId]?.packageNames?.getOrNull(target.index) ?: return
-                updateFolderSlot(target.folderId, target.index, draggedValue)
-                updateFolderSlot(from.folderId, from.index, existing)
-            }
-            is AppDropTarget.GridSlot -> {
-                if (source == AppDragSource.Grid(target.index)) return
-                grid.ensureIndex(target.index)
-                val existing = grid[target.index]
-                // フォルダの中のアプリを、そのフォルダ自身の上に落とした場合は何もしない
-                if (source is AppDragSource.FolderSlot && existing == folderSlotValue(source.folderId)) return
-                val item = payload.item
-                when {
-                    existing.isEmpty() -> {
-                        replaceSource("")
-                        grid[target.index] = draggedValue
-                    }
-                    // フォルダの上に重ねたアプリは、フォルダの空きに追加する
-                    item is AppDragItem.App && isFolderSlotValue(existing) -> {
-                        val folderId = folderIdFromSlotValue(existing) ?: return
-                        val folder = editedFolders[folderId] ?: return
-                        val packageName = item.appInfo.packageName
-                        val emptyIndex = folder.packageNames.indexOfFirst { it.isEmpty() }
-                        if (packageName in folder.packageNames) {
-                            // 既に入っているアプリは重複させず、ドラッグ元から外すだけにする
-                            if (source == AppDragSource.Drawer) return
-                        } else if (emptyIndex < 0) {
-                            Toast.makeText(context, "フォルダがいっぱいです", Toast.LENGTH_SHORT).show()
-                            return
-                        } else {
-                            updateFolderSlot(folderId, emptyIndex, packageName)
-                        }
-                        replaceSource("")
-                    }
-                    // アプリの上に重ねたアプリは、2つをまとめた新しいフォルダにする
-                    item is AppDragItem.App -> {
-                        if (existing == item.appInfo.packageName) return
-                        val created = createFolder(prefs, "新しいフォルダ")
-                        editedFolders[created.id] = created.copy(
-                            packageNames = created.packageNames.toMutableList().also {
-                                it[0] = existing
-                                it[1] = item.appInfo.packageName
-                            }
-                        )
-                        replaceSource("")
-                        grid[target.index] = folderSlotValue(created.id)
-                    }
-                    // フォルダを他のスロットに重ねた場合は、位置を入れ替える
-                    else -> {
-                        if (source !is AppDragSource.Grid) return
-                        replaceSource(existing)
-                        grid[target.index] = draggedValue
-                    }
-                }
-            }
-            is AppDropTarget.DockSlot -> {
-                if (source == AppDragSource.Dock(target.index)) return
-                dock.ensureIndex(target.index)
-                val existing = dock[target.index]
-                if (existing.isEmpty()) {
-                    replaceSource("")
-                } else {
-                    // 使用中のスロットに重ねた場合は、ドラッグ元と入れ替える
-                    // （アプリドロワーから持ってきた場合は入れ替え先がないため何もしない）
-                    if (source == AppDragSource.Drawer) return
-                    replaceSource(existing)
-                }
-                dock[target.index] = draggedValue
-            }
-            else -> return
-        }
-
-        // フォルダの中から取り出して中身が1つだけになったフォルダは、フォルダをやめて
-        // 残ったアプリそのものの表示に戻す（フォルダの中の空きスロットにアプリを追加していく
-        // ときなどは判定せず、取り出したときだけ判定する）
-        if (source is AppDragSource.FolderSlot) {
-            val remaining = editedFolders[source.folderId]?.packageNames?.filter { it.isNotEmpty() }
-            val folderSlotIndex = grid.indexOf(folderSlotValue(source.folderId))
-            if (remaining != null && remaining.size == 1 && folderSlotIndex >= 0) {
-                grid[folderSlotIndex] = remaining.first()
-                editedFolders.remove(source.folderId)
-                deleteFolder(prefs, source.folderId)
-            }
-            // フォルダの外へ持ち出した場合や、フォルダ自体がなくなった場合はポップアップを閉じる
-            val movedOut = target is AppDropTarget.GridSlot || target is AppDropTarget.DockSlot
-            if (movedOut || source.folderId !in editedFolders) openFolderId = null
-        }
-
+        // APP LIST・DOCK・フォルダの間での移動・入れ替え・フォルダの作成など
+        val result = applySlotDrop(context, prefs, SlotArrangement(gridPackages, dockPackages, folders), payload, target) ?: return
+        val (grid, dock, editedFolders) = result.arrangement
+        if (result.closeFolder) openFolderId = null
         editedFolders.values.forEach { folder ->
             if (folders[folder.id] != folder) saveFolder(prefs, folder)
         }
-        if (editedFolders != folders) folders = editedFolders.toMap()
+        if (editedFolders != folders) folders = editedFolders
         if (grid != gridPackages) {
             gridPackages = grid
             prefs.edit { putString(gridAppsKey, grid.joinToString(",")) }
@@ -872,18 +571,8 @@ fun CyberLauncherScreen() {
     // （システムのアンインストール確認画面が開いた直後なども含む）に発火してしまい、
     // そのタイミングで大きな再コンポジションが走ると、一部端末でその確認画面自体が
     // 開いた直後に閉じてしまう不具合があったため。
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { isWidgetEditMode = false }
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isWidgetEditMode = false
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
 
     // 他アプリのAppWidget（外部ウィジェット）のRemoteViews更新を受け取れるよう、
     // ランチャーが表示されている間だけAppWidgetHostをlisten状態にする。
@@ -938,17 +627,7 @@ fun CyberLauncherScreen() {
             }
         }
     }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                missingPermissionsResumeSignal++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { missingPermissionsResumeSignal++ }
     if (showMissingPermissionsSheet) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             MissingPermissionsSheet(
@@ -1041,7 +720,7 @@ fun CyberLauncherScreen() {
         val cellSize = canvasCellSize ?: return
         val cellWidthPx = with(density) { cellSize.width.toPx() }
         val cellHeightPx = with(density) { cellSize.height.toPx() }
-        val targetSize = if (type == WidgetPanel.APP_SLOT_ICON_ONLY) AppSlotIconOnlyTargetSize else AppSlotNamedTargetSize
+        val targetSize = appSlotTargetSize(type)
         val local = drop.positionOnScreen - widgetCanvasBoundsOnScreen.topLeft
         val slot = findFreeGridSlotNear(
             placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows,
@@ -1104,31 +783,10 @@ fun CyberLauncherScreen() {
         appDragState.cancel()
     }
 
-    // 外部ウィジェット（他アプリのAppWidget）を追加するフロー。
-    // allocateAppWidgetId()で確保したIDを、選択→バインド許可確認→（必要なら設定画面）→配置確定、
-    // の間ずっと覚えておく必要があるため、ここに保持する
-    var pendingAppWidgetId by remember { mutableIntStateOf(-1) }
-
+    // 外部ウィジェット（他アプリのAppWidget）を、推奨サイズに応じたセル数で空いている場所に置く
     fun placeNewAppWidget(appWidgetId: Int) {
-        // 種類問わず同じ標準サイズで配置していたのを、外部ウィジェットについては実際の
-        // 推奨サイズ（AppWidgetProviderInfo.minWidth/minHeight）に応じたセル数で配置するようにし、
-        // 「常に大きめの決め打ちサイズで追加される」問題を解消する。推奨サイズで空きがなければ、
-        // 許容する最小サイズ（緩和後）まで縮めて再挑戦する
         val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
-        val cellSize = canvasCellSize
-        val slot = if (info != null && cellSize != null) {
-            val preferredColSpan = info.minWidth.dp / cellSize.width
-            val preferredRowSpan = info.minHeight.dp / cellSize.height
-            val relaxedMinSize = relaxedMinSizeDp(info)
-            val minColSpan = relaxedMinSize.width / cellSize.width
-            val minRowSpan = relaxedMinSize.height / cellSize.height
-            findFreeGridSlotForSize(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows, preferredColSpan, preferredRowSpan)
-                ?: findFreeGridSlotForSize(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows, minColSpan, minRowSpan)
-        } else {
-            findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)?.let {
-                floatArrayOf(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
-            }
-        }
+        val slot = slotForNewAppWidget(info, canvasCellSize, placedWidgets, widgetLayoutMode)
         if (slot != null) {
             val (col, row, colSpan, rowSpan) = slot
             updatePlacedWidgets(
@@ -1149,32 +807,8 @@ fun CyberLauncherScreen() {
         }
     }
 
-    // バインド許可が下りた（＝appWidgetIdが実際に使える状態になった）直後の共通処理。
-    // 設定画面（configure）を持つウィジェットならそちらを起動し、なければそのまま配置を確定する。
-    //
-    // 設定画面の起動には、自前でIntent(ACTION_APPWIDGET_CONFIGURE)を組み立てて直接startActivityは
-    // しない。多くのOEM製ウィジェット（例: Samsung Notesの「ノートのショートカット」）は設定画面が
-    // exported="false"であり、直接起動するとSecurityExceptionでクラッシュする。
-    // AppWidgetHost.startAppWidgetConfigureActivityForResult()はシステムが発行した
-    // IntentSender経由で起動するため、exportedでない設定画面も正しく開ける
-    // （結果はAppWidgetConfigureResultBridge経由でMainActivity.onActivityResultから受け取る）
-    fun proceedAfterBind(appWidgetId: Int) {
-        val configureComponent = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)?.configure
-        if (configureComponent != null) {
-            AppWidgetConfigureResultBridge.onResult = { resultCode ->
-                if (resultCode == Activity.RESULT_OK) {
-                    placeNewAppWidget(appWidgetId)
-                } else {
-                    AppWidgetHostManager.host.deleteAppWidgetId(appWidgetId)
-                }
-            }
-            AppWidgetHostManager.host.startAppWidgetConfigureActivityForResult(
-                activity, appWidgetId, 0, AppWidgetConfigureResultBridge.REQUEST_CODE, null
-            )
-        } else {
-            placeNewAppWidget(appWidgetId)
-        }
-    }
+    // 外部ウィジェットを追加するフロー（バインド許可確認→必要なら設定画面→配置）
+    val startAppWidgetAddFlow = rememberAppWidgetAddFlow(activity) { appWidgetId -> placeNewAppWidget(appWidgetId) }
 
     // 設定のバックアップ（書き出し）と復元（読み込み）。ファイルの場所は端末標準のファイル選択画面で選ぶ。
     // 復元は今の設定をすべて置き換えるため、ファイルを選んだあとに確認してから行う
@@ -1206,79 +840,14 @@ fun CyberLauncherScreen() {
         )
     }
 
-    // このアプリはBIND_APPWIDGET権限を持たない（サードパーティのランチャーは通常持てない）ため、
-    // bindAppWidgetIdIfAllowedは基本的にfalseを返す。その場合はACTION_APPWIDGET_BINDで
-    // システムのバインド確認ダイアログを挟む、というのが非特権ランチャーの標準的な実装方法
-    val appWidgetBindLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val id = pendingAppWidgetId
-        pendingAppWidgetId = -1
-        if (id == -1) return@rememberLauncherForActivityResult
-        if (result.resultCode == Activity.RESULT_OK) {
-            proceedAfterBind(id)
-        } else {
-            AppWidgetHostManager.host.deleteAppWidgetId(id)
-        }
-    }
-
-    // 自作の一覧（AppWidgetPickerDialog）でウィジェットが選択されたときの、バインド開始処理
-    // 他アプリのAppWidgetは、種類（WidgetPanel.APPWIDGET）ではなくインスタンス（appWidgetId）ごとに
-    // 実際の最小/最大サイズ・対応するリサイズ方向が異なるため、AppWidgetProviderInfoから解決する。
-    // GridLauncher内蔵の4種はデフォルト値（制約なし）のままでよい
-    fun appWidgetResizeConstraints(widget: PlacedWidget): ResizeConstraints {
-        if (widget.type != WidgetPanel.APPWIDGET) return ResizeConstraints()
-        val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(widget.appWidgetId)
-            ?: return ResizeConstraints()
-        // ウィジェットが申告する最小サイズを厳密に守ると、Claudeのように大きめの最小値を
-        // 申告しているウィジェットが他ランチャーに比べてかなり大きく見えてしまうため、
-        // 申告値の半分まではリサイズを許容する（画質が粗くなるリスクとのトレードオフ）
-        val minSize = relaxedMinSizeDp(info)
-        val maxSize = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            info.maxResizeWidth > 0 && info.maxResizeHeight > 0
-        ) {
-            DpSize(info.maxResizeWidth.dp, info.maxResizeHeight.dp)
-        } else {
-            null
-        }
-        val axes = when {
-            info.resizeMode and AppWidgetProviderInfo.RESIZE_BOTH == AppWidgetProviderInfo.RESIZE_BOTH -> ResizeAxes.BOTH
-            info.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0 -> ResizeAxes.HORIZONTAL
-            info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0 -> ResizeAxes.VERTICAL
-            else -> ResizeAxes.NONE
-        }
-        return ResizeConstraints(minSize = minSize, maxSize = maxSize, axes = axes)
-    }
-
-    // ウィジェットが許容する最小サイズ（相対緩和後）でも、このグリッドの列数・行数に収まらない
-    // 場合はfalse。measureSizeがまだ測定できていない場合は判断できないため許可扱いにする
-    // （実際に配置しようとするタイミング＝placeNewAppWidgetで改めてチェックする）
-    fun appWidgetFitsOnScreen(info: AppWidgetProviderInfo): Boolean {
-        val cellSize = canvasCellSize ?: return true
-        val minSize = relaxedMinSizeDp(info)
-        val minColSpan = minSize.width / cellSize.width
-        val minRowSpan = minSize.height / cellSize.height
-        return minColSpan <= widgetLayoutMode.columns && minRowSpan <= widgetLayoutMode.rows
-    }
-
+    // 自作の一覧（AppWidgetPickerDialog）でウィジェットが選択されたとき。許容する最小サイズでも
+    // この画面に入り切らないものは、追加の手続きを始める前に知らせる
     fun startBindFlow(info: AppWidgetProviderInfo) {
-        if (!appWidgetFitsOnScreen(info)) {
+        if (!appWidgetFitsOnScreen(info, canvasCellSize, widgetLayoutMode)) {
             appWidgetTooLargeError = true
             return
         }
-        val id = AppWidgetHostManager.host.allocateAppWidgetId()
-        val alreadyBound = AppWidgetManager.getInstance(context).bindAppWidgetIdIfAllowed(id, info.provider)
-        if (alreadyBound) {
-            proceedAfterBind(id)
-        } else {
-            pendingAppWidgetId = id
-            appWidgetBindLauncher.launch(
-                Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
-                }
-            )
-        }
+        startAppWidgetAddFlow(info)
     }
 
     if (showAllAppsDrawer) {
@@ -1300,15 +869,12 @@ fun CyberLauncherScreen() {
                     isWallpaperMode = enabled
                     prefs.edit { putBoolean("is_wallpaper_mode", enabled) }
                 },
-                isDarkTheme = isDarkTheme,
-                onDarkThemeChange = { dark -> setDarkTheme(dark) },
+                isDarkTheme = theme.isDarkTheme,
+                onDarkThemeChange = { dark -> theme.updateDarkTheme(dark) },
                 themePreset = activeThemePreset,
-                onThemePresetChange = { preset -> selectThemePreset(preset) },
-                fontOption = activeFontOption,
-                onFontOptionChange = { font ->
-                    cyberFontOption = font
-                    saveCyberFontOption(prefs, font)
-                },
+                onThemePresetChange = { preset -> theme.selectThemePreset(preset) },
+                fontOption = theme.activeFontOption(isPro),
+                onFontOptionChange = { font -> theme.updateFontOption(font) },
                 // アイコンパック（PROの機能）
                 iconPackLabel = remember(activeIconPackPackage) {
                     activeIconPackPackage?.let { packageName ->
@@ -1318,21 +884,12 @@ fun CyberLauncherScreen() {
                     }
                 },
                 onOpenIconPackPicker = { if (requirePro("アイコンパック")) showIconPackPicker = true },
-                iconPackUsePackColors = iconPackUsePackColors,
-                onIconPackUsePackColorsChange = { usePackColors ->
-                    iconPackUsePackColors = usePackColors
-                    IconPackManager.saveUsePackColors(prefs, usePackColors)
-                },
-                accentColor = accentColor,
-                onAccentColorChange = { color ->
-                    accentColor = color
-                    prefs.edit { putInt("accent_color", color.toArgb()) }
-                },
-                accentColor2 = accentColor2,
-                onAccentColor2Change = { color ->
-                    accentColor2 = color
-                    prefs.edit { putInt("accent_color_2", color.toArgb()) }
-                },
+                iconPackUsePackColors = theme.iconPackUsePackColors,
+                onIconPackUsePackColorsChange = { usePackColors -> theme.updateIconPackUsePackColors(usePackColors) },
+                accentColor = theme.accentColor,
+                onAccentColorChange = { color -> theme.updateAccentColor(color) },
+                accentColor2 = theme.accentColor2,
+                onAccentColor2Change = { color -> theme.updateAccentColor2(color) },
                 accent2Panels = accent2WidgetPanels,
                 onPanelAccentChange = { panel, useAccent2 -> setWidgetPanelAccent(panel, useAccent2) },
                 useOriginalIconColors = useOriginalIconColors,
@@ -1537,33 +1094,16 @@ fun CyberLauncherScreen() {
     // 別のスロットに設定済みのボタンを選んだときの確認。移動すると元のスロットは空になる
     pendingQuickActionMove?.let { (index, actionId) ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AlertDialog(
-                onDismissRequest = { pendingQuickActionMove = null },
-                containerColor = colors.panel,
-                title = {
-                    Text("設定済みのボタンです", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
+            LauncherAlertDialog(
+                title = "設定済みのボタンです",
+                message = "「${actionId.label}」は別のスロットに設定されています。このスロットに移動しますか？（元のスロットは空になります）",
+                confirmLabel = "移動する",
+                onConfirm = {
+                    assignQuickAction(index, actionId)
+                    pendingQuickActionMove = null
                 },
-                text = {
-                    Text(
-                        "「${actionId.label}」は別のスロットに設定されています。このスロットに移動しますか？（元のスロットは空になります）",
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        color = colors.text.copy(alpha = 0.8f)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        assignQuickAction(index, actionId)
-                        pendingQuickActionMove = null
-                    }) {
-                        Text("移動する", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingQuickActionMove = null }) {
-                        Text("キャンセル", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text.copy(alpha = 0.7f))
-                    }
-                }
+                dismissLabel = "キャンセル",
+                onDismiss = { pendingQuickActionMove = null }
             )
         }
     }
@@ -1586,22 +1126,10 @@ fun CyberLauncherScreen() {
                 onDismiss = { showWidgetTypeSelector = false },
                 onSelect = select@{ type ->
                     if (type in ProOnlyWidgetPanels && !requirePro("${type.label} ウィジェット")) return@select
-                    val isAppSlot = type == WidgetPanel.APP_SLOT_ICON_ONLY || type == WidgetPanel.APP_SLOT_NAMED
-                    val cellSize = canvasCellSize
-                    val slot = if (isAppSlot && cellSize != null) {
-                        val targetSize = if (type == WidgetPanel.APP_SLOT_ICON_ONLY) AppSlotIconOnlyTargetSize else AppSlotNamedTargetSize
-                        findFreeGridSlotForSize(
-                            placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows,
-                            targetSize.width / cellSize.width, targetSize.height / cellSize.height
-                        )
-                    } else {
-                        findFreeGridSlot(placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows)?.let {
-                            floatArrayOf(it[0].toFloat(), it[1].toFloat(), it[2].toFloat(), it[3].toFloat())
-                        }
-                    }
+                    val slot = slotForNewWidget(type, canvasCellSize, placedWidgets, widgetLayoutMode)
                     if (slot != null) {
                         val (col, row, colSpan, rowSpan) = slot
-                        val instanceId = if (isAppSlot) allocateNextAppSlotInstanceId(prefs) else -1
+                        val instanceId = if (type.isAppSlot) allocateNextAppSlotInstanceId(prefs) else -1
                         updatePlacedWidgets(
                             placedWidgets + PlacedWidget(
                                 type = type,
@@ -1724,25 +1252,12 @@ fun CyberLauncherScreen() {
     // 許容する最小サイズでもこの画面のグリッドに入り切らなかった（または空きがなかった）場合の通知
     if (appWidgetTooLargeError) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AlertDialog(
-                onDismissRequest = { appWidgetTooLargeError = false },
-                containerColor = colors.panel,
-                title = {
-                    Text("追加できません", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
-                },
-                text = {
-                    Text(
-                        "このウィジェットは、許容する最小サイズでもこの画面には入り切らないため追加できませんでした。",
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        color = colors.text.copy(alpha = 0.8f)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { appWidgetTooLargeError = false }) {
-                        Text("閉じる", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
-                    }
-                }
+            LauncherAlertDialog(
+                title = "追加できません",
+                message = "このウィジェットは、許容する最小サイズでもこの画面には入り切らないため追加できませんでした。",
+                confirmLabel = "閉じる",
+                onConfirm = { appWidgetTooLargeError = false },
+                onDismiss = { appWidgetTooLargeError = false }
             )
         }
     }
@@ -1750,25 +1265,12 @@ fun CyberLauncherScreen() {
     // 長押しメニューからウィジェットを追加しようとしたが、ホーム画面に空きがなかった場合の通知
     if (showNoWidgetSpaceError) {
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AlertDialog(
-                onDismissRequest = { showNoWidgetSpaceError = false },
-                containerColor = colors.panel,
-                title = {
-                    Text("空きがありません", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text)
-                },
-                text = {
-                    Text(
-                        "ホーム画面にウィジェットを置く空きがありません。既存のウィジェットを縮小するか削除してから追加してください。",
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        color = colors.text.copy(alpha = 0.8f)
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = { showNoWidgetSpaceError = false }) {
-                        Text("閉じる", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
-                    }
-                }
+            LauncherAlertDialog(
+                title = "空きがありません",
+                message = "ホーム画面にウィジェットを置く空きがありません。既存のウィジェットを縮小するか削除してから追加してください。",
+                confirmLabel = "閉じる",
+                onConfirm = { showNoWidgetSpaceError = false },
+                onDismiss = { showNoWidgetSpaceError = false }
             )
         }
     }
@@ -1841,51 +1343,19 @@ fun CyberLauncherScreen() {
             ) {
                 // ヘッダー（カスタマイズ画面で非表示にでき、その分ウィジェットのエリアが広がる）
                 if (showHeader) {
-                    if (isPortrait && screenWidthDp < 600) {
-                        // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
-                        HeaderSectionPortrait(
-                            nowPlaying = headerNowPlaying,
-                            title = if (isPro) headerTitle else HeaderTitle.Default,
-                            onCoreClick = { showCustomizeSheet = true }
-                        )
-                    } else if (isPortrait) {
-                        // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
-                        HeaderSectionPortrait(
-                            nowPlaying = headerNowPlaying,
-                            title = if (isPro) headerTitle else HeaderTitle.Default,
-                            isLarge = true,
-                            onCoreClick = { showCustomizeSheet = true }
-                        )
-                    } else {
-                        // 横画面（ランドスケープ/メイン画面）のレイアウト
-                        HeaderSectionLandscape(
-                            nowPlaying = headerNowPlaying,
-                            title = if (isPro) headerTitle else HeaderTitle.Default,
-                            onCoreClick = { showCustomizeSheet = true }
-                        )
-                    }
+                    LauncherHeader(
+                        mode = widgetLayoutMode,
+                        nowPlaying = headerNowPlaying,
+                        title = if (isPro) headerTitle else HeaderTitle.Default,
+                        onCoreClick = { showCustomizeSheet = true }
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     HeaderDivider()
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // ACCESS GRID内部のアプリ一覧の基準列数・行数。画面モードごとに従来の
-                // 「Mサイズ」と同じ値を使う。ウィジェット自体がリサイズされた場合は、
-                // AccessGridSection側が実際の描画サイズを見て、スロットが窮屈になりすぎなければ
-                // 減らし、間延びしすぎるようなら増やす形でこの基準値から調整する
-                val accessGridMColumns: Int
-                val accessGridMRows: Int
-                when (widgetLayoutMode) {
-                    WidgetLayoutMode.SMALL_PORTRAIT -> {
-                        accessGridMColumns = 3; accessGridMRows = 3
-                    }
-                    WidgetLayoutMode.LARGE_PORTRAIT -> {
-                        accessGridMColumns = 4; accessGridMRows = 3
-                    }
-                    WidgetLayoutMode.LANDSCAPE -> {
-                        accessGridMColumns = 3; accessGridMRows = 5
-                    }
-                }
+                // APP LIST内部のアプリ一覧の基準列数・行数（画面モードごと）
+                val (accessGridMColumns, accessGridMRows) = accessGridBaseSize(widgetLayoutMode)
 
                 // ACCESS GRID/CALENDAR/SYSTEM MONITOR/QUICK ACCESSを、追加・削除・リサイズ・
                 // 移動できるウィジェットとして配置するキャンバス。
@@ -1894,10 +1364,8 @@ fun CyberLauncherScreen() {
                     rows = widgetLayoutMode.rows,
                     placedWidgets = placedWidgets,
                     isWidgetEditMode = isWidgetEditMode,
-                    resizeConstraints = ::appWidgetResizeConstraints,
-                    hideTopRightCorner = { widget ->
-                        widget.type == WidgetPanel.APP_SLOT_ICON_ONLY || widget.type == WidgetPanel.APP_SLOT_NAMED
-                    },
+                    resizeConstraints = { widget -> appWidgetResizeConstraints(context, widget) },
+                    hideTopRightCorner = { widget -> widget.type.isAppSlot },
                     deleteZoneBoundsInRoot = deleteZoneBoundsInRoot,
                     onCellSizeMeasured = { w, h -> canvasCellSize = DpSize(w, h) },
                     onLayoutChange = { updatePlacedWidgets(it) },
@@ -1977,7 +1445,7 @@ fun CyberLauncherScreen() {
                             isWallpaperMode = isWallpaperMode,
                             gridSize = quickAccessGridSize,
                             pageCount = quickAccessPageCount,
-                            accentColor = accentColor,
+                            accentColor = theme.accentColor,
                             useOriginalIconColors = useOriginalIconColors,
                             showBorder = WidgetPanel.QUICK_ACCESS !in hiddenWidgetPanels,
                             buttonStyle = quickButtonStyle,
@@ -1995,12 +1463,9 @@ fun CyberLauncherScreen() {
                             },
                             onThemeToggle = {
                                 // プリセットのテーマを使っている場合は、従来の配色に戻したうえでライト/ダークを切り替える
-                                setDarkTheme(if (activeThemePreset == ThemePreset.STANDARD) !isDarkTheme else false)
+                                theme.updateDarkTheme(if (activeThemePreset == ThemePreset.STANDARD) !theme.isDarkTheme else false)
                             },
-                            onAccentColorChange = { color ->
-                                accentColor = color
-                                prefs.edit { putInt("accent_color", color.toArgb()) }
-                            },
+                            onAccentColorChange = { color -> theme.updateAccentColor(color) },
                             onUseOriginalIconColorsChange = { toggleUseOriginalIconColors() },
                             onAddClick = { index -> quickActionAddIndex = index }
                         )
@@ -2164,10 +1629,9 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             IconPackPickerDialog(
                 iconPacks = iconPacks,
-                selectedPackage = iconPackPackage,
+                selectedPackage = theme.iconPackPackage,
                 onSelect = { packageName ->
-                    iconPackPackage = packageName
-                    IconPackManager.saveSelectedPackage(prefs, packageName)
+                    theme.updateIconPack(packageName)
                     showIconPackPicker = false
                 },
                 onDismiss = { showIconPackPicker = false }
@@ -2195,32 +1659,17 @@ fun CyberLauncherScreen() {
     // 復元の確認（今の設定がすべて置き換わるため）
     pendingRestoreUri?.let { uri ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
-            AlertDialog(
-                onDismissRequest = { pendingRestoreUri = null },
-                containerColor = colors.panel,
-                title = { Text("設定を読み込みますか？", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text) },
-                text = {
-                    Text(
-                        "今の配置・配色・各種設定は、選んだファイルの内容にすべて置き換わります。" +
-                            "外部ウィジェットは、この端末にないものは読み込まれません。",
-                        fontFamily = CyberFont,
-                        fontSize = 12.sp,
-                        color = colors.text.copy(alpha = 0.8f)
-                    )
+            LauncherAlertDialog(
+                title = "設定を読み込みますか？",
+                message = "今の配置・配色・各種設定は、選んだファイルの内容にすべて置き換わります。" +
+                    "外部ウィジェットは、この端末にないものは読み込まれません。",
+                confirmLabel = "読み込む",
+                onConfirm = {
+                    pendingRestoreUri = null
+                    restoreBackup(uri)
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        pendingRestoreUri = null
-                        restoreBackup(uri)
-                    }) {
-                        Text("読み込む", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { pendingRestoreUri = null }) {
-                        Text("キャンセル", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text.copy(alpha = 0.7f))
-                    }
-                }
+                dismissLabel = "キャンセル",
+                onDismiss = { pendingRestoreUri = null }
             )
         }
     }
@@ -2252,7 +1701,7 @@ fun CyberLauncherScreen() {
                     if (widget.type == WidgetPanel.APPWIDGET) {
                         AppWidgetHostManager.host.deleteAppWidgetId(widget.appWidgetId)
                     }
-                    if (widget.type == WidgetPanel.APP_SLOT_ICON_ONLY || widget.type == WidgetPanel.APP_SLOT_NAMED) {
+                    if (widget.type.isAppSlot) {
                         clearAppSlotAssignment(prefs, widget.instanceId)
                         appSlotAssignments = appSlotAssignments - widget.instanceId
                     }
@@ -2260,41 +1709,6 @@ fun CyberLauncherScreen() {
                     pendingDeleteWidget = null
                 },
                 onDismiss = { pendingDeleteWidget = null }
-            )
-        }
-    }
-}
-
-/**
- * ウィジェットの移動ドラッグ中にDock付近へ表示する、「ここにドラッグして削除」ゾーン。
- * ドラッグ中の指がこの範囲に入っている間は[isActive]がtrueになり、危険色で強調表示する。
- */
-@Composable
-private fun DeleteWidgetDropZone(isActive: Boolean) {
-    val colors = LocalCyberColors.current
-    val dangerColor = Color(0xFFFF3B4E)
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (isActive) dangerColor.copy(alpha = 0.3f) else colors.bg.copy(alpha = 0.92f),
-        border = BorderStroke(1.dp, dangerColor.copy(alpha = if (isActive) 1f else 0.6f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = null,
-                tint = dangerColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (isActive) "指を離すと削除します" else "ここにドラッグして削除",
-                fontFamily = CyberFont,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = dangerColor
             )
         }
     }
