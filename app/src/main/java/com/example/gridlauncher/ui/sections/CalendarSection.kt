@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.gridlauncher.ui.components.WidgetHeaderTitle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import java.util.Locale
@@ -245,8 +246,8 @@ fun CalendarSection(modifier: Modifier = Modifier, showBorder: Boolean = true) {
                     .size(7.dp)
                     .background(LocalCyberColors.current.accent))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("CALENDAR", fontFamily = CyberFont, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Spacer(modifier = Modifier.weight(1f))
+                // 見出し（フォントによって幅が足りなければ、1行に収まるまで縮める）
+                WidgetHeaderTitle("CALENDAR", fontSize = 11.sp)
                 // 表示モード切り替え（1つのボタンで現在のモードを表示し、タップで循環させる）
                 // Material3のSurface(onClick=...)はアクセシビリティ用に最小48dpのタッチ領域を
                 // 強制するため、ここではあえてBox+clickableで組んで高さを詰めている

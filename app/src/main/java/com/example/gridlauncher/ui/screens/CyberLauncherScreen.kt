@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +22,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
@@ -57,13 +59,18 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.model.FolderInfo
 import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.model.PlacedWidget
 import com.example.gridlauncher.model.QuickActionId
 import com.example.gridlauncher.model.WidgetPanel
+import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AppActionDialog
+import com.example.gridlauncher.ui.components.ProUpgradeDialog
+import com.example.gridlauncher.ui.components.AppSlotStyleDialog
+import com.example.gridlauncher.ui.components.IconPackPickerDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
 import com.example.gridlauncher.ui.components.AppWidgetHostSection
@@ -80,10 +87,14 @@ import com.example.gridlauncher.ui.drag.AppDragPayload
 import com.example.gridlauncher.ui.drag.AppDragSource
 import com.example.gridlauncher.ui.drag.AppDropTarget
 import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.boundsOnScreen
 import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.SlotGridSize
 import com.example.gridlauncher.util.DockLayout
+import com.example.gridlauncher.util.HeaderTitle
+import com.example.gridlauncher.util.loadHeaderTitle
+import com.example.gridlauncher.util.saveHeaderTitle
 import com.example.gridlauncher.util.loadDockLayout
 import com.example.gridlauncher.util.dockAppsKeyFor
 import com.example.gridlauncher.util.loadShareDockAcrossOrientations
@@ -97,9 +108,10 @@ import com.example.gridlauncher.util.createFolder
 import com.example.gridlauncher.util.deleteFolder
 import com.example.gridlauncher.util.findFreeGridSlot
 import com.example.gridlauncher.util.findFreeGridSlotForSize
+import com.example.gridlauncher.util.findFreeGridSlotNear
 import com.example.gridlauncher.util.folderIdFromSlotValue
 import com.example.gridlauncher.util.folderSlotValue
-import com.example.gridlauncher.util.getInstalledApps
+import com.example.gridlauncher.util.InstalledAppsCache
 import com.example.gridlauncher.util.isFolderSlotValue
 import com.example.gridlauncher.util.loadAppSlotAssignments
 import com.example.gridlauncher.util.loadAccent2WidgetPanels
@@ -118,8 +130,28 @@ import com.example.gridlauncher.util.quickActionsKeyFor
 import com.example.gridlauncher.util.saveShareQuickActionsAcrossOrientations
 import com.example.gridlauncher.util.OnboardingSteps
 import com.example.gridlauncher.util.openPowerMenuOrRequestPermission
+import com.example.gridlauncher.util.performSystemActionOrRequestPermission
+import com.example.gridlauncher.util.AccessibilityServiceStatus
+import com.example.gridlauncher.util.accessibilityServiceStatus
+import com.example.gridlauncher.util.DefaultGestureBindings
+import com.example.gridlauncher.util.GestureAction
+import com.example.gridlauncher.util.GestureBinding
+import com.example.gridlauncher.util.HomeGesture
+import com.example.gridlauncher.util.loadGestureBindings
+import com.example.gridlauncher.util.saveGestureBinding
 import com.example.gridlauncher.util.requiredSlotGridPages
 import com.example.gridlauncher.util.resolveInstalledApp
+import com.example.gridlauncher.util.sortedByInstallOrder
+import com.example.gridlauncher.util.ActiveIconPack
+import com.example.gridlauncher.util.IconPackManager
+import com.example.gridlauncher.util.LoadedIconPack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import com.example.gridlauncher.util.normalizeStacks
+import com.example.gridlauncher.util.LauncherBackup
+import com.example.gridlauncher.util.loadStackAutoRotateSettings
+import com.example.gridlauncher.util.saveStackAutoRotateSettings
 import com.example.gridlauncher.util.saveAccent2WidgetPanels
 import com.example.gridlauncher.util.saveSlotGridPageCount
 import com.example.gridlauncher.util.saveSlotGridSize
@@ -166,6 +198,12 @@ private val SingleInstanceWidgetPanels = setOf(
     WidgetPanel.CLOCK, WidgetPanel.BATTERY, WidgetPanel.NOW_PLAYING
 )
 
+/** PROを購入していないと追加できないウィジェットの種類。 */
+private val ProOnlyWidgetPanels = setOf(WidgetPanel.NOW_PLAYING)
+
+/** PROを購入していない場合に配置できる、外部ウィジェットの数。 */
+private const val FreeAppWidgetLimit = 2
+
 /** APP SLOT（単体ウィジェット）を新規追加するときの、見た目として妥当な初期サイズ（dp）。 */
 private val AppSlotIconOnlyTargetSize = DpSize(60.dp, 60.dp)
 private val AppSlotNamedTargetSize = DpSize(140.dp, 64.dp)
@@ -199,6 +237,20 @@ private data class PendingAppSlotRemoval(
 )
 
 /**
+ * アプリを、ウィジェットキャンバスのスロット以外の場所へドロップしたときの、APP SLOT（ウィジェット）
+ * として置く待ち。アイコンのみかアイコン＋名前かを選んでもらうまで保持する。
+ *
+ * @property payload ドロップしたもの（置いたあと、元の場所から外すのに使う）。
+ * @property appInfo ドロップしたアプリ。
+ * @property positionOnScreen 指を離した位置（スクリーン座標）。この近くの空いている場所に置く。
+ */
+private data class PendingAppSlotDrop(
+    val payload: AppDragPayload,
+    val appInfo: AppInfo,
+    val positionOnScreen: Offset
+)
+
+/**
  * ヘッダー下部に引く区切り線。全モード（横画面・縦画面（小）・縦画面（大））共通で使う。
  */
 @Composable
@@ -222,7 +274,8 @@ fun CyberLauncherScreen() {
     val activity = remember(context) { context.findActivity() }
     val haptic = LocalHapticFeedback.current
     val prefs = remember { context.getSharedPreferences("cyber_launcher", Context.MODE_PRIVATE) }
-    var allApps by remember { mutableStateOf(getInstalledApps(context.packageManager)) }
+    // 画面の回転などで作り直されるたびに全アプリを読み込み直さないよう、キャッシュを使う
+    var allApps by remember { mutableStateOf(InstalledAppsCache.get(context.packageManager)) }
     AppWidgetHostManager.ensureInitialized(context)
 
     // アプリのインストール・アンインストール・更新を検知して、SELECT APPやアプリドロワーの
@@ -250,10 +303,11 @@ fun CyberLauncherScreen() {
                     Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_REPLACED -> {
                         val updated = resolveInstalledApp(context.packageManager, packageName)
                         if (updated != null) {
-                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedBy { it.label }
+                            allApps = (allApps.filterNot { it.packageName == packageName } + updated).sortedByInstallOrder()
                         }
                     }
                 }
+                InstalledAppsCache.update(allApps)
             }
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
@@ -262,12 +316,44 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // PRO（有料機能の買い切り解放）を購入済みかどうか。未購入でPROの機能を使おうとしたときは、
+    // その機能の名前を[proPromptFeature]に入れて、PRO解放の案内（購入画面）を表示する
+    val isPro by ProManager.isPro.collectAsState()
+    var proPromptFeature by remember { mutableStateOf<String?>(null) }
+    // PROならtrueを返す。未購入ならPRO解放の案内を出してfalseを返す
+    fun requirePro(featureName: String): Boolean {
+        if (isPro) return true
+        proPromptFeature = featureName
+        return false
+    }
+
     // テーマ判定（SharedPreferencesから取得、なければシステム設定）
     val systemDark = isSystemInDarkTheme()
     var isDarkTheme by remember { mutableStateOf(prefs.getBoolean("is_dark_theme", systemDark)) }
+    // テーマ（配色・フォントのプリセット）と、フォント。どちらもPROの機能で、PROでない場合は
+    // 従来どおりの配色（ライト/ダーク）と標準のフォントを使う
+    var themePreset by remember { mutableStateOf(loadThemePreset(prefs)) }
+    var cyberFontOption by remember { mutableStateOf(loadCyberFontOption(prefs)) }
+    val activeThemePreset = if (isPro) themePreset else ThemePreset.STANDARD
+    val activeFontOption = if (isPro) cyberFontOption else CyberFontOption.SHARE_TECH_MONO
+    LaunchedEffect(activeFontOption) { applyCyberFont(activeFontOption) }
+    // アイコンパック（PROの機能。PROでない場合は使わない）。パックの読み込み（appfilter.xml の解析）は
+    // 数千件あることもあるため、メインスレッド以外で行う
+    var iconPackPackage by remember { mutableStateOf(IconPackManager.loadSelectedPackage(prefs)) }
+    var iconPackUsePackColors by remember { mutableStateOf(IconPackManager.loadUsePackColors(prefs)) }
+    val activeIconPackPackage = if (isPro) iconPackPackage else null
+    val loadedIconPack by produceState<LoadedIconPack?>(null, activeIconPackPackage) {
+        value = activeIconPackPackage?.let { packageName ->
+            withContext(Dispatchers.IO) { IconPackManager.load(context, packageName) }
+        }
+    }
+    LaunchedEffect(loadedIconPack, iconPackUsePackColors) {
+        IconPackManager.applyIconPack(loadedIconPack?.let { ActiveIconPack(it, iconPackUsePackColors) })
+    }
+    var showIconPackPicker by remember { mutableStateOf(false) }
     // メインテーマのアクセントカラー（デフォルトは従来通りのオレンジ）。カラーパレットで変更可能。
     var accentColor by remember { mutableStateOf(Color(prefs.getInt("accent_color", LightAccentColor.toArgb()))) }
-    val colors = (if (isDarkTheme) {
+    val colors = (activeThemePreset.colors ?: if (isDarkTheme) {
         CyberColors(DarkBgColor, DarkPanelColor, DarkAccentColor, DarkTextColor, DarkBorderColor, DarkCoreColor)
     } else {
         CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
@@ -275,6 +361,30 @@ fun CyberLauncherScreen() {
     // アクセントカラー2。カスタマイズ画面でウィジェットごとに1と2のどちらを使うか選べる
     var accentColor2 by remember { mutableStateOf(Color(prefs.getInt("accent_color_2", DefaultAccentColor2.toArgb()))) }
     val colors2 = colors.copy(accent = accentColor2)
+
+    // テーマを切り替える。テーマのアクセントカラー1・2とフォントも一緒に設定する（あとから個別に変えられる）
+    fun selectThemePreset(preset: ThemePreset) {
+        themePreset = preset
+        saveThemePreset(prefs, preset)
+        accentColor = preset.accent
+        accentColor2 = preset.accent2
+        cyberFontOption = preset.font
+        prefs.edit {
+            putInt("accent_color", preset.accent.toArgb())
+            putInt("accent_color_2", preset.accent2.toArgb())
+        }
+        saveCyberFontOption(prefs, preset.font)
+    }
+    // ライト/ダークを切り替える。プリセットのテーマ（ダーク系の固定の配色）を使っている場合は、
+    // 従来どおりの配色（STANDARD）に戻してから切り替える
+    fun setDarkTheme(dark: Boolean) {
+        if (themePreset != ThemePreset.STANDARD) {
+            themePreset = ThemePreset.STANDARD
+            saveThemePreset(prefs, ThemePreset.STANDARD)
+        }
+        isDarkTheme = dark
+        prefs.edit { putBoolean("is_dark_theme", dark) }
+    }
 
     // 初回起動時のオンボーディング（デフォルトのホームアプリ設定・通知アクセス・バッテリー
     // 最適化除外・使用状況アクセスへの案内）。完了するまでは、それ以降のメインUI用の状態
@@ -300,6 +410,16 @@ fun CyberLauncherScreen() {
 
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    // ナビゲーションバーが占有している領域（3ボタンナビなら約48dp、ジェスチャーナビなら横棒の分だけ、
+    // ジェスチャーのヒントを消していれば0）。固定の余白ではなく、これに合わせて画面端の余白を決める
+    val navigationBarPadding = WindowInsets.navigationBars.asPaddingValues()
+    val layoutDirection = LocalLayoutDirection.current
+    // 画面下端の余白。ナビゲーションバーがあるときは、その上に少しだけ隙間を空ける（デザイン上の余白を
+    // 足すと3ボタンナビで空きすぎるため）。ないとき（ジェスチャーのヒント非表示など）はデザイン上の余白にする
+    val bottomScreenPadding = maxOf(
+        if (isPortrait) 16.dp else 24.dp,
+        navigationBarPadding.calculateBottomPadding() + 4.dp
+    )
 
     // APP LISTのICON ONLYモード（アイコンのみ表示・正方形スロット）かどうか。APP LISTの設定画面で切り替える。
     // 縦画面・横画面を切り替えても意図せず引き継がれないよう、それぞれ別に記憶する。
@@ -426,6 +546,8 @@ fun CyberLauncherScreen() {
     var homeMenuOffset by remember { mutableStateOf<Offset?>(null) } // 何もないところを長押しした位置（メニュー表示中のみ）
     // ウィジェットキャンバスの空き領域に「+ ADD WIDGET」タイルを表示するかどうか（カスタマイズ画面で切り替える）
     var showAddWidgetTile by remember { mutableStateOf(prefs.getBoolean("show_add_widget_tile", true)) }
+    // ウィジェットスタックの自動切り替え（オンオフと間隔。カスタマイズ画面で変更する）
+    var stackAutoRotate by remember { mutableStateOf(loadStackAutoRotateSettings(prefs)) }
     // ヘッダー・DOCKを表示するかどうか（カスタマイズ画面で切り替える。非表示にするとウィジェットのエリアが広がる）。
     // 画面の向きごとに保存する（向きごとの値が未設定なら、向きで分ける前の共通の設定を引き継ぐ）
     val orientationSuffix = if (isPortrait) "portrait" else "landscape"
@@ -437,7 +559,46 @@ fun CyberLauncherScreen() {
     var showDock by remember(showDockKey) {
         mutableStateOf(prefs.getBoolean(showDockKey, prefs.getBoolean("show_dock", true)))
     }
-    var showPowerPermissionRationale by remember { mutableStateOf(false) } // 電源メニュー用の権限案内
+    // ヘッダー中央（横画面・縦画面（大））に表示する3段の文字（カスタマイズ画面で書き換える）
+    var headerTitle by remember { mutableStateOf(loadHeaderTitle(prefs)) }
+    var showPowerPermissionRationale by remember { mutableStateOf(false) } // アクセシビリティサービスの権限案内
+    // 上の権限案内で、何をするためにアクセシビリティサービスが必要なのか（例: 電源メニュー（電源を切る/再起動）を開く）
+    var accessibilityRationaleReason by remember { mutableStateOf("電源メニュー（電源を切る/再起動）を開く") }
+
+    // ホーム画面のジェスチャー（上下スワイプ・ダブルタップ）への、アクションの割り当て。
+    // 割り当ての変更はPROの機能で、PROでない場合は初期の割り当て（上スワイプで ALL APPS）で動く
+    var gestureBindings by remember { mutableStateOf(loadGestureBindings(prefs)) }
+    val activeGestureBindings = if (isPro) gestureBindings else DefaultGestureBindings
+    val isDoubleTapAssigned = activeGestureBindings[HomeGesture.DOUBLE_TAP]?.action != GestureAction.NONE
+    var gestureAppPickerTarget by remember { mutableStateOf<HomeGesture?>(null) } // 起動するアプリを選んでいるジェスチャー
+    // ジェスチャーに割り当てたアクションを実行する
+    fun runHomeGesture(gesture: HomeGesture) {
+        // 割り当ては、実行するこの時点の最新の状態から読む（関数の外で計算した値を使うと、ジェスチャーの
+        // 検出処理が持っている古い関数が、変更前の割り当てで動いてしまうため）
+        val bindings = if (isPro) gestureBindings else DefaultGestureBindings
+        val binding = bindings[gesture] ?: return
+        val action = binding.action
+        if (action == GestureAction.NONE) return
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        when (action) {
+            GestureAction.NONE -> Unit
+            GestureAction.ALL_APPS -> showAllAppsDrawer = true
+            GestureAction.CUSTOMIZE -> showCustomizeSheet = true
+            GestureAction.LAUNCH_APP -> binding.packageName
+                ?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                ?.let { context.startActivity(it) }
+            else -> action.globalAction?.let { globalAction ->
+                // 通知パネル・画面オフなどは、アクセシビリティサービスで行う（無効なら有効化を案内する）
+                performSystemActionOrRequestPermission(context, globalAction) {
+                    accessibilityRationaleReason = "ジェスチャーで「${action.label}」"
+                    showPowerPermissionRationale = true
+                }
+            }
+        }
+    }
+    // ジェスチャーの検出（pointerInput）は一度だけ起動するため、常に最新の割り当てで実行できるようにする
+    // （関数の参照はComposeが使い回すことがあるため、毎回新しいラムダで包んで渡す）
+    val currentRunHomeGesture = rememberUpdatedState<(HomeGesture) -> Unit> { gesture -> runHomeGesture(gesture) }
     var pendingAppSlotRemoval by remember { mutableStateOf<PendingAppSlotRemoval?>(null) } // APP SLOTの✗ボタン押下時の操作選択待ち
 
     // APP SLOT（単体ウィジェット）ごとに割り当てられているアプリ。画面モードをまたいで共有する
@@ -453,12 +614,27 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // ウィジェットキャンバス（ホーム画面中央のウィジェットを置く領域）のスクリーン座標での範囲。
+    // アプリをスロット以外の場所へドロップしたとき、そこがキャンバスの中かどうかの判定に使う
+    var widgetCanvasBoundsOnScreen by remember { mutableStateOf(Rect.Zero) }
+    // アプリをキャンバスのスロット以外の場所へドロップしたときの、ウィジェットとして置く待ち
+    // （アイコンのみ・アイコン＋名前を選ぶダイアログの表示中のみ）
+    var pendingAppSlotDrop by remember { mutableStateOf<PendingAppSlotDrop?>(null) }
+
     // アプリアイコン・フォルダ・QUICK ACCESSのボタンのドラッグ＆ドロップの結果を反映する
-    fun handleAppDrop(payload: AppDragPayload, target: AppDropTarget?) {
+    fun handleAppDrop(payload: AppDragPayload, target: AppDropTarget?, positionOnScreen: Offset? = null) {
         val source = payload.source
         // アプリドロワーから持ってきた場合は、ドロップ先にかかわらずドロワーを閉じる
         // （ドラッグ中は透明にして開いたままにしている）
         if (source == AppDragSource.Drawer) showAllAppsDrawer = false
+        // アプリを、ウィジェットキャンバスのスロット以外の場所へドロップした場合は、その場に
+        // APP SLOT（ウィジェット）として置く。アイコンのみかアイコン＋名前かを選んでもらってから置く
+        if (target == null && positionOnScreen != null && payload.item is AppDragItem.App &&
+            widgetCanvasBoundsOnScreen.contains(positionOnScreen)
+        ) {
+            pendingAppSlotDrop = PendingAppSlotDrop(payload, payload.item.appInfo, positionOnScreen)
+            return
+        }
         // どこにも重なっていない、またはフォルダのポップアップの余白に落とした場合は何もしない
         if (target == null || target == AppDropTarget.FolderPanel) return
 
@@ -631,7 +807,8 @@ fun CyberLauncherScreen() {
             prefs.edit { putString(dockAppsKey, dock.joinToString(",")) }
         }
     }
-    val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
+    // （関数の参照はComposeが使い回すことがあるため、ラムダで包んで渡す）
+    val appDragState = rememberAppDragState { payload, target, position -> handleAppDrop(payload, target, position) }
 
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
     // SharedPreferencesのAPP LIST・DOCKの並びを直接書き換える。ここではその変更を
@@ -735,8 +912,24 @@ fun CyberLauncherScreen() {
     // オンボーディング完了後も、未設定の権限/設定があればプロセス起動につき1回だけ
     // ボトムシートで知らせる（ホーム画面に戻るたびに毎回出ると煩わしいため、
     // ON_RESUMEではなくプロセス起動時のみをトリガーにする）
-    var showMissingPermissionsSheet by remember { mutableStateOf(false) }
+    var showMissingPermissionsSheet by rememberSaveable { mutableStateOf(false) }
+    // シートから設定画面を開いたかどうか。デフォルトのホームアプリを変えると、システムがホーム画面を
+    // 起動し直す（ホームボタンと同じIntentが届く）ため、戻ってきた直後の1回はシートを閉じずに残す
+    var missingPermissionsSettingsOpened by rememberSaveable { mutableStateOf(false) }
     var missingPermissionsResumeSignal by remember { mutableIntStateOf(0) }
+    // アクセシビリティサービスの状態（カスタマイズ画面のジェスチャーの欄に表示する）。設定画面から戻って
+    // きたとき（ON_RESUME）に取り直す。サービスの接続は少し遅れることがあるため、少し待ってからもう一度確かめる
+    val initialAccessibilityStatus = remember { accessibilityServiceStatus(context) }
+    val accessibilityStatus by produceState(initialAccessibilityStatus, missingPermissionsResumeSignal) {
+        value = accessibilityServiceStatus(context)
+        delay(1000)
+        value = accessibilityServiceStatus(context)
+    }
+    fun openAccessibilitySettings() {
+        context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        })
+    }
     LaunchedEffect(Unit) {
         if (!MissingPermissionsSheetState.shownThisProcess) {
             MissingPermissionsSheetState.shownThisProcess = true
@@ -760,7 +953,11 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             MissingPermissionsSheet(
                 resumeSignal = missingPermissionsResumeSignal,
-                onDismiss = { showMissingPermissionsSheet = false }
+                onOpenSettings = { missingPermissionsSettingsOpened = true },
+                onDismiss = {
+                    showMissingPermissionsSheet = false
+                    missingPermissionsSettingsOpened = false
+                }
             )
         }
     }
@@ -805,8 +1002,10 @@ fun CyberLauncherScreen() {
 
     var placedWidgets by remember(widgetLayoutMode) { mutableStateOf(loadPlacedWidgets(prefs, widgetLayoutMode)) }
     fun updatePlacedWidgets(newWidgets: List<PlacedWidget>) {
-        placedWidgets = newWidgets
-        savePlacedWidgets(prefs, widgetLayoutMode, newWidgets)
+        // 削除などでメンバーが1つだけになったスタックは、普通のウィジェットに戻す
+        val normalized = newWidgets.normalizeStacks()
+        placedWidgets = normalized
+        savePlacedWidgets(prefs, widgetLayoutMode, normalized)
     }
     // NOW PLAYINGウィジェットをホーム画面に置いているときは、ヘッダーには再生中メディアを表示しない
     val headerNowPlaying = nowPlaying.takeIf { placedWidgets.none { it.type == WidgetPanel.NOW_PLAYING } }
@@ -817,11 +1016,54 @@ fun CyberLauncherScreen() {
     // 種類ごとの固定サイズではなく実際の推奨サイズ（dp）に応じたセル数で配置するために使う
     // （画面モードが変わるとグリッド寸法自体が変わるため、モードごとに保持し直す）
     var canvasCellSize by remember(widgetLayoutMode) { mutableStateOf<DpSize?>(null) }
+    // ホーム画面全体（長押しを検出する背景のSurface）と、ウィジェットキャンバスのルート座標系での範囲。
+    // 背景の長押しの位置にウィジェットがあるかどうかの判定に使う
+    var homeSurfaceBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
+    var widgetCanvasBoundsInRoot by remember { mutableStateOf(Rect.Zero) }
+    // 背景のSurface内の位置[offset]に、配置済みのウィジェットがあるかどうか
+    fun isOverPlacedWidget(offset: Offset): Boolean {
+        val cellSize = canvasCellSize ?: return false
+        val local = offset + homeSurfaceBoundsInRoot.topLeft - widgetCanvasBoundsInRoot.topLeft
+        val col = local.x / with(density) { cellSize.width.toPx() }
+        val row = local.y / with(density) { cellSize.height.toPx() }
+        return placedWidgets.any { col >= it.col && col < it.col + it.colSpan && row >= it.row && row < it.row + it.rowSpan }
+    }
     // 外部ウィジェットが、許容する最小サイズでもこの画面のグリッドに入り切らなかった
     // （または配置しようとした時点で空きがなかった）ことを知らせるエラーダイアログの表示状態
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
     // 長押しメニューの「ウィジェットを追加」が押されたが、ホーム画面に空きがないことを知らせるダイアログの表示状態
     var showNoWidgetSpaceError by remember { mutableStateOf(false) }
+
+    // アプリをスロット以外の場所へドロップしたとき、選んだ形（アイコンのみ・アイコン＋名前）の
+    // APP SLOTとして、指を離した位置にいちばん近い空いている場所に置く。APP LIST・DOCK・フォルダから
+    // 持ってきたアプリは元の場所から外す（移動）。アプリドロワーから持ってきた場合は追加になる
+    fun placeAppSlotAtDrop(drop: PendingAppSlotDrop, type: WidgetPanel) {
+        val cellSize = canvasCellSize ?: return
+        val cellWidthPx = with(density) { cellSize.width.toPx() }
+        val cellHeightPx = with(density) { cellSize.height.toPx() }
+        val targetSize = if (type == WidgetPanel.APP_SLOT_ICON_ONLY) AppSlotIconOnlyTargetSize else AppSlotNamedTargetSize
+        val local = drop.positionOnScreen - widgetCanvasBoundsOnScreen.topLeft
+        val slot = findFreeGridSlotNear(
+            placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows,
+            desiredColSpan = targetSize.width / cellSize.width,
+            desiredRowSpan = targetSize.height / cellSize.height,
+            centerCol = local.x / cellWidthPx,
+            centerRow = local.y / cellHeightPx
+        ) ?: run {
+            showNoWidgetSpaceError = true
+            return
+        }
+        val (col, row, colSpan, rowSpan) = slot
+        val instanceId = allocateNextAppSlotInstanceId(prefs)
+        val packageName = drop.appInfo.packageName
+        saveAppSlotAssignment(prefs, instanceId, packageName)
+        appSlotAssignments = appSlotAssignments + (instanceId to packageName)
+        updatePlacedWidgets(
+            placedWidgets + PlacedWidget(type = type, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
+        )
+        // 元の場所から外す（「削除」エリアに落としたときと同じ処理。アプリドロワーからの場合は外す元がない）
+        if (drop.payload.source != AppDragSource.Drawer) handleAppDrop(drop.payload, AppDropTarget.RemoveZone)
+    }
 
     // ホームボタンが押されたら、開いているポップアップ・ボトムシート・ダイアログ・フォルダ・
     // 編集モード・ドラッグなどをすべて閉じて、ホーム画面の状態に戻る
@@ -831,11 +1073,20 @@ fun CyberLauncherScreen() {
         if (homePressedSignal == 0) return@LaunchedEffect
         showAllAppsDrawer = false
         showCustomizeSheet = false
+        proPromptFeature = null
+        gestureAppPickerTarget = null
+        showIconPackPicker = false
         showAppListSettings = false
         showQuickAccessSettings = false
         showGridLinesSheet = false
         pendingQuickActionMove = null
-        showMissingPermissionsSheet = false
+        // 未設定項目のシートから設定画面を開いて戻ってきたとき（ホームアプリの変更でホーム画面が
+        // 起動し直されたとき）は、シートを閉じずに残す
+        if (missingPermissionsSettingsOpened) {
+            missingPermissionsSettingsOpened = false
+        } else {
+            showMissingPermissionsSheet = false
+        }
         showPowerPermissionRationale = false
         homeMenuOffset = null
         openFolderId = null
@@ -923,6 +1174,36 @@ fun CyberLauncherScreen() {
         } else {
             placeNewAppWidget(appWidgetId)
         }
+    }
+
+    // 設定のバックアップ（書き出し）と復元（読み込み）。ファイルの場所は端末標準のファイル選択画面で選ぶ。
+    // 復元は今の設定をすべて置き換えるため、ファイルを選んだあとに確認してから行う
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val message = LauncherBackup.export(context, uri).fold(
+            onSuccess = { "設定を書き出しました" },
+            onFailure = { "書き出せませんでした（${it.message}）" }
+        )
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+    var pendingRestoreUri by remember { mutableStateOf<Uri?>(null) }
+    val backupImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        pendingRestoreUri = uri
+    }
+    fun restoreBackup(uri: Uri) {
+        LauncherBackup.restore(context, uri).fold(
+            onSuccess = { result ->
+                val note = if (result.removedAppWidgetCount > 0) {
+                    "（この端末にない外部ウィジェット ${result.removedAppWidgetCount} 個は外しました）"
+                } else ""
+                Toast.makeText(context, "設定を読み込みました$note", Toast.LENGTH_LONG).show()
+                // すべての画面の状態を、読み込んだ設定から作り直す
+                context.findActivity().recreate()
+            },
+            onFailure = { Toast.makeText(context, "読み込めませんでした（${it.message}）", Toast.LENGTH_LONG).show() }
+        )
     }
 
     // このアプリはBIND_APPWIDGET権限を持たない（サードパーティのランチャーは通常持てない）ため、
@@ -1020,9 +1301,27 @@ fun CyberLauncherScreen() {
                     prefs.edit { putBoolean("is_wallpaper_mode", enabled) }
                 },
                 isDarkTheme = isDarkTheme,
-                onDarkThemeChange = { dark ->
-                    isDarkTheme = dark
-                    prefs.edit { putBoolean("is_dark_theme", dark) }
+                onDarkThemeChange = { dark -> setDarkTheme(dark) },
+                themePreset = activeThemePreset,
+                onThemePresetChange = { preset -> selectThemePreset(preset) },
+                fontOption = activeFontOption,
+                onFontOptionChange = { font ->
+                    cyberFontOption = font
+                    saveCyberFontOption(prefs, font)
+                },
+                // アイコンパック（PROの機能）
+                iconPackLabel = remember(activeIconPackPackage) {
+                    activeIconPackPackage?.let { packageName ->
+                        runCatching {
+                            context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(packageName, 0)).toString()
+                        }.getOrNull()
+                    }
+                },
+                onOpenIconPackPicker = { if (requirePro("アイコンパック")) showIconPackPicker = true },
+                iconPackUsePackColors = iconPackUsePackColors,
+                onIconPackUsePackColorsChange = { usePackColors ->
+                    iconPackUsePackColors = usePackColors
+                    IconPackManager.saveUsePackColors(prefs, usePackColors)
                 },
                 accentColor = accentColor,
                 onAccentColorChange = { color ->
@@ -1055,6 +1354,11 @@ fun CyberLauncherScreen() {
                     showHeader = visible
                     prefs.edit { putBoolean(showHeaderKey, visible) }
                 },
+                headerTitle = headerTitle,
+                onHeaderTitleChange = { title ->
+                    headerTitle = title
+                    saveHeaderTitle(prefs, title)
+                },
                 showDock = showDock,
                 onShowDockChange = { visible ->
                     showDock = visible
@@ -1072,13 +1376,44 @@ fun CyberLauncherScreen() {
                     showAddWidgetTile = visible
                     prefs.edit { putBoolean("show_add_widget_tile", visible) }
                 },
+                stackAutoRotate = stackAutoRotate,
+                onStackAutoRotateChange = { settings ->
+                    stackAutoRotate = settings
+                    saveStackAutoRotateSettings(prefs, settings)
+                },
                 hiddenPanels = hiddenWidgetPanels,
                 onSetAllBorders = { visible -> setAllWidgetBorders(visible) },
                 onTogglePanelBorder = { panel -> toggleWidgetPanelBorder(panel) },
                 onOpenPowerMenu = {
                     openPowerMenuOrRequestPermission(context) {
+                        accessibilityRationaleReason = "電源メニュー（電源を切る/再起動）を開く"
                         showPowerPermissionRationale = true
                     }
+                },
+                isPro = isPro,
+                // 空文字（PROのカードから）のときは、機能を指定せずにPROの案内を出す
+                onRequirePro = { feature -> if (feature.isEmpty()) proPromptFeature = "" else requirePro(feature) },
+                // 設定のバックアップ・復元（PROの機能）
+                // ホーム画面のジェスチャーの割り当て（PROの機能。PROでない場合は初期の割り当てを表示する）
+                gestureBindings = activeGestureBindings,
+                onGestureBindingChange = { gesture, binding ->
+                    gestureBindings = gestureBindings + (gesture to binding)
+                    saveGestureBinding(prefs, gesture, binding)
+                    // アクセシビリティサービスが必要な動作を割り当てたのに、まだ使えない状態なら、その場で案内する
+                    if (binding.action.globalAction != null && accessibilityServiceStatus(context) != AccessibilityServiceStatus.ENABLED) {
+                        accessibilityRationaleReason = "ジェスチャーで「${binding.action.label}」"
+                        showPowerPermissionRationale = true
+                    }
+                },
+                onPickGestureApp = { gesture -> gestureAppPickerTarget = gesture },
+                accessibilityStatus = accessibilityStatus,
+                onOpenAccessibilitySettings = ::openAccessibilitySettings,
+                appLabel = { packageName -> appsByPackage[packageName]?.label },
+                onExportBackup = {
+                    if (requirePro("設定のバックアップ")) backupExportLauncher.launch(LauncherBackup.suggestedFileName())
+                },
+                onImportBackup = {
+                    if (requirePro("設定の復元")) backupImportLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
                 },
                 onDismiss = { showCustomizeSheet = false }
             )
@@ -1086,15 +1421,22 @@ fun CyberLauncherScreen() {
     }
 
     if (showPowerPermissionRationale) {
+        // 設定ではオンなのに動いていない場合（アプリの更新直後などに起きる）は、オフ→オンでの直し方を案内する
+        val isEnabledButNotConnected = remember {
+            accessibilityServiceStatus(context) == AccessibilityServiceStatus.NOT_CONNECTED
+        }
         CompositionLocalProvider(LocalCyberColors provides colors) {
             PermissionRationaleDialog(
-                message = "電源メニュー（電源を切る/再起動）を開くには、GridLauncherのアクセシビリティサービスを有効にしてください。",
+                message = if (isEnabledButNotConnected) {
+                    "${accessibilityRationaleReason}には、GridLauncherのアクセシビリティサービスが必要です。" +
+                        "設定ではオンになっていますが、動いていません。設定画面で一度オフにしてから、オンにし直してください。"
+                } else {
+                    "${accessibilityRationaleReason}には、GridLauncherのアクセシビリティサービスを有効にしてください。" +
+                        "（すでにオンなのに動かない場合は、一度オフにしてからオンにし直してください）"
+                },
                 onConfirm = {
                     showPowerPermissionRationale = false
-                    val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    context.startActivity(intent)
+                    openAccessibilitySettings()
                 },
                 onDismiss = { showPowerPermissionRationale = false }
             )
@@ -1240,8 +1582,10 @@ fun CyberLauncherScreen() {
         CompositionLocalProvider(LocalCyberColors provides colors) {
             WidgetTypeSelectorDialog(
                 availableWidgets = availableWidgets,
+                lockedWidgets = if (isPro) emptySet() else ProOnlyWidgetPanels,
                 onDismiss = { showWidgetTypeSelector = false },
-                onSelect = { type ->
+                onSelect = select@{ type ->
+                    if (type in ProOnlyWidgetPanels && !requirePro("${type.label} ウィジェット")) return@select
                     val isAppSlot = type == WidgetPanel.APP_SLOT_ICON_ONLY || type == WidgetPanel.APP_SLOT_NAMED
                     val cellSize = canvasCellSize
                     val slot = if (isAppSlot && cellSize != null) {
@@ -1271,7 +1615,12 @@ fun CyberLauncherScreen() {
                     }
                     showWidgetTypeSelector = false
                 },
-                onSelectExternal = {
+                onSelectExternal = external@{
+                    // 外部ウィジェットは無料では[FreeAppWidgetLimit]個まで
+                    val appWidgetCount = placedWidgets.count { it.type == WidgetPanel.APPWIDGET }
+                    if (appWidgetCount >= FreeAppWidgetLimit && !requirePro("外部ウィジェットを${FreeAppWidgetLimit + 1}個以上配置")) {
+                        return@external
+                    }
                     showWidgetTypeSelector = false
                     showAppWidgetPicker = true
                 }
@@ -1303,6 +1652,8 @@ fun CyberLauncherScreen() {
                     accessGridPageCount = count
                     saveSlotGridPageCount(prefs, SlotGridSection.ACCESS_GRID, widgetLayoutMode, count)
                 },
+                isPro = isPro,
+                onRequirePro = { requirePro(it) },
                 onDismiss = { showAppListSettings = false }
             )
         }
@@ -1336,6 +1687,8 @@ fun CyberLauncherScreen() {
                     quickAccessPageCount = count
                     saveSlotGridPageCount(prefs, SlotGridSection.QUICK_ACCESS, widgetLayoutMode, count)
                 },
+                isPro = isPro,
+                onRequirePro = { requirePro(it) },
                 onDismiss = { showQuickAccessSettings = false }
             )
         }
@@ -1428,26 +1781,47 @@ fun CyberLauncherScreen() {
         Surface(
             modifier = Modifier
                 .fillMaxSize()
+                .onGloballyPositioned { homeSurfaceBoundsInRoot = it.boundsInRoot() }
                 .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        // Y方向（縦）の移動量がマイナス（上方向）に一定以上でドロワーを表示
-                        if (dragAmount.y < -20) {
-                            showAllAppsDrawer = true
-                            change.consume()
-                        } else {
-                            isWidgetEditMode = false
+                    // 上下のスワイプ（1回のドラッグにつき1回だけ、割り当てたアクションを実行する）
+                    var swipeHandled = false
+                    detectDragGestures(onDragStart = { swipeHandled = false }) { change, dragAmount ->
+                        // Y方向（縦）の移動量が一定以上なら、上スワイプ・下スワイプとみなす
+                        when {
+                            swipeHandled -> Unit
+                            dragAmount.y < -20 -> {
+                                swipeHandled = true
+                                currentRunHomeGesture.value(HomeGesture.SWIPE_UP)
+                                change.consume()
+                            }
+                            dragAmount.y > 20 -> {
+                                swipeHandled = true
+                                currentRunHomeGesture.value(HomeGesture.SWIPE_DOWN)
+                                change.consume()
+                            }
+                            else -> isWidgetEditMode = false
                         }
                     }
                 }
-                .pointerInput(Unit) {
+                // ダブルタップに何か割り当てているときだけ検出する（検出すると、1回のタップの判定が
+                // ダブルタップの待ち時間の分だけ遅れるため）
+                .pointerInput(isDoubleTapAssigned) {
                     detectTapGestures(
                         // 空白タップで編集モード解除
                         onTap = { isWidgetEditMode = false },
+                        onDoubleTap = if (isDoubleTapAssigned) {
+                            { currentRunHomeGesture.value(HomeGesture.DOUBLE_TAP) }
+                        } else null,
                         // 何もないところの長押しで、ウィジェット追加・カスタマイズのメニューを表示
                         onLongPress = { offset ->
-                            isWidgetEditMode = false
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            homeMenuOffset = offset
+                            // ウィジェットの上の長押しはウィジェット側が編集モードに入るので、ここでは
+                            // メニューを出さない（指がほとんど動かないと、ウィジェット側が長押しを
+                            // 横取りする前にこちらの長押しの時間切れが来てしまうため、位置で判定する）
+                            if (!isOverPlacedWidget(offset)) {
+                                isWidgetEditMode = false
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                homeMenuOffset = offset
+                            }
                         }
                     )
                 },
@@ -1458,9 +1832,11 @@ fun CyberLauncherScreen() {
                     .fillMaxSize()
                     .padding(
                         top = if (isPortrait) 32.dp else 40.dp,
-                        start = if (isPortrait) 16.dp else 32.dp,
-                        end = if (isPortrait) 16.dp else 32.dp,
-                        bottom = if (isPortrait) 16.dp else 24.dp
+                        // ナビゲーションバー（3ボタンナビ・ジェスチャーナビの横棒。横画面では左右に出ることも
+                        // ある）と重ならないよう、実際に占有している分だけ余白を足す
+                        start = (if (isPortrait) 16.dp else 32.dp) + navigationBarPadding.calculateStartPadding(layoutDirection),
+                        end = (if (isPortrait) 16.dp else 32.dp) + navigationBarPadding.calculateEndPadding(layoutDirection),
+                        bottom = bottomScreenPadding
                     )
             ) {
                 // ヘッダー（カスタマイズ画面で非表示にでき、その分ウィジェットのエリアが広がる）
@@ -1469,12 +1845,14 @@ fun CyberLauncherScreen() {
                         // 縦画面（小）: スマホサイズのカバー画面などのレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     } else if (isPortrait) {
                         // 縦画面（大）: タブレットサイズや展開状態の大画面のレイアウト
                         HeaderSectionPortrait(
                             nowPlaying = headerNowPlaying,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             isLarge = true,
                             onCoreClick = { showCustomizeSheet = true }
                         )
@@ -1482,6 +1860,7 @@ fun CyberLauncherScreen() {
                         // 横画面（ランドスケープ/メイン画面）のレイアウト
                         HeaderSectionLandscape(
                             nowPlaying = headerNowPlaying,
+                            title = if (isPro) headerTitle else HeaderTitle.Default,
                             onCoreClick = { showCustomizeSheet = true }
                         )
                     }
@@ -1531,10 +1910,18 @@ fun CyberLauncherScreen() {
                         isDraggedWidgetOverDeleteZone = overDeleteZone
                     },
                     onRequestDeleteConfirm = { widget -> pendingDeleteWidget = widget },
-                    modifier = Modifier.weight(1f)
+                    stackAutoRotateIntervalMillis = stackAutoRotate.takeIf { it.enabled && isPro }?.let { it.intervalSeconds * 1000L },
+                    canStack = isPro,
+                    onStackLocked = { requirePro("ウィジェットのスタック") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .onGloballyPositioned {
+                            widgetCanvasBoundsInRoot = it.boundsInRoot()
+                            widgetCanvasBoundsOnScreen = it.boundsOnScreen()
+                        }
                 ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
                     // アクセントカラー2に設定されたウィジェットだけ、配色のaccentを差し替えて描画する
-                    CompositionLocalProvider(LocalCyberColors provides if (type in accent2WidgetPanels) colors2 else colors) {
+                    CompositionLocalProvider(LocalCyberColors provides if (isPro && type in accent2WidgetPanels) colors2 else colors) {
                     when (type) {
                         WidgetPanel.ACCESS_GRID -> {
                             AccessGridSection(
@@ -1607,9 +1994,8 @@ fun CyberLauncherScreen() {
                                 quickAccessPageSize = pageSize
                             },
                             onThemeToggle = {
-                                val newTheme = !isDarkTheme
-                                isDarkTheme = newTheme
-                                prefs.edit { putBoolean("is_dark_theme", newTheme) }
+                                // プリセットのテーマを使っている場合は、従来の配色に戻したうえでライト/ダークを切り替える
+                                setDarkTheme(if (activeThemePreset == ThemePreset.STANDARD) !isDarkTheme else false)
                             },
                             onAccentColorChange = { color ->
                                 accentColor = color
@@ -1667,9 +2053,6 @@ fun CyberLauncherScreen() {
                         }
                     )
                 }
-
-                // ナビゲーションバー/タスクバー用の余白（システムバーと被らないようにさらにスペースを確保）
-                Spacer(modifier = Modifier.height(if (isPortrait) 32.dp else 40.dp))
             }
 
             // 長押しメニュー。長押し位置はこのSurface内の座標なので、Surfaceの直下に置く
@@ -1708,6 +2091,7 @@ fun CyberLauncherScreen() {
                     allApps = allApps,
                     isWallpaperMode = isWallpaperMode,
                     useOriginalIconColors = useOriginalIconColors,
+                    activeNotifications = activeNotifications,
                     animatedVisibilityScope = this,
                     onDismiss = { openFolderId = null },
                     onRename = { newName ->
@@ -1742,7 +2126,7 @@ fun CyberLauncherScreen() {
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (isPortrait) 90.dp else 70.dp)
+                    .padding(bottom = bottomScreenPadding + if (isPortrait) 42.dp else 6.dp)
                     .onGloballyPositioned { coordinates -> deleteZoneBoundsInRoot = coordinates.boundsInRoot() }
             ) {
                 DeleteWidgetDropZone(isActive = isDraggedWidgetOverDeleteZone)
@@ -1759,6 +2143,96 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // アプリをスロット以外の場所へドロップしたときの、APP SLOT（ウィジェット）として置く形の選択
+    pendingAppSlotDrop?.let { drop ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppSlotStyleDialog(
+                app = drop.appInfo,
+                useOriginalIconColors = useOriginalIconColors,
+                onSelect = { type ->
+                    pendingAppSlotDrop = null
+                    placeAppSlotAtDrop(drop, type)
+                },
+                onDismiss = { pendingAppSlotDrop = null }
+            )
+        }
+    }
+
+    // 使うアイコンパックの選択
+    if (showIconPackPicker) {
+        val iconPacks = remember { IconPackManager.installedIconPacks(context) }
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            IconPackPickerDialog(
+                iconPacks = iconPacks,
+                selectedPackage = iconPackPackage,
+                onSelect = { packageName ->
+                    iconPackPackage = packageName
+                    IconPackManager.saveSelectedPackage(prefs, packageName)
+                    showIconPackPicker = false
+                },
+                onDismiss = { showIconPackPicker = false }
+            )
+        }
+    }
+
+    // ジェスチャーに「アプリを起動」を割り当てるときの、起動するアプリの選択
+    gestureAppPickerTarget?.let { gesture ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppSelectorDialog(
+                allApps = allApps,
+                useOriginalIconColors = useOriginalIconColors,
+                onDismiss = { gestureAppPickerTarget = null },
+                onAppSelected = { packageName ->
+                    val binding = GestureBinding(GestureAction.LAUNCH_APP, packageName)
+                    gestureBindings = gestureBindings + (gesture to binding)
+                    saveGestureBinding(prefs, gesture, binding)
+                    gestureAppPickerTarget = null
+                }
+            )
+        }
+    }
+
+    // 復元の確認（今の設定がすべて置き換わるため）
+    pendingRestoreUri?.let { uri ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AlertDialog(
+                onDismissRequest = { pendingRestoreUri = null },
+                containerColor = colors.panel,
+                title = { Text("設定を読み込みますか？", fontFamily = CyberFont, fontSize = 14.sp, color = colors.text) },
+                text = {
+                    Text(
+                        "今の配置・配色・各種設定は、選んだファイルの内容にすべて置き換わります。" +
+                            "外部ウィジェットは、この端末にないものは読み込まれません。",
+                        fontFamily = CyberFont,
+                        fontSize = 12.sp,
+                        color = colors.text.copy(alpha = 0.8f)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingRestoreUri = null
+                        restoreBackup(uri)
+                    }) {
+                        Text("読み込む", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingRestoreUri = null }) {
+                        Text("キャンセル", fontFamily = CyberFont, fontSize = 12.sp, color = colors.text.copy(alpha = 0.7f))
+                    }
+                }
+            )
+        }
+    }
+
+    // PROの機能を使おうとしたとき（またはカスタマイズ画面のPROの項目から）の、PRO解放の案内と購入画面。
+    // 機能の名前が空の場合は、機能を指定せずにPROの案内だけを出す
+    proPromptFeature?.let { feature ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            ProUpgradeDialog(featureName = feature.ifEmpty { null }, onDismiss = { proPromptFeature = null })
+        }
+    }
+
     pendingDeleteWidget?.let { widget ->
         CompositionLocalProvider(LocalCyberColors provides colors) {
             val widgetLabel = when (widget.type) {

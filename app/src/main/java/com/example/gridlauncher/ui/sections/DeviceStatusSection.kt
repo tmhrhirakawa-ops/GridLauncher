@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.gridlauncher.ui.components.WidgetHeaderTitle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import kotlinx.coroutines.delay
@@ -126,7 +127,8 @@ fun DeviceStatusSection(modifier: Modifier = Modifier, showBorder: Boolean = tru
                     .background(LocalCyberColors.current.accent)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("SYSTEM MONITOR", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
+                // 見出し（フォントによって幅が足りなければ、1行に収まるまで縮める）
+                WidgetHeaderTitle("SYSTEM MONITOR", fontSize = 10.sp)
             }
             Spacer(modifier = Modifier.height(4.dp))
             

@@ -65,9 +65,9 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
     return stored.split(";").mapNotNull { entry ->
         val parts = entry.split(":")
         // 6フィールド目（appWidgetId）はAPPWIDGET対応、7フィールド目（instanceId）はAPP SLOT
-        // 対応で後から追加したもの。5/6フィールドの旧形式もそのまま読めるようにし、既存の
-        // 配置がリセットされないようにする
-        if (parts.size !in 5..7) return@mapNotNull null
+        // 対応、8フィールド目（stackId）はウィジェットのスタック対応で後から追加したもの。
+        // フィールドの少ない旧形式もそのまま読めるようにし、既存の配置がリセットされないようにする
+        if (parts.size !in 5..8) return@mapNotNull null
         val type = runCatching { WidgetPanel.valueOf(parts[0]) }.getOrNull() ?: return@mapNotNull null
         val col = parts[1].toFloatOrNull() ?: return@mapNotNull null
         val row = parts[2].toFloatOrNull() ?: return@mapNotNull null
@@ -75,13 +75,18 @@ fun loadPlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode): List<Pl
         val rowSpan = parts[4].toFloatOrNull() ?: return@mapNotNull null
         val appWidgetId = if (parts.size >= 6) (parts[5].toIntOrNull() ?: -1) else -1
         val instanceId = if (parts.size >= 7) (parts[6].toIntOrNull() ?: -1) else -1
-        PlacedWidget(type = type, appWidgetId = appWidgetId, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
-    }
+        val stackId = if (parts.size >= 8) (parts[7].toIntOrNull() ?: -1) else -1
+        PlacedWidget(type = type, appWidgetId = appWidgetId, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan, stackId = stackId)
+    }.normalizeStacks()
 }
+
+/** 指定した画面モードのウィジェット配置が保存されているかどうか（未保存ならデフォルト配置を使う）。 */
+fun hasSavedWidgetLayout(prefs: SharedPreferences, mode: WidgetLayoutMode): Boolean =
+    prefs.contains(widgetLayoutKey(mode))
 
 /** 指定した画面モードのウィジェット配置をSharedPreferencesに保存する。 */
 fun savePlacedWidgets(prefs: SharedPreferences, mode: WidgetLayoutMode, widgets: List<PlacedWidget>) {
-    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}" }
+    val serialized = widgets.joinToString(";") { "${it.type.name}:${it.col}:${it.row}:${it.colSpan}:${it.rowSpan}:${it.appWidgetId}:${it.instanceId}:${it.stackId}" }
     prefs.edit { putString(widgetLayoutKey(mode), serialized) }
 }
 
@@ -107,6 +112,54 @@ fun findFreeGridSlot(placed: List<PlacedWidget>, columns: Int, rows: Int): IntAr
         }
     }
     return null
+}
+
+/**
+ * [desiredColSpan]×[desiredRowSpan]（小数可、内部で丸めて使う）が入る空き領域のうち、中心が
+ * ([centerCol], [centerRow]) にいちばん近い場所を探す（アプリをホーム画面の空いたところへ
+ * ドロップして、その場にウィジェットとして置くときなど）。
+ *
+ * @param desiredColSpan 希望する横方向のセル数。
+ * @param desiredRowSpan 希望する縦方向のセル数。
+ * @param centerCol 置きたい場所の中心の列（セル単位、小数可）。
+ * @param centerRow 置きたい場所の中心の行（セル単位、小数可）。
+ * @return 見つかった場合 (col, row, colSpan, rowSpan) の組（floatArrayOf）。指定サイズが
+ *   グリッドに対して大きすぎる、または空きがまったくない場合はnull。
+ */
+fun findFreeGridSlotNear(
+    placed: List<PlacedWidget>,
+    columns: Int,
+    rows: Int,
+    desiredColSpan: Float,
+    desiredRowSpan: Float,
+    centerCol: Float,
+    centerRow: Float
+): FloatArray? {
+    val colSpan = desiredColSpan.roundToInt().coerceAtLeast(1)
+    val rowSpan = desiredRowSpan.roundToInt().coerceAtLeast(1)
+    if (colSpan > columns || rowSpan > rows) return null
+    var best: FloatArray? = null
+    var bestDistance = Float.MAX_VALUE
+    for (row in 0..rows - rowSpan) {
+        for (col in 0..columns - colSpan) {
+            val fits = placed.none { existing ->
+                col < existing.col + existing.colSpan &&
+                    col + colSpan > existing.col &&
+                    row < existing.row + existing.rowSpan &&
+                    row + rowSpan > existing.row
+            }
+            if (!fits) continue
+            // 置く場所の中心と、希望の中心との距離（の2乗）が一番小さいところを選ぶ
+            val dx = col + colSpan / 2f - centerCol
+            val dy = row + rowSpan / 2f - centerRow
+            val distance = dx * dx + dy * dy
+            if (distance < bestDistance) {
+                bestDistance = distance
+                best = floatArrayOf(col.toFloat(), row.toFloat(), colSpan.toFloat(), rowSpan.toFloat())
+            }
+        }
+    }
+    return best
 }
 
 /**

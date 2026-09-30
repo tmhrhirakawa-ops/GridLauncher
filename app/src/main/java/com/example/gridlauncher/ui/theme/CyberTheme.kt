@@ -1,10 +1,9 @@
 package com.example.gridlauncher.ui.theme
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import com.example.gridlauncher.R
 
 /**
  * Light theme background color.
@@ -108,9 +107,17 @@ val LocalCyberColors = staticCompositionLocalOf {
     CyberColors(LightBgColor, LightPanelColor, LightAccentColor, LightTextColor, LightBorderColor, LightCoreColor)
 }
 
+// 今選ばれているフォント。スナップショットの状態として持つので、[CyberFont]を読んでいる画面は
+// フォントが切り替わると自動で描き直される
+private val cyberFontState = mutableStateOf(CyberFontOption.SHARE_TECH_MONO)
+
 /**
- * Cyber font family used across the app.
+ * アプリ全体で使うフォント。カスタマイズ画面で選んだフォント（[applyCyberFont]）を返す。
  */
-val CyberFont = FontFamily(
-    Font(R.font.share_tech_mono)
-)
+val CyberFont: FontFamily
+    get() = cyberFontState.value.fontFamily
+
+/** アプリ全体で使うフォントを切り替える。 */
+fun applyCyberFont(option: CyberFontOption) {
+    cyberFontState.value = option
+}

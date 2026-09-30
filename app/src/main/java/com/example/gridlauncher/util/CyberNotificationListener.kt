@@ -86,6 +86,9 @@ class CyberNotificationListener : NotificationListenerService() {
         // 再生中のセッションがない（停止中・一時停止中）状態でのポーリング間隔。バッテリー消費を抑えるため長めに空ける
         private const val IdlePollIntervalMs = 20000L
 
+        // 通知が続けて更新されたときに、まとめて1回で数え直すまでの待ち時間
+        private const val NotificationUpdateDelayMs = 300L
+
         // 接続中のサービス本体（ホーム画面の表示状態を伝えるため）。サービスのライフサイクルを
         // 延命しないよう弱参照で持つ
         private var instance: WeakReference<CyberNotificationListener>? = null
@@ -147,7 +150,27 @@ class CyberNotificationListener : NotificationListenerService() {
         if (visible) {
             pollActiveSessions()
             schedulePoll()
+            // 見えていない間に通知が変わっていれば、ここでまとめて数え直す
+            if (notificationsDirty) updateNotifications()
         }
+    }
+
+    // ホーム画面が見えていない間に通知が変わったかどうか（見えたときに数え直す）
+    private var notificationsDirty = false
+    private val notificationUpdateRunnable = Runnable { updateNotifications() }
+
+    /**
+     * 通知の件数を数え直す。ダウンロードの進捗のように頻繁に更新される通知もあり、そのたびに全通知を
+     * 取り直すと電池を使うため、ホーム画面が見えていない間は印だけ付けて後回しにし、見えている間も
+     * 短い時間に続いた更新は[NotificationUpdateDelayMs]待ってからまとめて1回で数える。
+     */
+    private fun requestNotificationUpdate() {
+        if (!isUiVisible) {
+            notificationsDirty = true
+            return
+        }
+        pollHandler.removeCallbacks(notificationUpdateRunnable)
+        pollHandler.postDelayed(notificationUpdateRunnable, NotificationUpdateDelayMs)
     }
 
     private fun pollActiveSessions() {
@@ -181,6 +204,7 @@ class CyberNotificationListener : NotificationListenerService() {
         super.onListenerDisconnected()
         instance = null
         pollHandler.removeCallbacks(pollRunnable)
+        pollHandler.removeCallbacks(notificationUpdateRunnable)
         try {
             val mediaSessionManager = getSystemService(MediaSessionManager::class.java)
             mediaSessionManager.removeOnActiveSessionsChangedListener(sessionsChangedListener)
@@ -195,15 +219,16 @@ class CyberNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
-        updateNotifications()
+        requestNotificationUpdate()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         super.onNotificationRemoved(sbn)
-        updateNotifications()
+        requestNotificationUpdate()
     }
 
     private fun updateNotifications() {
+        notificationsDirty = false
         try {
             val notifications = getActiveNotifications() ?: return
 

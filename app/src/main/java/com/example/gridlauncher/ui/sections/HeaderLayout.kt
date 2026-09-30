@@ -13,11 +13,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
+import com.example.gridlauncher.util.HeaderTitle
 import kotlin.math.roundToInt
 
 /**
  * ヘッダー（縦画面・横画面共通）の配置。左端に[start]（時刻）、画面幅の中央に[center]
- * （MAIN TERMINALの表記。なければ省略）、右端に[end]（バッテリー）を置く。
+ * （中央の表記。なければ省略）、右端に[end]（バッテリー）を置く。
  *
  * [nowPlaying]（再生中メディア）は[end]のすぐ左に置く。ヘッダーの高さは他の3つだけで決め、
  * 再生中メディアはその高さに収めるため、表示されてもヘッダーが広がって下のウィジェットの
@@ -103,14 +104,17 @@ internal fun HeaderLayout(
 }
 
 /**
- * 画面中央の「MAIN TERMINAL」の表記（横画面・縦画面（大）共通）。幅が足りなくても折り返して
- * ヘッダーの高さが変わらないよう、各行は1行に固定する。
+ * 画面中央の3段の表記（初期値は「ACCESS GRANTED / THE GRID OS / USER@GRIDLAUNCHER」。横画面・縦画面（大）共通）。
+ * 文字はカスタマイズ画面で書き換えられる。幅が足りなくても折り返してヘッダーの高さが変わらないよう、
+ * 各行は1行に固定する。
+ *
+ * @param title 表示する3段の文字。
  */
 @Composable
-internal fun MainTerminalTitle() {
+internal fun HeaderCenterTitle(title: HeaderTitle) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("SYSTEM ONLINE", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-        Text("MAIN TERMINAL", fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text, letterSpacing = 2.sp, maxLines = 1, softWrap = false)
-        Text("TOKYO // MAIN TERMINAL", fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f), maxLines = 1, softWrap = false)
+        Text(title.top, fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.accent, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+        Text(title.main, fontFamily = CyberFont, fontSize = 24.sp, fontWeight = FontWeight.Black, color = LocalCyberColors.current.text, letterSpacing = 2.sp, maxLines = 1, softWrap = false)
+        Text(title.bottom, fontFamily = CyberFont, fontSize = 10.sp, color = LocalCyberColors.current.text.copy(alpha = 0.5f), maxLines = 1, softWrap = false)
     }
 }

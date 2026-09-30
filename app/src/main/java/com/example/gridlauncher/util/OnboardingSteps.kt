@@ -3,7 +3,6 @@ package com.example.gridlauncher.util
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -16,13 +15,18 @@ import androidx.annotation.RequiresApi
  * @property title ステップのタイトル。
  * @property description 何のためにこの設定が必要かの説明文。
  * @property isSatisfied 現在この設定が既に済んでいるかどうかを判定する関数。
- * @property settingsIntent 「設定を開く」がタップされたときに起動するIntent。
+ * @property settingsIntent 「設定を開く」がタップされたときに起動するIntent。結果を受け取る形式
+ *   （startActivityForResult）で起動すること（RoleManagerの確認ダイアログは、そうしないと
+ *   呼び出し元が分からず何も表示せずに終了してしまう）。
+ * @property fallbackIntent [settingsIntent]から戻ってもまだ設定が済んでいないときに開くIntent。
+ *   nullなら何もしない。
  */
 data class OnboardingStepInfo(
     val title: String,
     val description: String,
     val isSatisfied: (Context) -> Boolean,
-    val settingsIntent: (Context) -> Intent
+    val settingsIntent: (Context) -> Intent,
+    val fallbackIntent: ((Context) -> Intent)? = null
 )
 
 val OnboardingSteps = listOf(
@@ -33,7 +37,10 @@ val OnboardingSteps = listOf(
             val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
             context.packageManager.resolveActivity(intent, 0)?.activityInfo?.packageName == context.packageName
         },
-        settingsIntent = { context -> homeRoleRequestIntent(context) }
+        settingsIntent = { context -> homeRoleRequestIntent(context) },
+        // 確認ダイアログで過去に2回断っているなど、システムがダイアログを出さずに拒否した場合は、
+        // 端末の「ホームアプリ」の設定画面から選んでもらう
+        fallbackIntent = { Intent(Settings.ACTION_HOME_SETTINGS) }
     ),
     OnboardingStepInfo(
         title = "通知へのアクセスを許可",
@@ -43,14 +50,16 @@ val OnboardingSteps = listOf(
     ),
     OnboardingStepInfo(
         title = "バッテリー最適化の対象から除外",
-        description = "通知や再生中メディアの監視を安定して続けるため、バッテリー最適化の対象からGridLauncherを除外することをおすすめします。",
+        description = "通知や再生中メディアの監視を安定して続けるため、バッテリー最適化の対象からGridLauncherを除外することをおすすめします。" +
+            "開いた一覧で「すべてのアプリ」を表示し、GridLauncherを「最適化しない」にしてください。",
         isSatisfied = { context ->
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             powerManager.isIgnoringBatteryOptimizations(context.packageName)
         },
-        settingsIntent = { context ->
-            Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))
-        }
+        // アプリから直接「除外しますか？」を出す方法（ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS）は、
+        // Google Play のポリシーで使える用途が限られ、ホームアプリは対象外のため使わない。
+        // 端末の「バッテリー最適化」の一覧画面を開き、GridLauncher を選んでもらう（権限は不要）
+        settingsIntent = { Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS) }
     ),
     OnboardingStepInfo(
         title = "使用状況へのアクセスを許可（任意）",

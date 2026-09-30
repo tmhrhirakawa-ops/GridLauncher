@@ -36,6 +36,7 @@ import com.example.gridlauncher.ui.components.NowPlayingIconButton
 import com.example.gridlauncher.ui.components.NowPlayingPlayButton
 import com.example.gridlauncher.ui.components.NowPlayingProgressBar
 import com.example.gridlauncher.ui.components.PausedBarHeight
+import com.example.gridlauncher.ui.components.WidgetHeaderTitle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.CyberNotificationListener
@@ -90,13 +91,8 @@ fun NowPlayingSection(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(modifier = Modifier.size(6.dp).background(colors.accent))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            if (lastPlayed != null) "LAST PLAYED" else "NOW PLAYING",
-                            fontFamily = CyberFont,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.text
-                        )
+                        // 見出し（フォントによって幅が足りなければ、1行に収まるまで縮める）
+                        WidgetHeaderTitle(if (lastPlayed != null) "LAST PLAYED" else "NOW PLAYING", fontSize = 10.sp)
                     }
                 }
                 Column(

@@ -23,6 +23,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param name フォルダの名前。
  * @param modifier レイアウトに適用するModifier。
  * @param isWallpaperMode 壁紙透過モードかどうか。
+ * @param hasNotification 中のアプリのどれかに通知が来ているかどうか。右上の点を、trueなら点灯、
+ *   falseなら消灯で表示する。nullの場合は点自体を表示しない。
  * @param onClick カードがクリックされたときのコールバック（通常時はフォルダの中身を開く）。
  * @param onLongClick カードが長押しされたときのコールバック。
  */
@@ -31,6 +33,7 @@ fun FolderCard(
     name: String,
     modifier: Modifier = Modifier,
     isWallpaperMode: Boolean = false,
+    hasNotification: Boolean? = null,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {}
 ) {
@@ -77,6 +80,14 @@ fun FolderCard(
                 CardLabelPlacement.NONE -> Box(modifier = Modifier.align(Alignment.Center)) {
                     folderIcon(32.dp)
                 }
+            }
+
+            // 通知の点（中のアプリのどれかに通知が来ていれば点灯させる）
+            if (hasNotification != null) {
+                NotificationDot(
+                    isActive = hasNotification,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+                )
             }
         }
     }

@@ -21,9 +21,18 @@ class PowerMenuAccessibilityService : AccessibilityService() {
         /**
          * 電源メニューを開く。サービスが有効化されていない場合はfalseを返す。
          */
-        fun showPowerMenu(): Boolean {
+        fun showPowerMenu(): Boolean = performAction(GLOBAL_ACTION_POWER_DIALOG)
+
+        /** サービスが実際に動いている（アプリとつながっている）かどうか。 */
+        fun isConnected(): Boolean = instance != null
+
+        /**
+         * 端末全体の操作（[AccessibilityService]の`GLOBAL_ACTION_*`。通知パネル・画面オフなど）を行う。
+         * サービスが有効化されていない場合はfalseを返す。
+         */
+        fun performAction(globalAction: Int): Boolean {
             val service = instance ?: return false
-            return service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+            return service.performGlobalAction(globalAction)
         }
     }
 
@@ -62,12 +71,44 @@ fun isPowerMenuAccessibilityServiceEnabled(context: Context): Boolean {
     return false
 }
 
+/** [PowerMenuAccessibilityService]の状態。 */
+enum class AccessibilityServiceStatus {
+    /** 設定でオンになっていて、実際に動いている。 */
+    ENABLED,
+
+    /**
+     * 設定ではオンなのに、動いていない（アプリの更新直後などに起きることがある。
+     * 設定で一度オフにしてからオンにし直すと直る）。
+     */
+    NOT_CONNECTED,
+
+    /** 設定でオフになっている。 */
+    DISABLED
+}
+
+/** [PowerMenuAccessibilityService]が今どの状態かを判定する。 */
+fun accessibilityServiceStatus(context: Context): AccessibilityServiceStatus = when {
+    !isPowerMenuAccessibilityServiceEnabled(context) -> AccessibilityServiceStatus.DISABLED
+    !PowerMenuAccessibilityService.isConnected() -> AccessibilityServiceStatus.NOT_CONNECTED
+    else -> AccessibilityServiceStatus.ENABLED
+}
+
 /**
  * 電源メニューを開く。サービスが有効化されていない（または接続前）場合は
  * [onNeedPermission]を呼び出して権限付与画面への案内に委ねる。
  */
 fun openPowerMenuOrRequestPermission(context: Context, onNeedPermission: () -> Unit) {
     if (!isPowerMenuAccessibilityServiceEnabled(context) || !PowerMenuAccessibilityService.showPowerMenu()) {
+        onNeedPermission()
+    }
+}
+
+/**
+ * 端末全体の操作（[AccessibilityService]の`GLOBAL_ACTION_*`）を行う。サービスが有効化されていない
+ * （または接続前）場合は[onNeedPermission]を呼び出して権限付与画面への案内に委ねる。
+ */
+fun performSystemActionOrRequestPermission(context: Context, globalAction: Int, onNeedPermission: () -> Unit) {
+    if (!isPowerMenuAccessibilityServiceEnabled(context) || !PowerMenuAccessibilityService.performAction(globalAction)) {
         onNeedPermission()
     }
 }

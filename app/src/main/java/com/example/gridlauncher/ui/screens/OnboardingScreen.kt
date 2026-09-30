@@ -16,7 +16,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,6 +36,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.gridlauncher.R
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
+import com.example.gridlauncher.ui.components.rememberOnboardingStepLauncher
 import com.example.gridlauncher.util.OnboardingSteps
 
 /** 背景画像の上に重ねる黒の不透明度（背景の模様の上でも文字を読みやすくするため）。 */
@@ -57,6 +57,7 @@ private const val LandscapeContentWidthFraction = 0.5f
 @Composable
 fun OnboardingScreen(onFinish: () -> Unit) {
     val context = LocalContext.current
+    val launchStepSettings = rememberOnboardingStepLauncher()
     val colors = LocalCyberColors.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -205,7 +206,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                             )
                         } else {
                             OutlinedButton(
-                                onClick = { context.startActivity(step.settingsIntent(context)) },
+                                onClick = { launchStepSettings(step) },
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.accent),
                                 border = BorderStroke(1.dp, colors.accent)
                             ) {

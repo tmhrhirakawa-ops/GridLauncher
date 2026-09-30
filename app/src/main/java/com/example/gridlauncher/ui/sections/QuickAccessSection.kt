@@ -25,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.QuickActionId
@@ -45,6 +44,7 @@ import com.example.gridlauncher.ui.drag.LocalAppDragState
 import com.example.gridlauncher.ui.drag.appDragSource
 import com.example.gridlauncher.ui.drag.appDropTarget
 import com.example.gridlauncher.ui.drag.dragEdgeAutoScroll
+import com.example.gridlauncher.ui.components.WidgetHeaderTitle
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 import com.example.gridlauncher.util.SlotGridSize
@@ -217,8 +217,8 @@ fun QuickAccessSection(
                     .size(6.dp)
                     .background(LocalCyberColors.current.accent))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("QUICK ACCESS", fontFamily = CyberFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LocalCyberColors.current.text)
-                Spacer(modifier = Modifier.weight(1f))
+                // 見出し（フォントによって幅が足りなければ、1行に収まるまで縮める）
+                WidgetHeaderTitle("QUICK ACCESS", fontSize = 10.sp)
                 // QUICK ACCESSの設定（縦横で同じ並びにするか・スロットの並び・ページ数）を開く歯車ボタン
                 Icon(
                     imageVector = Icons.Outlined.Settings,

@@ -17,6 +17,9 @@ package com.example.gridlauncher.model
  * @property colSpan 横方向に占めるセル数。ウィジェットの種類によっては、アイコンサイズ単位での
  *   細かいリサイズに対応するため小数値を取り得る。
  * @property rowSpan 縦方向に占めるセル数。[colSpan]と同様に小数値を取り得る。
+ * @property stackId このウィジェットが属するスタック（同じ領域に重ねて、横スワイプで切り替える
+ *   ウィジェットのまとまり）のID。同じ値のウィジェット同士は同じ位置・サイズを共有し、一覧での
+ *   並び順がスタック内のページ順になる。スタックに属していない場合は-1。
  */
 data class PlacedWidget(
     val type: WidgetPanel,
@@ -25,8 +28,16 @@ data class PlacedWidget(
     val col: Float,
     val row: Float,
     val colSpan: Float,
-    val rowSpan: Float
+    val rowSpan: Float,
+    val stackId: Int = -1
 ) {
+    /**
+     * キャンバス上で1つの枠として扱うまとまりのキー。スタックに属していれば、そのスタックの
+     * 全員で同じキーになる。属していなければ[instanceKey]。
+     */
+    val groupKey: String
+        get() = if (stackId >= 0) "STACK:$stackId" else instanceKey
+
     /**
      * この配置済みウィジェットを一意に識別するキー。複数インスタンスを同時配置できる種類
      * （[WidgetPanel.APPWIDGET]、[WidgetPanel.APP_SLOT_ICON_ONLY]、[WidgetPanel.APP_SLOT_NAMED]）は

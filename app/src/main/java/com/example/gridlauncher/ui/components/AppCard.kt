@@ -9,9 +9,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,7 +35,8 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param packageName アプリのパッケージ名。デュオトーン加工のキャッシュキーに使用。
  * @param isMonochrome [icon]がモノクロレイヤー由来かどうか。デュオトーン加工方法の選択に使う。
  * @param isEditMode UIが編集モードかどうか。
- * @param notificationCount 通知（またはアプリバッジ）の件数。0以下の場合はバッジを表示しない。
+ * @param notificationCount 通知（またはアプリバッジ）の件数。右上の点を、1以上なら点灯、0なら消灯で表示する。
+ *   nullの場合は点自体を表示しない（通知を扱わないアプリドロワー・フォルダの中など）。
  * @param isWallpaperMode 壁紙透過モードかどうか。
  * @param isCompact trueの場合、アプリ名は表示せずアイコンのみを中央に表示する
  *   （APP LISTのICON ONLYモードなど、正方形のスロット向け）。falseの場合は、アイコンと名前を
@@ -61,7 +60,7 @@ fun AppCard(
     packageName: String = "",
     isMonochrome: Boolean = false,
     isEditMode: Boolean = false,
-    notificationCount: Int = 0,
+    notificationCount: Int? = null,
     isWallpaperMode: Boolean = false,
     isCompact: Boolean = false,
     useOriginalIconColors: Boolean = false,
@@ -130,27 +129,12 @@ fun AppCard(
                 }
             }
 
-            // 通知バッジ（件数表示）
-            if (notificationCount > 0 && !isEditMode) {
-                val label = if (notificationCount > 99) "99+" else notificationCount.toString()
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp)
-                        .border(1.dp, LocalCyberColors.current.accent, RoundedCornerShape(3.dp))
-                        .padding(horizontal = 3.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        fontFamily = CyberFont,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = LocalCyberColors.current.accent,
-                        maxLines = 1
-                    )
-                }
+            // 通知の点（常に表示し、通知が来ているときだけ点灯させる）
+            if (notificationCount != null && !isEditMode) {
+                NotificationDot(
+                    isActive = notificationCount > 0,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+                )
             }
             
             AnimatedVisibility(
