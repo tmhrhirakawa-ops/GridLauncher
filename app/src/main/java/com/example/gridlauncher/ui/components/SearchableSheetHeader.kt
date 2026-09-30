@@ -46,12 +46,14 @@ import com.example.gridlauncher.ui.theme.LocalCyberColors
  * @param title 見出しの文字。
  * @param query 検索語。
  * @param onQueryChange 検索語が変わったときのコールバック。
+ * @param actions 虫眼鏡の左に並べるボタン（並べ替えボタンなど）。
  */
 @Composable
 fun SearchableSheetHeader(
     title: String,
     query: String,
-    onQueryChange: (String) -> Unit
+    onQueryChange: (String) -> Unit,
+    actions: @Composable () -> Unit = {}
 ) {
     val colors = LocalCyberColors.current
     // 検索語が入っている間は（シートを開き直した場合なども）検索ボックスを出したままにする
@@ -68,6 +70,7 @@ fun SearchableSheetHeader(
                 color = colors.accent,
                 modifier = Modifier.weight(1f)
             )
+            actions()
             if (!isSearchOpen) {
                 Box(
                     contentAlignment = Alignment.Center,

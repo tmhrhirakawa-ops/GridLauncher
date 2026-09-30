@@ -300,7 +300,8 @@ fun getInstalledApps(packageManager: PackageManager): List<AppInfo> {
             packageName = packageName,
             icon = icon,
             iconIsMonochrome = isMonochrome,
-            firstInstallTime = firstInstallTimeOf(packageManager, packageName)
+            firstInstallTime = firstInstallTimeOf(packageManager, packageName),
+            category = resolveInfo.activityInfo.applicationInfo.category
         )
     }.sortedByInstallOrder()
 }
@@ -344,7 +345,8 @@ fun resolveInstalledApp(packageManager: PackageManager, packageName: String): Ap
         packageName = resolveInfo.activityInfo.packageName,
         icon = icon,
         iconIsMonochrome = isMonochrome,
-        firstInstallTime = firstInstallTimeOf(packageManager, resolveInfo.activityInfo.packageName)
+        firstInstallTime = firstInstallTimeOf(packageManager, resolveInfo.activityInfo.packageName),
+        category = resolveInfo.activityInfo.applicationInfo.category
     )
 }
 

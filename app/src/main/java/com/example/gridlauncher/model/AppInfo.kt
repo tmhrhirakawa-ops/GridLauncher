@@ -1,5 +1,6 @@
 package com.example.gridlauncher.model
 
+import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
 
 /**
@@ -12,11 +13,14 @@ import android.graphics.drawable.Drawable
  * @property iconIsMonochrome [icon]がAndroid 13+のモノクロレイヤー由来かどうか。加工方法の選択に使う。
  * @property firstInstallTime アプリが最初にインストールされた日時（エポックミリ秒）。
  *   ALL APPS・SELECT APPをインストールした順に並べるのに使う。取得できない場合は0。
+ * @property category アプリ自身が申告しているカテゴリ（[ApplicationInfo.category]。ゲーム・音楽など）。
+ *   ALL APPS・SELECT APPをカテゴリ順に並べるのに使う。申告していなければ[ApplicationInfo.CATEGORY_UNDEFINED]。
  */
 data class AppInfo(
     val label: String,
     val packageName: String,
     val icon: Drawable,
     val iconIsMonochrome: Boolean = false,
-    val firstInstallTime: Long = 0L
+    val firstInstallTime: Long = 0L,
+    val category: Int = ApplicationInfo.CATEGORY_UNDEFINED
 )

@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.sp
 import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.ui.components.AppGridTile
 import com.example.gridlauncher.ui.components.AppTileGrid
+import com.example.gridlauncher.ui.components.AppSortButton
+import com.example.gridlauncher.ui.components.rememberAppSortOrder
+import com.example.gridlauncher.util.sortAppsForList
 import com.example.gridlauncher.ui.components.SearchableSheetHeader
 import com.example.gridlauncher.ui.components.DockAppCard
 import com.example.gridlauncher.ui.drag.AppDragItem
@@ -46,6 +49,9 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIcon
     var searchQuery by remember { mutableStateOf("") }
     val filteredApps = remember(allApps, searchQuery) { allApps.filter { it.label.contains(searchQuery, ignoreCase = true) } }
     val context = LocalContext.current
+    // 並べ替え（インストール順・名前順・カテゴリ順と昇順・降順。SELECT APPと共通で保存する）
+    val (sortOrder, setSortOrder) = rememberAppSortOrder()
+    val sortedSections = remember(filteredApps, sortOrder) { sortAppsForList(context, filteredApps, sortOrder) }
     // よく使うアプリは使用状況統計（過去1週間分）の集計が重いため、メインスレッドを止めないよう
     // バックグラウンドで取得する。検索中に表示から外れても再取得しないよう、ドロワーを開いている間は保持する
     val hasUsagePermission = remember { hasUsageStatsPermission(context) }
@@ -70,7 +76,12 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIcon
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
             // ヘッダー（タイトルと、右上の虫眼鏡で開く検索ボックス）
-            SearchableSheetHeader(title = "ALL APPS", query = searchQuery, onQueryChange = { searchQuery = it })
+            SearchableSheetHeader(
+                title = "ALL APPS",
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                actions = { AppSortButton(order = sortOrder, onOrderChange = setSortOrder) }
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             // よく使うアプリ（検索していないときのみ表示）
@@ -136,8 +147,8 @@ fun AllAppsDrawer(allApps: List<AppInfo>, onDismiss: () -> Unit, useOriginalIcon
             Spacer(modifier = Modifier.height(8.dp))
             // インストールした順に並べる（検索したら先頭に戻す）
             AppTileGrid(
-                apps = filteredApps,
-                resetKey = searchQuery,
+                sections = sortedSections,
+                resetKey = searchQuery to sortOrder,
                 modifier = Modifier.fillMaxWidth().weight(1f)
             ) { appInfo, tileModifier ->
                 AppGridTile(
