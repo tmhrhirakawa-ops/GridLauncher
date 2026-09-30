@@ -139,7 +139,7 @@ class AppDragState internal constructor() {
 
     val isDragging: Boolean get() = payload != null
 
-    internal var onDrop: (AppDragPayload, AppDropTarget?) -> Unit = { _, _ -> }
+    internal var onDrop: (AppDragPayload, AppDropTarget?, Offset) -> Unit = { _, _, _ -> }
 
     // ドロップ先ごとの範囲（スクリーン座標）。当たり判定にだけ使うため、状態（State）にはしない
     private val targetBounds = HashMap<AppDropTarget, Rect>()
@@ -205,8 +205,9 @@ class AppDragState internal constructor() {
     internal fun drop() {
         val droppedPayload = payload ?: return
         val target = hoveredTarget
+        val dropPosition = pointerOnScreen
         reset()
-        onDrop(droppedPayload, target)
+        onDrop(droppedPayload, target, dropPosition)
     }
 
     internal fun cancel() {
@@ -240,13 +241,14 @@ class AppDragState internal constructor() {
 val LocalAppDragState = staticCompositionLocalOf<AppDragState?> { null }
 
 /**
- * [AppDragState]を作る。[onDrop]はドロップ先が決まったとき（どこにも重なっていなければnull）に呼ばれる。
+ * [AppDragState]を作る。[onDrop]はドロップ先が決まったとき（どこにも重なっていなければnull）に、
+ * 指を離した位置（スクリーン座標）とともに呼ばれる。
  */
 @Composable
-fun rememberAppDragState(onDrop: (AppDragPayload, AppDropTarget?) -> Unit): AppDragState {
+fun rememberAppDragState(onDrop: (AppDragPayload, AppDropTarget?, Offset) -> Unit): AppDragState {
     val currentOnDrop by rememberUpdatedState(onDrop)
     return remember {
-        AppDragState().apply { this.onDrop = { payload, target -> currentOnDrop(payload, target) } }
+        AppDragState().apply { this.onDrop = { payload, target, position -> currentOnDrop(payload, target, position) } }
     }
 }
 

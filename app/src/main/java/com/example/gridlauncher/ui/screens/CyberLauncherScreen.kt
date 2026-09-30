@@ -60,6 +60,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.gridlauncher.model.AppInfo
 import com.example.gridlauncher.model.FolderInfo
 import com.example.gridlauncher.model.GridItem
 import com.example.gridlauncher.model.PlacedWidget
@@ -69,6 +70,7 @@ import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.LocalHomePressedSignal
 import com.example.gridlauncher.ui.components.AppActionDialog
 import com.example.gridlauncher.ui.components.ProUpgradeDialog
+import com.example.gridlauncher.ui.components.AppSlotStyleDialog
 import com.example.gridlauncher.ui.components.IconPackPickerDialog
 import com.example.gridlauncher.ui.components.DefaultAccentColor2
 import com.example.gridlauncher.ui.components.HomeLongPressMenu
@@ -86,6 +88,7 @@ import com.example.gridlauncher.ui.drag.AppDragPayload
 import com.example.gridlauncher.ui.drag.AppDragSource
 import com.example.gridlauncher.ui.drag.AppDropTarget
 import com.example.gridlauncher.ui.drag.LocalAppDragState
+import com.example.gridlauncher.ui.drag.boundsOnScreen
 import com.example.gridlauncher.ui.drag.rememberAppDragState
 import com.example.gridlauncher.ui.theme.*
 import com.example.gridlauncher.util.SlotGridSize
@@ -106,6 +109,7 @@ import com.example.gridlauncher.util.createFolder
 import com.example.gridlauncher.util.deleteFolder
 import com.example.gridlauncher.util.findFreeGridSlot
 import com.example.gridlauncher.util.findFreeGridSlotForSize
+import com.example.gridlauncher.util.findFreeGridSlotNear
 import com.example.gridlauncher.util.folderIdFromSlotValue
 import com.example.gridlauncher.util.folderSlotValue
 import com.example.gridlauncher.util.getInstalledApps
@@ -231,6 +235,20 @@ private data class PendingAppSlotRemoval(
     val instanceId: Int,
     val packageName: String,
     val label: String
+)
+
+/**
+ * アプリを、ウィジェットキャンバスのスロット以外の場所へドロップしたときの、APP SLOT（ウィジェット）
+ * として置く待ち。アイコンのみかアイコン＋名前かを選んでもらうまで保持する。
+ *
+ * @property payload ドロップしたもの（置いたあと、元の場所から外すのに使う）。
+ * @property appInfo ドロップしたアプリ。
+ * @property positionOnScreen 指を離した位置（スクリーン座標）。この近くの空いている場所に置く。
+ */
+private data class PendingAppSlotDrop(
+    val payload: AppDragPayload,
+    val appInfo: AppInfo,
+    val positionOnScreen: Offset
 )
 
 /**
@@ -595,12 +613,27 @@ fun CyberLauncherScreen() {
         }
     }
 
+    // ウィジェットキャンバス（ホーム画面中央のウィジェットを置く領域）のスクリーン座標での範囲。
+    // アプリをスロット以外の場所へドロップしたとき、そこがキャンバスの中かどうかの判定に使う
+    var widgetCanvasBoundsOnScreen by remember { mutableStateOf(Rect.Zero) }
+    // アプリをキャンバスのスロット以外の場所へドロップしたときの、ウィジェットとして置く待ち
+    // （アイコンのみ・アイコン＋名前を選ぶダイアログの表示中のみ）
+    var pendingAppSlotDrop by remember { mutableStateOf<PendingAppSlotDrop?>(null) }
+
     // アプリアイコン・フォルダ・QUICK ACCESSのボタンのドラッグ＆ドロップの結果を反映する
-    fun handleAppDrop(payload: AppDragPayload, target: AppDropTarget?) {
+    fun handleAppDrop(payload: AppDragPayload, target: AppDropTarget?, positionOnScreen: Offset? = null) {
         val source = payload.source
         // アプリドロワーから持ってきた場合は、ドロップ先にかかわらずドロワーを閉じる
         // （ドラッグ中は透明にして開いたままにしている）
         if (source == AppDragSource.Drawer) showAllAppsDrawer = false
+        // アプリを、ウィジェットキャンバスのスロット以外の場所へドロップした場合は、その場に
+        // APP SLOT（ウィジェット）として置く。アイコンのみかアイコン＋名前かを選んでもらってから置く
+        if (target == null && positionOnScreen != null && payload.item is AppDragItem.App &&
+            widgetCanvasBoundsOnScreen.contains(positionOnScreen)
+        ) {
+            pendingAppSlotDrop = PendingAppSlotDrop(payload, payload.item.appInfo, positionOnScreen)
+            return
+        }
         // どこにも重なっていない、またはフォルダのポップアップの余白に落とした場合は何もしない
         if (target == null || target == AppDropTarget.FolderPanel) return
 
@@ -773,7 +806,8 @@ fun CyberLauncherScreen() {
             prefs.edit { putString(dockAppsKey, dock.joinToString(",")) }
         }
     }
-    val appDragState = rememberAppDragState(onDrop = ::handleAppDrop)
+    // （関数の参照はComposeが使い回すことがあるため、ラムダで包んで渡す）
+    val appDragState = rememberAppDragState { payload, target, position -> handleAppDrop(payload, target, position) }
 
     // アンインストールが実際に完了すると、UninstallResultReceiverがバックグラウンドで
     // SharedPreferencesのAPP LIST・DOCKの並びを直接書き換える。ここではその変更を
@@ -998,6 +1032,37 @@ fun CyberLauncherScreen() {
     var appWidgetTooLargeError by remember { mutableStateOf(false) }
     // 長押しメニューの「ウィジェットを追加」が押されたが、ホーム画面に空きがないことを知らせるダイアログの表示状態
     var showNoWidgetSpaceError by remember { mutableStateOf(false) }
+
+    // アプリをスロット以外の場所へドロップしたとき、選んだ形（アイコンのみ・アイコン＋名前）の
+    // APP SLOTとして、指を離した位置にいちばん近い空いている場所に置く。APP LIST・DOCK・フォルダから
+    // 持ってきたアプリは元の場所から外す（移動）。アプリドロワーから持ってきた場合は追加になる
+    fun placeAppSlotAtDrop(drop: PendingAppSlotDrop, type: WidgetPanel) {
+        val cellSize = canvasCellSize ?: return
+        val cellWidthPx = with(density) { cellSize.width.toPx() }
+        val cellHeightPx = with(density) { cellSize.height.toPx() }
+        val targetSize = if (type == WidgetPanel.APP_SLOT_ICON_ONLY) AppSlotIconOnlyTargetSize else AppSlotNamedTargetSize
+        val local = drop.positionOnScreen - widgetCanvasBoundsOnScreen.topLeft
+        val slot = findFreeGridSlotNear(
+            placedWidgets, widgetLayoutMode.columns, widgetLayoutMode.rows,
+            desiredColSpan = targetSize.width / cellSize.width,
+            desiredRowSpan = targetSize.height / cellSize.height,
+            centerCol = local.x / cellWidthPx,
+            centerRow = local.y / cellHeightPx
+        ) ?: run {
+            showNoWidgetSpaceError = true
+            return
+        }
+        val (col, row, colSpan, rowSpan) = slot
+        val instanceId = allocateNextAppSlotInstanceId(prefs)
+        val packageName = drop.appInfo.packageName
+        saveAppSlotAssignment(prefs, instanceId, packageName)
+        appSlotAssignments = appSlotAssignments + (instanceId to packageName)
+        updatePlacedWidgets(
+            placedWidgets + PlacedWidget(type = type, instanceId = instanceId, col = col, row = row, colSpan = colSpan, rowSpan = rowSpan)
+        )
+        // 元の場所から外す（「削除」エリアに落としたときと同じ処理。アプリドロワーからの場合は外す元がない）
+        if (drop.payload.source != AppDragSource.Drawer) handleAppDrop(drop.payload, AppDropTarget.RemoveZone)
+    }
 
     // ホームボタンが押されたら、開いているポップアップ・ボトムシート・ダイアログ・フォルダ・
     // 編集モード・ドラッグなどをすべて閉じて、ホーム画面の状態に戻る
@@ -1849,7 +1914,10 @@ fun CyberLauncherScreen() {
                     onStackLocked = { requirePro("ウィジェットのスタック") },
                     modifier = Modifier
                         .weight(1f)
-                        .onGloballyPositioned { widgetCanvasBoundsInRoot = it.boundsInRoot() }
+                        .onGloballyPositioned {
+                            widgetCanvasBoundsInRoot = it.boundsInRoot()
+                            widgetCanvasBoundsOnScreen = it.boundsOnScreen()
+                        }
                 ) { type, appWidgetId, instanceId, _, _, _, boxModifier, isResizing ->
                     // アクセントカラー2に設定されたウィジェットだけ、配色のaccentを差し替えて描画する
                     CompositionLocalProvider(LocalCyberColors provides if (isPro && type in accent2WidgetPanels) colors2 else colors) {
@@ -2074,6 +2142,21 @@ fun CyberLauncherScreen() {
     // 上のCompositionLocalProviderのスコープ外にあるため、テーマ（colors）を
     // 明示的に渡し直さないとLocalCyberColorsのデフォルト値（ライトテーマ固定）に
     // フォールバックしてしまい、実際のテーマ設定に関わらず常に同じ配色になってしまう
+    // アプリをスロット以外の場所へドロップしたときの、APP SLOT（ウィジェット）として置く形の選択
+    pendingAppSlotDrop?.let { drop ->
+        CompositionLocalProvider(LocalCyberColors provides colors) {
+            AppSlotStyleDialog(
+                app = drop.appInfo,
+                useOriginalIconColors = useOriginalIconColors,
+                onSelect = { type ->
+                    pendingAppSlotDrop = null
+                    placeAppSlotAtDrop(drop, type)
+                },
+                onDismiss = { pendingAppSlotDrop = null }
+            )
+        }
+    }
+
     // 使うアイコンパックの選択
     if (showIconPackPicker) {
         val iconPacks = remember { IconPackManager.installedIconPacks(context) }
