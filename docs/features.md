@@ -314,6 +314,7 @@
   - 購入の承認（acknowledge）も行う。保留中の購入は、完了するまでPROにしない
 - PROの機能を使おうとすると、鍵つきの「PRO」マークの項目から、PROの案内と購入画面（`ProUpgradeDialog`）を出す
   （「購入を復元」もここから）。カスタマイズ画面の先頭にPROの状態と購入画面への入口を表示
+  （機能を VISUAL・WIDGET・CONTROL・BACKUP のグループに分けて並べ、使おうとした機能は「ACCESS DENIED」として示す。一覧が長いので、その部分だけスクロールする）
 - PROの機能
   - テーマ（STANDARD 以外のプリセット）とフォントの変更（PROでない場合は STANDARD・SHARE TECH MONO で表示）
   - アイコンパック（PROでない場合は標準のアイコンで表示）

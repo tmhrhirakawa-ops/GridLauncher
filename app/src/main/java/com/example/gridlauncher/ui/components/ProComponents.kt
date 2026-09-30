@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Icon
@@ -41,18 +43,39 @@ import com.example.gridlauncher.billing.ProManager
 import com.example.gridlauncher.ui.theme.CyberFont
 import com.example.gridlauncher.ui.theme.LocalCyberColors
 
+/** 購入画面に並べる、PROで使える機能のグループ（見出し・ひとこと・機能の一覧）。 */
+private data class ProFeatureGroup(val tag: String, val caption: String, val features: List<String>)
+
 /** PROで使える機能の一覧（購入画面に表示する）。 */
-private val ProFeatureList = listOf(
-    "テーマ（配色・フォントのプリセット）とフォントの変更",
-    "アイコンパック（Nova Launcher などに対応したもの）",
-    "設定のバックアップ・復元",
-    "ホーム画面のジェスチャーへの動作の割り当て",
-    "ウィジェットのスタックと自動切り替え",
-    "アクセントカラー2・ウィジェットごとの配色・パレットでの自由な色選び",
-    "ヘッダー中央の文字の書き換え",
-    "NOW PLAYING ウィジェット",
-    "APP LIST・QUICK ACCESS・DOCK の並び・ページ数の詳細設定",
-    "外部ウィジェットを3個以上配置"
+private val ProFeatureGroups = listOf(
+    ProFeatureGroup(
+        "VISUAL", "見た目を思いのままに",
+        listOf(
+            "テーマのプリセットとフォントの変更",
+            "アイコンパック（Nova Launcher 対応のもの）",
+            "アクセントカラー2・ウィジェットごとの配色・自由な色選び",
+            "ヘッダーの文字を好きな言葉に"
+        )
+    ),
+    ProFeatureGroup(
+        "WIDGET", "ウィジェットをもっと自由に",
+        listOf(
+            "ウィジェットを重ねてスワイプで切り替え（自動切り替えつき）",
+            "NOW PLAYING ウィジェット",
+            "外部ウィジェットを無制限に配置"
+        )
+    ),
+    ProFeatureGroup(
+        "CONTROL", "操作を自分好みに",
+        listOf(
+            "ジェスチャーに動作を割り当て（通知パネル・画面オフなど）",
+            "APP LIST・QUICK ACCESS・DOCK の並びとページ数の細かい設定"
+        )
+    ),
+    ProFeatureGroup(
+        "BACKUP", "設定を守る",
+        listOf("設定のバックアップ・復元（機種変更にも）")
+    )
 )
 
 /** PROの機能であることを示す小さな鍵つきのマーク。PRO解放済みのときは表示しない想定。 */
@@ -103,15 +126,47 @@ fun ProUpgradeDialog(featureName: String?, onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("GRIDLAUNCHER PRO", fontFamily = CyberFont, fontSize = 16.sp, fontWeight = FontWeight.Black, color = colors.text)
                 }
+                Text("ACCESS LEVEL: UNRESTRICTED", fontFamily = CyberFont, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accent)
                 if (featureName != null) {
-                    Text("「$featureName」は PRO の機能です。", fontFamily = CyberFont, fontSize = 12.sp, color = colors.accent)
-                }
-                Text("一度の購入で、次の機能がすべて使えるようになります。", fontFamily = CyberFont, fontSize = 11.sp, color = colors.text.copy(alpha = 0.7f))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                    ProFeatureList.forEach { feature ->
-                        Text("・$feature", fontFamily = CyberFont, fontSize = 11.sp, color = colors.text)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Lock, contentDescription = null, tint = colors.accent, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ACCESS DENIED:「$featureName」は PRO モジュールです", fontFamily = CyberFont, fontSize = 11.sp, color = colors.accent)
                     }
                 }
+                Text(
+                    "ホーム画面を、完全に自分仕様のターミナルへ。\n一度の購入で、すべての拡張モジュールが解放されます。",
+                    fontFamily = CyberFont,
+                    fontSize = 11.sp,
+                    color = colors.text.copy(alpha = 0.7f)
+                )
+                // 機能の一覧は長いので、画面の低い端末や横画面でもボタンまで届くよう、この部分だけスクロールさせる
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp)
+                ) {
+                    ProFeatureGroups.forEach { group ->
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("[ ${group.tag} ]", fontFamily = CyberFont, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = colors.accent)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(group.caption, fontFamily = CyberFont, fontSize = 10.sp, color = colors.text.copy(alpha = 0.6f))
+                            }
+                            group.features.forEach { feature ->
+                                Text("・$feature", fontFamily = CyberFont, fontSize = 11.sp, color = colors.text, modifier = Modifier.padding(start = 4.dp))
+                            }
+                        }
+                    }
+                }
+                Text(
+                    "買い切り・サブスクなし／同じ Google アカウントなら機種変更後も復元できます／広告なし・通信なし",
+                    fontFamily = CyberFont,
+                    fontSize = 9.sp,
+                    color = colors.text.copy(alpha = 0.5f)
+                )
                 message?.let { Text(it, fontFamily = CyberFont, fontSize = 10.sp, color = colors.text.copy(alpha = 0.6f)) }
                 Spacer(modifier = Modifier.height(4.dp))
                 Box(
